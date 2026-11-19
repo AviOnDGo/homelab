@@ -1,0 +1,31 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    # ports:
+    #   - 5678:5678
+    volumes:
+      - filedata:/home/node/.n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ai_network
+      - media_network
+    restart: unless-stopped
+
+volumes:
+  filedata:
+    name: n8n_filedata
+    external: true
+
+networks:
+  ai_network:
+    external: true
+    name: ai_network
+  media_network:
+    external: true
+    name: media_network

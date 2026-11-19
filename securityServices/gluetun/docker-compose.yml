@@ -1,0 +1,26 @@
+services:
+  gluetun:
+    image: ghcr.io/qdm12/gluetun:latest
+    container_name: gluetun
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - .env
+    environment:
+      - VPN_SERVICE_PROVIDER=protonvpn
+      - VPN_TYPE=wireguard
+      - FREE_ONLY=on
+      - HTTPPROXY=on
+    # HTTP proxy – accessible within security_network only (not exposed on host)
+    # ports:
+    #   - 8888:8888
+    # sysctls:
+    #   - net.ipv6.conf.all.disable_ipv6=on
+
+networks:
+  default:
+    name: security_network
+    external: true

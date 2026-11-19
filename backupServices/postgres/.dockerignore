@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!.dockerignore
+!db-backup-script.sh

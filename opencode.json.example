@@ -1,0 +1,35 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama-remote": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (Remote)",
+      "options": {
+        "baseURL": "{env:OLLAMA_REMOTE_BASE_URL}"
+      },
+      "models": {
+        "qwen2.5-coder:1.5b": {
+          "name": "Qwen 2.5 Coder 1.5B"
+        },
+        "qwen3:1.7b": {
+          "name": "Qwen 3 1.7B"
+        }
+      }
+    },
+    "ollama-local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (Local)",
+      "options": {
+        "baseURL": "{env:OLLAMA_LOCAL_BASE_URL}"
+      },
+      "models": {
+        "kimi-k2.7-code:cloud": {
+          "name": "Kimi K2.7 Code"
+        },
+        "qwen3-coder:480b-cloud": {
+          "name": "Qwen 3 Coder 480B Cloud"
+        }
+      }
+    }
+  }
+}

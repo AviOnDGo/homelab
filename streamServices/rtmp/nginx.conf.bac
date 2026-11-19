@@ -1,0 +1,44 @@
+worker_processes auto;
+rtmp_auto_push on;
+events{}
+rtmp {
+	server {
+		listen 1935;
+		listen [::]:1935 ipv6only=on;
+		
+		application streamonly {
+			live on;
+			record off;
+
+			push rtmp://rtmp:1935/stream;
+		}
+
+		application recordonly {
+			live on;
+			record all;
+			record_path /media;
+			record_unique on;
+			record_suffix _rec_%d%m%Y_%H%M%S.flv;
+			allow publish all;
+		}
+
+		application streamrecord {
+			live on;
+			record all;
+			record_path /media;
+			record_unique on;
+			record_suffix _streamRec_%d%m%Y_%H%M%S.flv;
+			allow publish all;
+
+			push rtmp://rtmp:1935/stream;
+		}
+                
+		application stream {
+			live on;
+			record off;
+			
+			push rtmp://live.restream.io/live/<stream_key>;
+			push rtmp://stream.dlive.tv/live/<stream_key>;
+		}
+	}
+}

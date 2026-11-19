@@ -1,0 +1,32 @@
+services:
+  jellyfin:
+    image: linuxserver/jellyfin:latest
+    container_name: jellyfin
+    ports:
+      - "8096:8096"
+    environment:
+      http_proxy: http://gluetun:8888
+      https_proxy: http://gluetun:8888
+      no_proxy: localhost,127.0.0.1
+    volumes:
+      - filedata:/config
+      - "${HOME}/.media/Movies:/data/movies"
+      - "${HOME}/.media/TVSeries:/data/tvshows"
+      - "${HOME}/.media/Music:/data/music"
+    networks:
+      - default
+      - security_network
+    restart: unless-stopped
+
+networks:
+  default:
+    external: true
+    name: media_network
+  security_network:
+    external: true
+    name: security_network
+
+volumes:
+  filedata:
+    external: true
+    name: jellyfin_filedata

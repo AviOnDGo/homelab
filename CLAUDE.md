@@ -1,0 +1,1 @@
+All development rules, git behavior guidelines, spec format standards, and agent conventions for this repository are defined in [`AGENTS.md`](AGENTS.md) at the repository root. Read it in full and follow all sections before performing any work in this repository.

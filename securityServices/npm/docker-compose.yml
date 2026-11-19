@@ -1,0 +1,49 @@
+services:
+
+  npm:
+    image: jc21/nginx-proxy-manager:latest # Official Nginx Proxy Manager image
+    container_name: npm # Assigns a specific name to the NPM app container
+    restart: unless-stopped
+
+    # Map host ports to container ports:
+    # 80: Default HTTP port (for proxying HTTP traffic)
+    # 443: Default HTTPS port (for proxying HTTPS traffic and Let's Encrypt)
+    # 9003: Nginx Proxy Manager's web interface port (access NPM at http://<host>:9003)
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9003:81"
+
+    networks:
+      - media_network
+      - ai_network
+      - games_network
+      - finance_network
+      - security_network
+      - knowledge_network
+      - container_network
+
+    volumes:
+      - filedata:/data # Main configuration and database files
+      - filedata:/etc/letsencrypt # Let's Encrypt certificates
+
+volumes:
+  filedata:
+    name: npm_filedata # Named volume for NPM data persistence
+    external: true # Indicates that this volume is managed outside of Docker Compose
+
+networks:
+  media_network:
+    name: media_network
+  ai_network:
+    name: ai_network
+  games_network:
+    name: games_network
+  finance_network:
+    name: finance_network
+  security_network:
+    name: security_network
+  knowledge_network:
+    name: knowledge_network
+  container_network:
+    name: container_network

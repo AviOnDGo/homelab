@@ -1,0 +1,717 @@
+name: Deploy GCP VM Terraform
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "googleCloud/**/*.tf"
+      - "googleCloud/**/*.tfvars"
+      - ".github/workflows/gcp-vm-deploy.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Terraform action"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      enforce_main_guard:
+        description: "Keep apply/destroy restricted to main/workflow ref (set false only for temporary testing)"
+        required: true
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      allow_vm_replacement:
+        description: "Allow a reviewed VM replacement (destroys the existing boot disk)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VAR_vm_service_account_email: ${{ vars.GCP_VM_SERVICE_ACCOUNT }}
+  TF_VAR_bootstrap_git_repo_ssh_url: ${{ vars.BOOTSTRAP_GIT_REPO_SSH_URL }}
+  TF_VAR_bootstrap_git_deploy_key_secret_name: ${{ vars.BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME }}
+
+jobs:
+  plan:
+    name: Terraform Plan
+    if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply')) }}
+    runs-on: ubuntu-latest
+    environment: prod
+    defaults:
+      run:
+        working-directory: googleCloud
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required workflow variables
+        working-directory: .
+        run: |
+          missing=0
+          if [[ -z "${{ vars.GCP_WIF_PROVIDER }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_WIF_PROVIDER"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_SERVICE_ACCOUNT }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_SERVICE_ACCOUNT"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_PROJECT_ID }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_PROJECT_ID"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_BILLING_ACCOUNT_ID }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_BILLING_ACCOUNT_ID"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_REGION }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_REGION"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_ZONE }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_ZONE"
+            missing=1
+          fi
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Validate onboarding configuration
+        working-directory: .
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
+          TS_TAILNET: ${{ secrets.TAILSCALE_TAILNET }}
+          NETDATA_CLAIM_TOKEN: ${{ secrets.NETDATA_CLAIM_TOKEN }}
+          NETDATA_CLAIM_ROOMS: ${{ secrets.NETDATA_CLAIM_ROOMS }}
+          NETDATA_CLAIM_URL: ${{ vars.NETDATA_CLAIM_URL }}
+        run: |
+          missing=0
+          if [[ -z "$TS_STATIC_AUTH_KEY" ]]; then
+            if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_OAUTH_CLIENT_SECRET" || -z "$TS_TAILNET" ]]; then
+              echo "Provide either TAILSCALE_EPHEMERAL_AUTH_KEY secret or OAuth settings (TAILSCALE_OAUTH_CLIENT_ID, TAILSCALE_OAUTH_CLIENT_SECRET, TAILSCALE_TAILNET)."
+              missing=1
+            fi
+          fi
+
+          if [[ -z "$NETDATA_CLAIM_TOKEN" ]]; then
+            echo "Missing required variable: NETDATA_CLAIM_TOKEN"
+            missing=1
+          fi
+          if [[ -z "$NETDATA_CLAIM_ROOMS" ]]; then
+            echo "Missing required variable: NETDATA_CLAIM_ROOMS"
+            missing=1
+          fi
+          if [[ -z "$NETDATA_CLAIM_URL" ]]; then
+            echo "Missing required variable: NETDATA_CLAIM_URL"
+            missing=1
+          fi
+
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Authenticate to GCP via OIDC (shared identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate workflow trust context
+        run: |
+          expected_repo="${{ github.repository }}"
+          actual_repo="${{ github.repository }}"
+          if [[ "$actual_repo" != "$expected_repo" ]]; then
+            echo "Repository mismatch"
+            exit 1
+          fi
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "Push trigger must run only on main"
+            exit 1
+          fi
+
+      - name: Validate shared identity plan-safe permissions
+        run: |
+          token="$(gcloud auth print-access-token)"
+          allowed=$(curl -sS -X POST \
+            -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" \
+            "https://cloudresourcemanager.googleapis.com/v1/projects/${{ vars.GCP_PROJECT_ID }}:testIamPermissions" \
+            -d '{"permissions":["compute.instances.get","compute.instances.create","compute.firewalls.get","resourcemanager.projects.setIamPolicy"]}' \
+            | jq -r '.permissions[]?')
+
+          if ! echo "$allowed" | grep -q "compute.instances.get"; then
+            echo "Shared identity must include compute.instances.get"
+            exit 1
+          fi
+
+          if ! echo "$allowed" | grep -q "compute.instances.create"; then
+            echo "Shared identity must include compute.instances.create"
+            exit 1
+          fi
+
+          if echo "$allowed" | grep -q "resourcemanager.projects.setIamPolicy"; then
+            echo "Shared identity must not include unrelated admin permissions"
+            exit 1
+          fi
+
+          # Budget read access is checked by listing budgets on the billing account.
+          if ! gcloud billing budgets list \
+            --billing-account="${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            --limit=1 \
+            --format="value(name)" >/dev/null; then
+            echo "Shared identity must include billing.resourcebudgets.read"
+            exit 1
+          fi
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform init
+        env:
+          TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: |
+          : "${TF_STATE_BUCKET:?Set GCP_TF_STATE_BUCKET to the existing state bucket}"
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform plan
+        env:
+          TF_VAR_budget_currency_code: ${{ vars.GCP_BUDGET_CURRENCY_CODE }}
+        run: |
+          : "${TF_VAR_budget_currency_code:?Set GCP_BUDGET_CURRENCY_CODE to the billing account currency}"
+          terraform plan -input=false -lock-timeout=300s -out=tfplan \
+            -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
+            -var="billing_account_id=${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            -var="region=${{ vars.GCP_REGION }}" \
+            -var="zone=${{ vars.GCP_ZONE }}"
+
+      - name: Guard VM replacement
+        env:
+          ALLOW_VM_REPLACEMENT: ${{ github.event_name == 'workflow_dispatch' && inputs.allow_vm_replacement }}
+        run: |
+          set -euo pipefail
+          vm_replacement="$(terraform show -json tfplan | jq -r '
+            any(.resource_changes[]?;
+              .type == "google_compute_instance" and
+              (.change.actions | index("delete") != null) and
+              (.change.actions | index("create") != null)
+            )')"
+          if [[ "$vm_replacement" == "true" && "$ALLOW_VM_REPLACEMENT" != "true" ]]; then
+            echo "::error::Plan would replace a VM. Back up persistent data, review the plan, then manually dispatch with allow_vm_replacement=true only when ready."
+            exit 1
+          fi
+
+      - name: Upload Terraform plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcp-vm-tfplan
+          path: googleCloud/tfplan
+
+  apply:
+    name: Terraform Apply
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply' }}
+    runs-on: ubuntu-latest
+    environment: prod
+    needs:
+      - plan
+    defaults:
+      run:
+        working-directory: googleCloud
+
+
+    steps:
+      - name: Enforce apply from main and production workflow ref
+        if: ${{ github.event.inputs.enforce_main_guard != 'false' }}
+        working-directory: .
+        run: |
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "Apply is only allowed from refs/heads/main"
+            exit 1
+          fi
+
+          expected_workflow_ref="${{ github.repository }}/.github/workflows/gcp-vm-deploy.yml@refs/heads/main"
+          if [[ "${{ github.workflow_ref }}" != "$expected_workflow_ref" ]]; then
+            echo "Apply is only allowed from workflow ref: $expected_workflow_ref"
+            echo "Actual workflow ref: ${{ github.workflow_ref }}"
+            exit 1
+          fi
+
+      - name: Guard override notice
+        if: ${{ github.event.inputs.enforce_main_guard == 'false' }}
+        working-directory: .
+        run: |
+          echo "WARNING: apply main/workflow guard bypassed for this manual run"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required workflow variables
+        working-directory: .
+        run: |
+          missing=0
+          if [[ -z "${{ vars.GCP_WIF_PROVIDER }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_WIF_PROVIDER"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_SERVICE_ACCOUNT }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_SERVICE_ACCOUNT"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_PROJECT_ID }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_PROJECT_ID"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_BILLING_ACCOUNT_ID }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_BILLING_ACCOUNT_ID"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_REGION }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_REGION"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_ZONE }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_ZONE"
+            missing=1
+          fi
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Authenticate to GCP via OIDC (shared identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate shared identity apply permissions
+        run: |
+          token="$(gcloud auth print-access-token)"
+          allowed=$(curl -sS -X POST \
+            -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" \
+            "https://cloudresourcemanager.googleapis.com/v1/projects/${{ vars.GCP_PROJECT_ID }}:testIamPermissions" \
+            -d '{"permissions":["compute.instances.create","compute.instances.get","compute.firewalls.create","resourcemanager.projects.setIamPolicy"]}' \
+            | jq -r '.permissions[]?')
+
+          if ! echo "$allowed" | grep -q "compute.instances.create"; then
+            echo "Shared identity must include compute.instances.create"
+            exit 1
+          fi
+
+          if ! echo "$allowed" | grep -q "compute.firewalls.create"; then
+            echo "Shared identity must include compute.firewalls.create"
+            exit 1
+          fi
+
+
+          if echo "$allowed" | grep -q "resourcemanager.projects.setIamPolicy"; then
+            echo "Shared identity must not include unrelated admin permissions"
+            exit 1
+          fi
+
+          # Ensure billing budget API access is present before apply.
+          if ! gcloud billing budgets list \
+            --billing-account="${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            --limit=1 \
+            --format="value(name)" >/dev/null; then
+            echo "Shared identity must include billing budget API access"
+            exit 1
+          fi
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: gcp-vm-tfplan
+          path: googleCloud
+
+      - name: Terraform init
+        env:
+          TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: |
+          : "${TF_STATE_BUCKET:?Set GCP_TF_STATE_BUCKET to the existing state bucket}"
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform apply
+        run: terraform apply -input=false -lock-timeout=300s -auto-approve tfplan
+
+      - name: Resolve VM target
+        working-directory: .
+        env:
+          GCP_VM_NAME: ${{ vars.GCP_VM_NAME }}
+        run: |
+          VM_NAME="${GCP_VM_NAME:-gcp-debian-free-tier-vm}"
+          echo "VM_NAME=$VM_NAME" >> "$GITHUB_ENV"
+          echo "PROJECT_ID=${{ vars.GCP_PROJECT_ID }}" >> "$GITHUB_ENV"
+          echo "ZONE=${{ vars.GCP_ZONE }}" >> "$GITHUB_ENV"
+
+      - name: Verify bootstrap completion
+        working-directory: .
+        run: |
+          ./googleCloud/bootstrap-readiness.sh "$VM_NAME" "$PROJECT_ID" "$ZONE"
+
+      - name: Acquire short-lived Tailscale auth credential
+        id: tailscale_auth
+        working-directory: .
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
+          TS_TAILNET: ${{ secrets.TAILSCALE_TAILNET }}
+        run: |
+          if [[ -n "$TS_STATIC_AUTH_KEY" ]]; then
+            echo "Using Tailscale key from approved secret source"
+            echo "::add-mask::$TS_STATIC_AUTH_KEY"
+            echo "auth_key=$TS_STATIC_AUTH_KEY" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Attempt OAuth flow; warn if it fails but continue (Tailscale setup can be done manually)
+          set +e
+          oauth_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/oauth/token" \
+            -u "$TS_OAUTH_CLIENT_ID:$TS_OAUTH_CLIENT_SECRET" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
+            --data-urlencode "grant_type=client_credentials" 2>&1)
+          oauth_status=$?
+          set -e
+
+          if [[ $oauth_status -ne 0 ]]; then
+            echo "::warning::Tailscale OAuth token request failed (curl error $oauth_status)"
+            echo "::warning::Response: $oauth_response"
+            echo "auth_key=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          access_token=$(echo "$oauth_response" | jq -r '.access_token' 2>/dev/null || echo "")
+
+          if [[ -z "$access_token" || "$access_token" == "null" ]]; then
+            echo "::warning::Unable to extract Tailscale OAuth access token from response"
+            echo "::warning::Response: $oauth_response"
+            echo "auth_key=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          set +e
+          key_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/tailnet/$TS_TAILNET/keys" \
+            -H "Authorization: Bearer $access_token" \
+            -H "Content-Type: application/json" \
+            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:server"]}}},"expirySeconds":1800,"description":"gcp-vm-deploy-onboarding"}' 2>&1)
+          key_status=$?
+          set -e
+
+          if [[ $key_status -ne 0 ]]; then
+            echo "::warning::Tailscale key generation request failed (curl error $key_status)"
+            echo "::warning::Response: $key_response"
+            echo "auth_key=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          auth_key=$(echo "$key_response" | jq -r '.key' 2>/dev/null || echo "")
+
+          if [[ -z "$auth_key" || "$auth_key" == "null" ]]; then
+            echo "::warning::Unable to extract Tailscale auth key from response"
+            echo "::warning::Response: $key_response"
+            echo "::warning::Tailscale onboarding will be skipped; manually configure Tailscale in VM"
+            echo "auth_key=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "::add-mask::$auth_key"
+          echo "auth_key=$auth_key" >> "$GITHUB_OUTPUT"
+
+      - name: Run post-provision onboarding on VM
+        working-directory: .
+        env:
+          TS_AUTH_KEY: ${{ steps.tailscale_auth.outputs.auth_key }}
+          NETDATA_CLAIM_TOKEN: ${{ secrets.NETDATA_CLAIM_TOKEN }}
+          NETDATA_CLAIM_ROOMS: ${{ secrets.NETDATA_CLAIM_ROOMS }}
+          NETDATA_CLAIM_URL: ${{ vars.NETDATA_CLAIM_URL }}
+        run: |
+          gcloud compute ssh "$VM_NAME" \
+            --project "$PROJECT_ID" \
+            --zone "$ZONE" \
+            --command "sudo TS_AUTH_KEY='$TS_AUTH_KEY' NETDATA_CLAIM_TOKEN='$NETDATA_CLAIM_TOKEN' NETDATA_CLAIM_ROOMS='$NETDATA_CLAIM_ROOMS' NETDATA_CLAIM_URL='$NETDATA_CLAIM_URL' bash -s" <<'EOF'
+          set -euo pipefail
+
+          if [[ -n "$TS_AUTH_KEY" ]]; then
+            echo "[onboarding] Starting Tailscale onboarding..."
+            sudo tailscale up --authkey="$TS_AUTH_KEY" --ssh --accept-dns=false --advertise-tags=tag:server
+            echo "[onboarding] Tailscale onboarding complete"
+          else
+            echo "[onboarding] Tailscale auth key not available; skipping Tailscale onboarding"
+          fi
+
+          echo "[onboarding] Starting Netdata onboarding..."
+          if [[ -n "$NETDATA_CLAIM_TOKEN" ]]; then
+            find_claim_cmd() {
+              if [[ -x "/opt/netdata/bin/netdata-claim.sh" ]]; then
+                echo "/opt/netdata/bin/netdata-claim.sh"
+              elif [[ -x "/usr/sbin/netdata-claim.sh" ]]; then
+                echo "/usr/sbin/netdata-claim.sh"
+              elif [[ -x "/usr/local/bin/netdata-claim" ]]; then
+                echo "/usr/local/bin/netdata-claim"
+              else
+                echo ""
+              fi
+            }
+
+            install_cloud_capable_netdata() {
+              echo "[onboarding] Installing cloud-capable Netdata package"
+              sudo apt-get update
+              sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y netdata netdata-core || true
+              sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y netdata netdata-core || true
+              sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y || true
+              curl -fsSL https://my-netdata.io/kickstart.sh -o /tmp/netdata-kickstart.sh
+              sudo sh /tmp/netdata-kickstart.sh --non-interactive --stable-channel
+            }
+
+            run_netdata_claim() {
+              local cmd="$1"
+              set +e
+              claim_output=$(sudo "$cmd" --claim-token "$NETDATA_CLAIM_TOKEN" --claim-rooms "$NETDATA_CLAIM_ROOMS" --claim-url "$NETDATA_CLAIM_URL" 2>&1)
+              claim_status=$?
+              set -e
+
+              if [[ $claim_status -ne 0 ]] && echo "$claim_output" | grep -qi "unrecognized option --claim-token"; then
+                set +e
+                claim_output=$(sudo "$cmd" -token "$NETDATA_CLAIM_TOKEN" -rooms "$NETDATA_CLAIM_ROOMS" -url "$NETDATA_CLAIM_URL" 2>&1)
+                claim_status=$?
+                set -e
+              fi
+            }
+
+            claim_cmd=""
+            claim_cmd="$(find_claim_cmd)"
+
+            # Debian's distro package can be built without Netdata Cloud support.
+            if [[ -n "$claim_cmd" ]] && sudo "$claim_cmd" -h 2>&1 | grep -qi "disable-cloud"; then
+              echo "[onboarding] Installed Netdata build does not support cloud claim; replacing package"
+              install_cloud_capable_netdata
+            fi
+
+            claim_cmd="$(find_claim_cmd)"
+
+            if [[ -n "$claim_cmd" ]]; then
+              run_netdata_claim "$claim_cmd"
+
+              if [[ $claim_status -ne 0 ]] && echo "$claim_output" | grep -qi "disable-cloud"; then
+                echo "[onboarding] Netdata claim failed due to cloud-disabled build; replacing package and retrying"
+                install_cloud_capable_netdata
+                claim_cmd="$(find_claim_cmd)"
+
+                if [[ -n "$claim_cmd" ]]; then
+                  run_netdata_claim "$claim_cmd"
+                else
+                  claim_output="netdata-claim script missing after reinstall"
+                  claim_status=1
+                fi
+              fi
+
+              if [[ $claim_status -eq 0 ]]; then
+                echo "[onboarding] Netdata cloud claim complete"
+              else
+                echo "$claim_output"
+                echo "[onboarding] Netdata cloud claim failed"
+              fi
+            else
+              echo "[onboarding] Netdata claim script not found; skipping claim"
+            fi
+          else
+            echo "[onboarding] Netdata claim token not available; skipping claim"
+          fi
+
+          echo "[onboarding] Verifying Docker and Netdata status..."
+          sudo systemctl is-active --quiet docker && echo "[onboarding] Docker is running" || echo "[onboarding] Docker is not running"
+          sudo systemctl is-active --quiet netdata && echo "[onboarding] Netdata is running" || echo "[onboarding] Netdata is not running"
+          
+          echo "[onboarding] Bootstrap and onboarding complete"
+          EOF
+
+      - name: Verify onboarding outcomes
+        working-directory: .
+        run: |
+          # Tailscale verification is optional (may be skipped if OAuth failed)
+          if gcloud compute ssh "$VM_NAME" \
+            --project "$PROJECT_ID" \
+            --zone "$ZONE" \
+            --command "sudo tailscale status --json >/tmp/tailscale-status.json && jq -e '.BackendState == \"Running\"' /tmp/tailscale-status.json >/dev/null 2>&1"; then
+            echo "[verify] Tailscale is running"
+          else
+            echo "[verify] Tailscale is not running (may be configured later manually)"
+          fi
+
+          # Netdata verification - check if service is running
+          if gcloud compute ssh "$VM_NAME" \
+            --project "$PROJECT_ID" \
+            --zone "$ZONE" \
+            --command "sudo systemctl is-active --quiet netdata"; then
+            echo "[verify] Netdata service is running"
+          else
+            echo "[verify] Netdata service is not running"
+          fi
+
+          if gcloud compute ssh "$VM_NAME" \
+            --project "$PROJECT_ID" \
+            --zone "$ZONE" \
+            --command "sudo test -s /var/lib/netdata/cloud.d/cloud.conf"; then
+            echo "[verify] Netdata cloud claim config present"
+          else
+            echo "[verify] Netdata cloud claim config missing"
+          fi
+
+  teardown:
+    name: Terraform Teardown
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' }}
+    runs-on: ubuntu-latest
+    environment: prod
+    defaults:
+      run:
+        working-directory: googleCloud
+
+    steps:
+      - name: Enforce destroy from main and production workflow ref
+        if: ${{ github.event.inputs.enforce_main_guard != 'false' }}
+        working-directory: .
+        run: |
+          if [[ "${{ github.ref }}" != "refs/heads/main" ]]; then
+            echo "Destroy is only allowed from refs/heads/main"
+            exit 1
+          fi
+
+          expected_workflow_ref="${{ github.repository }}/.github/workflows/gcp-vm-deploy.yml@refs/heads/main"
+          if [[ "${{ github.workflow_ref }}" != "$expected_workflow_ref" ]]; then
+            echo "Destroy is only allowed from workflow ref: $expected_workflow_ref"
+            echo "Actual workflow ref: ${{ github.workflow_ref }}"
+            exit 1
+          fi
+
+      - name: Guard override notice
+        if: ${{ github.event.inputs.enforce_main_guard == 'false' }}
+        working-directory: .
+        run: |
+          echo "WARNING: destroy main/workflow guard bypassed for this manual run"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required workflow variables
+        working-directory: .
+        run: |
+          missing=0
+          if [[ -z "${{ vars.GCP_WIF_PROVIDER }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_WIF_PROVIDER"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_SERVICE_ACCOUNT }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_SERVICE_ACCOUNT"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_PROJECT_ID }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_PROJECT_ID"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_BILLING_ACCOUNT_ID }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_BILLING_ACCOUNT_ID"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_REGION }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_REGION"
+            missing=1
+          fi
+          if [[ -z "${{ vars.GCP_ZONE }}" ]]; then
+            echo "Missing required repository/environment variable: GCP_ZONE"
+            missing=1
+          fi
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Authenticate to GCP via OIDC (shared identity)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate shared identity destroy permissions
+        run: |
+          token="$(gcloud auth print-access-token)"
+          allowed=$(curl -sS -X POST \
+            -H "Authorization: Bearer $token" \
+            -H "Content-Type: application/json" \
+            "https://cloudresourcemanager.googleapis.com/v1/projects/${{ vars.GCP_PROJECT_ID }}:testIamPermissions" \
+            -d '{"permissions":["compute.instances.delete","compute.firewalls.delete","resourcemanager.projects.setIamPolicy"]}' \
+            | jq -r '.permissions[]?')
+
+          if ! echo "$allowed" | grep -q "compute.instances.delete"; then
+            echo "Shared identity must include compute.instances.delete"
+            exit 1
+          fi
+
+          if ! echo "$allowed" | grep -q "compute.firewalls.delete"; then
+            echo "Shared identity must include compute.firewalls.delete"
+            exit 1
+          fi
+
+          if echo "$allowed" | grep -q "resourcemanager.projects.setIamPolicy"; then
+            echo "Shared identity must not include unrelated admin permissions"
+            exit 1
+          fi
+
+      - name: Terraform init
+        env:
+          TF_STATE_BUCKET: ${{ vars.GCP_TF_STATE_BUCKET }}
+        run: |
+          : "${TF_STATE_BUCKET:?Set GCP_TF_STATE_BUCKET to the existing state bucket}"
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+
+      - name: Terraform validate
+        run: terraform validate
+
+      - name: Terraform destroy
+        env:
+          TF_VAR_budget_currency_code: ${{ vars.GCP_BUDGET_CURRENCY_CODE }}
+        run: |
+          : "${TF_VAR_budget_currency_code:?Set GCP_BUDGET_CURRENCY_CODE to the billing account currency}"
+          terraform destroy -input=false -lock-timeout=300s -auto-approve \
+            -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
+            -var="billing_account_id=${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            -var="region=${{ vars.GCP_REGION }}" \
+            -var="zone=${{ vars.GCP_ZONE }}"

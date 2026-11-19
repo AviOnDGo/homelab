@@ -1,0 +1,60 @@
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    env_file: .env
+    environment:
+      - OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL}
+      - OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE}
+    # ports:
+    #   - "11000:11434"
+    security_opt:
+      - no-new-privileges
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_NICE
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # Optional resource constraints (disabled by default):
+    # mem_limit: ${OLLAMA_MEMORY_LIMIT}
+    # cpus: ${OLLAMA_CPU_LIMIT}
+    # GPU — uncomment ONE block below in the deploy.resources.reservations
+    # section to enable hardware acceleration, then restart the container.
+    # NVIDIA (requires NVIDIA Container Toolkit):
+    #   https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html#installation
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['all']
+              capabilities: [gpu]
+    ##
+    ## AMD ROCm (requires ROCm-capable GPU and drivers):
+    ##   https://rocm.docs.amd.com/projects/install-on-linux/en/latest/
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: amdgpu
+    #           capabilities: [gpu]
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+networks:
+  ai_network:
+    external: true
+    name: ai_network
+
+volumes:
+  ollama_data:
+    name: ollama_data

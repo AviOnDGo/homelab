@@ -1,0 +1,35 @@
+services:
+  hermes-work:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - API_SERVER_ENABLED=true
+      - HERMES_DASHBOARD=true
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD}
+    # ports:
+    #   - 8642:8642
+    #   - 9119:9119
+    volumes:
+      - filedata:/opt/data
+      - ${OBSIDIAN_VAULT_PATH}:/opt/data/workspace/secondBrain
+    command: gateway run
+    networks:
+      - default
+      - security_network
+    restart: unless-stopped
+
+networks:
+  default:
+    external: true
+    name: ai_network
+  security_network:
+    external: true
+    name: security_network
+
+volumes:
+  filedata:
+    name: hermes_filedata

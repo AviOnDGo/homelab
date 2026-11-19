@@ -1,0 +1,103 @@
+name: Semantic Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish instead of printing a read-only preview (requires activation)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: semantic-release-main
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm test
+      - run: python3 -m unittest discover -s .secret-scanning/tests -v
+
+  gitleaks:
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pull-requests: write # Required by the pinned reusable scanner.
+    uses: AviOnDGo/AviOnDGo/.github/workflows/secret-scan.yml@6e0332715bb6a5ff7947b0268243d02790e12fce
+
+  preview:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && !inputs.publish
+    needs: [validate, gitleaks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - name: Verify baseline and branch tip
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BASELINE_SHA: ${{ vars.RELEASE_BASELINE_SHA }}
+        run: bash scripts/release/guard.sh
+      - if: steps.guard.outputs.current == 'true'
+        run: node scripts/release/preview.mjs
+
+  publish:
+    if: >-
+      github.ref == 'refs/heads/main' && vars.RELEASES_ENABLED == 'true' &&
+      needs.validate.result == 'success' && needs.gitleaks.result == 'success' &&
+      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.publish))
+    needs: [validate, gitleaks]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.22.3'
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - name: Verify baseline and branch tip
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BASELINE_SHA: ${{ vars.RELEASE_BASELINE_SHA }}
+        run: bash scripts/release/guard.sh
+      - name: Publish release
+        id: semantic-release
+        if: steps.guard.outputs.current == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./node_modules/.bin/semantic-release
+      - name: Check for partial publication
+        if: failure() && steps.semantic-release.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BASELINE_SHA: ${{ vars.RELEASE_BASELINE_SHA }}
+        run: bash scripts/release/guard.sh verify-tags

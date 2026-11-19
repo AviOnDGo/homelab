@@ -1,0 +1,121 @@
+services:
+  filedata-backup:
+    build: .
+    image: homelab/filedata-backup:local
+    container_name: filedata-backup
+    env_file:
+      - .env
+    volumes:
+      # Mount volumes to back up (read-only for safety)
+      ## AI Services
+      - hermes_filedata:/backup-sources/hermes:ro
+      - n8n_filedata:/backup-sources/n8n:ro
+      - omniroute_filedata:/backup-sources/omniroute:ro
+      - openwebui_filedata:/backup-sources/openwebui:ro
+      ## Container Services
+      # - syncthing_filedata:/backup-sources/syncthing:ro
+      ## Gaming Services
+      - romm_filedata:/backup-sources/romm:ro
+      ## Knowledge Services
+      # - affine_filedata:/backup-sources/affine:ro
+      - paperless_filedata:/backup-sources/paperless:ro
+      - radicale_filedata:/backup-sources/radicale:ro
+      ## Media Services
+      - immich_library:/backup-sources/immich-library:ro
+      - immich_profile:/backup-sources/immich-profile:ro
+      - immich_upload:/backup-sources/immich-upload:ro
+      # - jackett_filedata:/backup-sources/jackett:ro
+      # - radarr_filedata:/backup-sources/radarr:ro
+      # - sonarr_filedata:/backup-sources/sonarr:ro
+      # - transmission_filedata:/backup-sources/transmission:ro
+      ## Security Services
+      - npm_filedata:/backup-sources/npm:ro
+      # GPG secrets
+      - gpg-secrets:/run/secrets:ro
+    command: >
+      sh -c "
+      /usr/local/bin/configure-rclone.sh &&
+      echo '# Crontab for filedata backups' > /etc/crontabs/root &&
+      echo '# AI Services' >> /etc/crontabs/root &&
+      echo '${HERMES_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh hermes' >> /etc/crontabs/root &&
+      echo '${N8N_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh n8n' >> /etc/crontabs/root &&
+      echo '${OMNIROUTE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh omniroute' >> /etc/crontabs/root &&
+      echo '${OPENWEBUI_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh openwebui' >> /etc/crontabs/root &&
+      echo '# Gaming Services' >> /etc/crontabs/root &&
+      echo '${ROMM_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh romm' >> /etc/crontabs/root &&
+      echo '# Knowledge Services' >> /etc/crontabs/root &&
+      echo '${PAPERLESS_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh paperless' >> /etc/crontabs/root &&
+      echo '${RADICALE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh radicale' >> /etc/crontabs/root &&
+      echo '# Media Services' >> /etc/crontabs/root &&
+      echo '${IMMICH_LIBRARY_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh immich-library' >> /etc/crontabs/root &&
+      echo '${IMMICH_PROFILE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh immich-profile' >> /etc/crontabs/root &&
+      echo '${IMMICH_UPLOAD_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh immich-upload' >> /etc/crontabs/root &&
+      echo '# Security Services' >> /etc/crontabs/root &&
+      echo '${NPM_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh npm' >> /etc/crontabs/root &&
+      touch /var/log/cron.log &&
+      crond -L /var/log/cron.log &&
+      tail -f /var/log/cron.log
+      "
+    network_mode: bridge
+    restart: unless-stopped
+
+volumes:
+  ## AI Services
+  hermes_filedata:
+    name: hermes_filedata
+    external: true
+  n8n_filedata:
+    external: true
+    name: n8n_filedata
+  omniroute_filedata:
+    external: true
+    name: omniroute_filedata
+  openwebui_filedata:
+    external: true
+    name: openwebui_filedata
+  ## Container Services
+  # syncthing_filedata:
+  #   external: true
+  #   name: syncthing_filedata
+  ## Gaming Services
+  romm_filedata:
+    external: true
+    name: romm_filedata
+  ## Knowledge Services
+  # affine_filedata:
+  #   external: true
+  #   name: affine_filedata
+  paperless_filedata:
+    external: true
+    name: paperless_filedata
+  radicale_filedata:
+    external: true
+    name: radicale_filedata
+  ## Media Services
+  immich_library:
+    external: true
+    name: immich_library
+  immich_profile:
+    external: true
+    name: immich_profile
+  immich_upload:
+    external: true
+    name: immich_upload
+  # jackett_filedata:
+  #   external: true
+  #   name: jackett_filedata
+  # radarr_filedata:
+  #   external: true
+  #   name: radarr_filedata
+  # sonarr_filedata:
+  #   external: true
+  #   name: sonarr_filedata
+  # transmission_filedata:
+  #   external: true
+  #   name: transmission_filedata
+  ## Security Services
+  npm_filedata:
+    name: npm_filedata
+    external: true
+  gpg-secrets:
+    driver: local

@@ -1,0 +1,50 @@
+services:
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: openwebui
+    env_file: .env
+    # ports:
+    #   - "8080:8080"
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - DO_NOT_TRACK=true
+      - SCARF_NO_ANALYTICS=true
+      - ANONYMIZED_TELEMETRY=false
+      - WEBUI_AUTH=true
+      - WEBUI_SESSION_COOKIE_SECURE=true
+      - WEBUI_AUTH_COOKIE_SECURE=true
+      # External egress only – routes via Gluetun; ollama/self stay off-proxy
+      - http_proxy=http://gluetun:8888
+      - https_proxy=http://gluetun:8888
+      - no_proxy=${WEBUI_NO_PROXY:-localhost,127.0.0.1,ollama,openwebui,opencode,hermes}
+      - NO_PROXY=${WEBUI_NO_PROXY:-localhost,127.0.0.1,ollama,openwebui,opencode,hermes}
+    security_opt:
+      - no-new-privileges
+    cap_drop:
+      - ALL
+    ## [NOTE] Volume data is backed up by the filedata backup service (backupServices/filedata/)
+    volumes:
+      - openwebui:/app/backend/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ai_network
+      - security_network
+    restart: unless-stopped
+
+volumes:
+  openwebui:
+    external: true
+    name: openwebui_filedata
+
+networks:
+  ai_network:
+    external: true
+    name: ai_network
+  security_network:
+    external: true
+    name: security_network

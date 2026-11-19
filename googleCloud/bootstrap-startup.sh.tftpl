@@ -1,0 +1,235 @@
+#!/bin/bash
+set -Eeuo pipefail
+export HOME=/root
+
+BOOTSTRAP_STATE_DIR="/var/lib/homelab-bootstrap"
+BOOTSTRAP_STATUS_FILE="$BOOTSTRAP_STATE_DIR/status"
+BOOTSTRAP_LOG_FILE="/var/log/homelab-bootstrap.log"
+CURRENT_PHASE="initializing"
+
+mkdir -p "$BOOTSTRAP_STATE_DIR"
+touch "$BOOTSTRAP_STATUS_FILE"
+exec > >(tee -a "$BOOTSTRAP_LOG_FILE" | logger -t homelab-bootstrap -s 2>/dev/console) 2>&1
+
+log() {
+  echo "[bootstrap] $1"
+}
+
+write_status() {
+  printf '%s\n' "$1" > "$BOOTSTRAP_STATUS_FILE"
+}
+
+mark_phase_start() {
+  CURRENT_PHASE="$1"
+  write_status "running phase=$CURRENT_PHASE"
+  log "Starting phase: $CURRENT_PHASE"
+}
+
+mark_phase_done() {
+  write_status "completed phase=$CURRENT_PHASE"
+  log "Completed phase: $CURRENT_PHASE"
+}
+
+trap 'exit_code=$?; write_status "failed phase=$CURRENT_PHASE exit_code=$exit_code line=$LINENO"; log "Bootstrap failed in phase $CURRENT_PHASE at line $LINENO (exit $exit_code)"' ERR
+trap 'exit_code=$?; if [[ $exit_code -eq 0 ]]; then write_status "completed"; else write_status "failed phase=$CURRENT_PHASE exit_code=$exit_code"; fi' EXIT
+
+# Optimize kernel parameters for low memory
+mark_phase_start sysctl
+echo 'vm.swappiness=10' >> /etc/sysctl.conf
+echo 'vm.dirty_ratio=5' >> /etc/sysctl.conf
+echo 'vm.dirty_background_ratio=2' >> /etc/sysctl.conf
+sysctl -p
+mark_phase_done
+
+# Create swap to help with memory constraints
+mark_phase_start swap
+if [ ! -f /swapfile ]; then
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+fi
+if ! swapon --show | grep -q '^/swapfile'; then
+  swapon /swapfile
+fi
+if ! grep -q '^/swapfile none swap sw 0 0$' /etc/fstab; then
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+mark_phase_done
+
+## Update system with reduced memory usage
+mark_phase_start apt-base
+apt-get update
+export DEBIAN_FRONTEND=noninteractive
+mark_phase_done
+
+## Install Dependencies with minimal packages
+mark_phase_start base-packages
+apt-get install -y --no-install-recommends ca-certificates curl gnupg lsb-release btop git unzip openssh-client jq
+mark_phase_done
+
+# Docker installation optimized for low resources
+mark_phase_start docker
+mkdir -p /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | \
+  gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+echo "deb [arch=$(dpkg --print-architecture) \
+  signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/debian \
+  $(lsb_release -cs) stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+apt-get update
+apt-get install -y --no-install-recommends docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Configure Docker for low memory usage
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<EOF
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "storage-driver": "overlay2",
+  "default-ulimits": {
+    "memlock": {
+      "Hard": -1,
+      "Name": "memlock",
+      "Soft": -1
+    }
+  }
+}
+EOF
+
+TARGET_USER="$(getent passwd 1000 | cut -d: -f1 || true)"
+if [ -n "$TARGET_USER" ]; then
+  usermod -aG docker "$TARGET_USER"
+fi
+
+systemctl restart docker
+mark_phase_done
+
+## Install Tailscale package only; onboarding is workflow-driven to avoid metadata secrets.
+mark_phase_start tailscale
+curl -fsSL https://tailscale.com/install.sh | sh
+mark_phase_done
+
+## Install Netdata agent with low-resource defaults; cloud claim is workflow-driven.
+mark_phase_start netdata
+apt-get install -y --no-install-recommends netdata
+mkdir -p /etc/netdata
+cat > /etc/netdata/netdata.conf <<EOF
+[global]
+    memory mode = ram
+    history = 3600
+    update every = 2
+EOF
+systemctl enable --now netdata || true
+mark_phase_done
+
+metadata_get() {
+  local key="$1"
+  curl -fsS -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/$key" || true
+}
+
+metadata_project_id() {
+  curl -fsS -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/project/project-id"
+}
+
+metadata_token() {
+  curl -fsS -H "Metadata-Flavor: Google" \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
+    | sed -n 's/.*"access_token"[ ]*:[ ]*"\([^"]*\)".*/\1/p'
+}
+
+fetch_secret_value() {
+  local secret_name="$1"
+  local project_id
+  local access_token
+  local response
+
+  if [ -z "$secret_name" ]; then
+    log "[fetch_secret_value] Secret name is empty"
+    return 1
+  fi
+
+  project_id="$(metadata_project_id)"
+  access_token="$(metadata_token)"
+
+  if [ -z "$project_id" ]; then
+    log "[fetch_secret_value] Project id metadata is empty"
+    return 1
+  fi
+
+  if [ -z "$access_token" ]; then
+    log "[fetch_secret_value] Access token metadata is empty"
+    return 1
+  fi
+
+  if ! response="$(curl -fsS -H "Authorization: Bearer $access_token" \
+    "https://secretmanager.googleapis.com/v1/projects/$project_id/secrets/$secret_name/versions/latest:access")"; then
+    log "[fetch_secret_value] Failed to fetch secret $secret_name"
+    return 1
+  fi
+
+  echo "$response" | sed -n 's/.*"data"[ ]*:[ ]*"\([^\"]*\)".*/\1/p' \
+    | tr '_-' '/+' \
+    | base64 -d
+}
+
+# Clean up to free memory
+mark_phase_start apt-cleanup
+apt-get autoremove -y
+apt-get autoclean
+mark_phase_done
+
+## Create a temp directory for cloning the repo
+cd /tmp
+
+# Optional authenticated clone with runtime secret retrieval.
+HOMELAB_GIT_URL="${bootstrap_git_repo_ssh_url}"
+if [ -z "$HOMELAB_GIT_URL" ]; then
+  HOMELAB_GIT_URL="$(metadata_get homelab-git-url)"
+fi
+
+HOMELAB_GIT_DEPLOY_KEY_SECRET="${bootstrap_git_deploy_key_secret_name}"
+if [ -z "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
+  HOMELAB_GIT_DEPLOY_KEY_SECRET="$(metadata_get homelab-git-deploy-key-secret)"
+fi
+
+if [ -n "$HOMELAB_GIT_URL" ]; then
+  mark_phase_start git-clone
+  repo_name="$(basename "$HOMELAB_GIT_URL")"
+  repo_dir="$(echo "$repo_name" | sed 's/\.git$//')"
+
+  if [ -d "$repo_dir/.git" ]; then
+    log "Repository already exists at /tmp/$repo_dir; skipping clone"
+  elif [ -n "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
+    key_file="/tmp/homelab_deploy_key"
+    if fetch_secret_value "$HOMELAB_GIT_DEPLOY_KEY_SECRET" > "$key_file"; then
+      chmod 600 "$key_file"
+      mkdir -p /root/.ssh
+      touch /root/.ssh/known_hosts
+      ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null || true
+
+      GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts" \
+        git clone --depth 1 "$HOMELAB_GIT_URL" \
+        && log "Git clone completed successfully" \
+        || log "Git clone failed; continuing bootstrap"
+      shred -u "$key_file" || rm -f "$key_file"
+    else
+      rm -f "$key_file"
+      log "Unable to retrieve deploy key secret; skipping clone"
+    fi
+  else
+    log "No deploy key secret configured; skipping clone"
+  fi
+  mark_phase_done
+fi
+
+write_status "completed phase=bootstrap"
+
+## Avoid forced reboot in startup script to keep boot idempotent.

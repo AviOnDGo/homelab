@@ -1,0 +1,27 @@
+services:
+  opencode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: homelab/opencode:1.19.4
+    container_name: opencode
+    command: ["web", "--hostname", "0.0.0.0", "--port", "4096"]
+    environment:
+      OPENCODE_SERVER_USERNAME: ${OPENCODE_SERVER_USERNAME:-}
+      OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:-}
+    # ports:
+    #   - "127.0.0.1:4096:4096"
+    volumes:
+      - type: bind
+        source: ${OBSIDIAN_VAULT_PATH}
+        target: /workspace
+        bind:
+          create_host_path: false
+    networks:
+      - ai_network
+    restart: unless-stopped
+
+networks:
+  ai_network:
+    external: true
+    name: ai_network

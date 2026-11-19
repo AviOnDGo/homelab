@@ -1,0 +1,26 @@
+name: freshrss
+
+services:
+  freshrss:
+    image: freshrss/freshrss:latest
+    container_name: freshrss
+    # ports:
+    #   - '80:80'  # Access via Nginx Proxy Manager
+    environment:
+      - TZ=UTC
+      - CRON_MIN=*/15
+    volumes:
+      - freshrss_filedata:/var/www/FreshRSS
+    networks:
+      - knowledge_network
+    restart: unless-stopped
+
+networks:
+  knowledge_network:
+    external: true
+    name: knowledge_network
+
+volumes:
+  freshrss_filedata:
+    external: true
+    name: freshrss_filedata

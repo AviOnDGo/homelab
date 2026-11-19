@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+
+  # homepage:
+  #   image: ghcr.io/gethomepage/homepage:latest
+  #   container_name: homepage
+  #   environment:
+  #     HOMEPAGE_ALLOWED_HOSTS: 'homepage.example.com' # required, may need port. See gethomepage.dev/installation/#homepage_allowed_hosts
+  #     PUID: 1000 # optional, your user id
+  #     PGID: 1000 # optional, your group id
+  #   ports:
+  #     - 9001:3000
+  #   volumes:
+  #     - ~/.homepage:/app/config # Make sure your local config directory exists
+  #     - /var/run/docker.sock:/var/run/docker.sock:ro # optional, for docker integrations
+  #   restart: unless-stopped
+
+  # Preffered not to use watchtower since it may upgrade the service automatically to an unsupported version
+  watchtower:
+    environment:
+      WATCHTOWER_CLEANUUP: "true"
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped

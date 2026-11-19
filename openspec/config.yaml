@@ -1,0 +1,59 @@
+schema: spec-driven
+
+# Project context
+context: |
+  Project: Personal Homelab Infrastructure
+  Tech stack: Docker, Docker Compose, Linux (Ubuntu/Debian)
+  Container runtime: Docker (primary) with Podman fallback
+  Architecture: Microservices with isolated networks per category
+  
+  Service Categories:
+  - Core Infrastructure: Homepage, Watchtower, Nginx Proxy Manager
+  - Media Services: Jellyfin, Sonarr, Radarr, Jackett, Transmission, Invidious, Immich
+  - Knowledge Services: AFFiNE, FreshRSS
+  - AI Services: Ollama, Open WebUI
+  - Security Services: Vaultwarden, Pi-hole, Gluetun VPN
+  - Backup Infrastructure: PostgreSQL backups, filesystem backups, multi-cloud sync
+  - Financial Services: Firefly III
+  - Gaming Services: RomM
+  - Cloud Integration: Terraform, Tailscale VPN
+  
+  Conventions:
+  - All services use docker-compose.yml v3.8+
+  - Environment variables in .env files (never committed)
+  - Network isolation between service categories
+  - Automated backups with GPG encryption (AES256)
+  - Multi-cloud backup storage (Dropbox, Google Drive, OneDrive)
+  - Comprehensive documentation in docs/ directory
+  
+  Security:
+  - Secrets stored in Docker volumes or Vaultwarden
+  - Network isolation via Docker networks
+  - SSL termination via Nginx Proxy Manager
+  - VPN integration for privacy-sensitive services
+
+# Per-artifact rules
+rules:
+  proposal:
+    - Keep proposals focused on single service category or infrastructure improvement
+    - Always include impact on existing services
+    - Document backup/restore implications
+  
+  specs:
+    - Use GIVEN-WHEN-THEN format for scenarios
+    - Include network isolation requirements
+    - Document data persistence requirements
+    - Specify backup requirements for stateful services
+  
+  design:
+    - Document Docker network architecture
+    - Specify volume mount requirements
+    - Include resource requirements (CPU, memory, GPU if applicable)
+    - Document dependencies on other services
+  
+  tasks:
+    - Break tasks into verification and implementation chunks
+    - Test tasks should be separate from implementation tasks
+    - Include rollback procedures for risky changes
+    - Maximum 2 hours per task
+

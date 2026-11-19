@@ -1,0 +1,30 @@
+services:
+  rtmp:
+    # environment:
+    #   PUID: 1000
+    #   GUID: 1000
+    image: tiangolo/nginx-rtmp
+    container_name: rtmp
+    ports:
+      - 8089:1935
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    volumes:
+      # Mount nginx-rtmp config
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+
+      # Mount recordings directory
+      # - /media/recordings:/var/recordings
+
+    restart: unless-stopped
+
+networks:
+  default:
+    name: streaming

@@ -1,0 +1,56 @@
+services:
+  syncserver:
+    image: ghcr.io/mozilla-services/syncstorage-rs/syncserver-postgres:0.22.0
+    platform: linux/amd64
+    container_name: syncserver
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SYNC_HOST: "0.0.0.0"
+      SYNC_PORT: "8000"
+      SYNC_SYNCSTORAGE__DATABASE_URL: "postgres://sync:${SYNC_POSTGRES_PASSWORD}@firefoxsync-db:5432/syncserver"
+      SYNC_TOKENSERVER__DATABASE_URL: "postgres://sync:${SYNC_POSTGRES_PASSWORD}@firefoxsync-db:5432/syncserver"
+      SYNC_TOKENSERVER__ENABLED: "true"
+      SYNC_TOKENSERVER__RUN_MIGRATIONS: "true"
+      SYNC_TOKENSERVER__FXA_EMAIL_DOMAIN: "api.accounts.firefox.com"
+      SYNC_TOKENSERVER__FXA_OAUTH_SERVER_URL: "https://oauth.accounts.firefox.com"
+      SYNC_HUMAN_LOGS: "false"
+      RUST_LOG: "info"
+    depends_on:
+      firefoxsync-db:
+        condition: service_healthy
+    # ports:
+    #   - "8000:8000"  # Access via Nginx Proxy Manager
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/__heartbeat__"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  firefoxsync-db:
+    image: postgres:16
+    container_name: firefoxsync-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sync
+      POSTGRES_PASSWORD: ${SYNC_POSTGRES_PASSWORD}
+      POSTGRES_DB: syncserver
+    volumes:
+      - firefoxsync_postgresdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sync -d syncserver"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  default:
+    name: security_network
+    external: true
+
+volumes:
+  firefoxsync_postgresdata:
+    name: firefoxsync_postgresdata

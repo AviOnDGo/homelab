@@ -1,0 +1,72 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Deploy Tailscale ACLs
+
+# Controls when the workflow will run
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run tests against'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - prod
+  push:
+    branches:
+      - main
+    paths:
+      - "securityServices/tailscale/**.tf"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.environment || 'prod' }}
+    defaults:
+      run:
+        working-directory: securityServices/tailscale
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Write GCP credentials
+        run: echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-credentials.json
+
+      - name: Terraform Init
+        run: |
+          : "${TF_STATE_BUCKET:?Set TAILSCALE_TF_STATE_BUCKET to the existing state bucket}"
+          terraform init -input=false -backend-config="bucket=$TF_STATE_BUCKET"
+        env:
+          TF_STATE_BUCKET: ${{ vars.TAILSCALE_TF_STATE_BUCKET }}
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-credentials.json
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Remove stale device tags from state
+        run: |
+          terraform state list 2>/dev/null | grep 'tailscale_device_tags' | while read -r resource; do
+            terraform state rm "$resource" || true
+          done
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-credentials.json
+
+      - name: Terraform Apply
+        run: |
+          terraform apply -auto-approve -input=false \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="credentials_file=/tmp/gcp-credentials.json" \
+            -var="tailscale_oauth_client_id=${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}" \
+            -var="tailscale_oauth_client_secret=${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}" \
+            -var="tailscale_tailnet=${{ secrets.TAILSCALE_TAILNET }}" \
+            -var="tailscale_admin_email=${{ secrets.TAILSCALE_ADMIN_EMAIL }}" \
+            -var="tailscale_privileged_email=${{ secrets.TAILSCALE_PRIVILEGED_EMAIL }}"
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-credentials.json

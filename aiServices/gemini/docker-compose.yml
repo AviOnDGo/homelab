@@ -1,0 +1,32 @@
+services:
+  gemini:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: homelab/gemini-cli:0.65.0
+    container_name: gemini
+    user: "${GEMINI_UID:-1000}:${GEMINI_GID:-1000}"
+    working_dir: /workspace
+    entrypoint: ["sleep"]
+    command: ["infinity"]
+    environment:
+      HOME: /tmp
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Set GEMINI_API_KEY in aiServices/gemini/.env}
+    volumes:
+      - type: bind
+        source: ${OBSIDIAN_VAULT_PATH:?Set OBSIDIAN_VAULT_PATH in aiServices/gemini/.env}
+        target: /workspace
+        bind:
+          create_host_path: false
+    networks:
+      - ai_network
+    security_opt:
+      - no-new-privileges
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+networks:
+  ai_network:
+    external: true
+    name: ai_network

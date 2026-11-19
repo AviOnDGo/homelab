@@ -1,0 +1,28 @@
+services:
+  firefox:
+    image: jlesage/firefox:latest
+    container_name: firefox
+    restart: unless-stopped
+    shm_size: "4gb"
+    environment:
+      WEB_AUDIO: 1
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+    volumes:
+      - filedata:/config
+    ports:
+      - 3000:5800  # HTTP noVNC — web UI (also used as NPM upstream)
+      # - 5900:5900  # VNC — direct VNC client access
+
+volumes:
+  filedata:
+    external: true
+    name: firefox_filedata
+
+networks:
+  default:
+    external: true
+    name: container_network

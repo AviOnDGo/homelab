@@ -1,0 +1,107 @@
+name: paperless
+
+services:
+  # ============================================
+  # REDIS BROKER
+  # ============================================
+  paperless-broker:
+    image: docker.io/library/redis:latest
+    container_name: paperless-broker
+    restart: unless-stopped
+    networks:
+      - knowledge_network
+
+  # ============================================
+  # POSTGRESQL DATABASE
+  # ============================================
+  paperless-db:
+    image: docker.io/library/postgres:latest
+    container_name: paperless-db
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    restart: unless-stopped
+    volumes:
+      - postgresdata:/var/lib/postgresql
+    env_file: .env
+    networks:
+      - knowledge_network
+
+  # ============================================
+  # GOTENBERG - Office Document Conversion
+  # ============================================
+  paperless-gotenberg:
+    image: docker.io/gotenberg/gotenberg:latest
+    container_name: paperless-gotenberg
+    restart: unless-stopped
+    command:
+      - "gotenberg"
+      - "--chromium-disable-javascript=true"
+      - "--chromium-allow-list=file:///tmp/.*"
+    networks:
+      - knowledge_network
+
+  # ============================================
+  # TIKA - Advanced Document Parsing
+  # ============================================
+  paperless-tika:
+    image: docker.io/apache/tika:latest
+    container_name: paperless-tika
+    restart: unless-stopped
+    networks:
+      - knowledge_network
+
+  # ============================================
+  # PAPERLESS-NGX WEBSERVER
+  # ============================================
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    container_name: paperless
+    restart: unless-stopped
+    depends_on:
+      - paperless-db
+      - paperless-broker
+      - paperless-gotenberg
+      - paperless-tika
+    # ports:
+    #   - "${PAPERLESS_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    volumes:
+      - filedata:/usr/src/paperless/media
+      - paperless_data:/usr/src/paperless/data
+      - paperless_export:/usr/src/paperless/export
+      - paperless_consume:/usr/src/paperless/consume
+    env_file: .env
+    networks:
+      - ai_network
+      - knowledge_network
+
+# ============================================
+# NETWORKS
+# ============================================
+networks:
+  ai_network:
+    external: true
+    name: ai_network
+  knowledge_network:
+    external: true
+    name: knowledge_network
+
+# ============================================
+# VOLUMES
+# ============================================
+volumes:
+  postgresdata:
+    name: paperless_postgresdata
+  filedata:
+    name: paperless_filedata
+    external: true
+  paperless_data:
+    name: paperless_data
+  paperless_export:
+    name: paperless_export
+  paperless_consume:
+    name: paperless_consume

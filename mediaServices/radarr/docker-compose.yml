@@ -1,0 +1,31 @@
+services:
+  radarr:
+    image: linuxserver/radarr:latest
+    container_name: radarr
+    # ports:
+    #   - "7878:7878"
+    environment:
+      http_proxy: http://gluetun:8888
+      https_proxy: http://gluetun:8888
+      no_proxy: localhost,127.0.0.1
+    volumes:
+      - filedata:/config
+      - "${HOME}/.media/.downloads:/downloads"
+      - "${HOME}/.media/Movies:/movies"
+    networks:
+      - default
+      - security_network
+    restart: unless-stopped
+
+networks:
+  default:
+    external: true
+    name: media_network
+  security_network:
+    external: true
+    name: security_network
+
+volumes:
+  filedata:
+    external: true
+    name: radarr_filedata

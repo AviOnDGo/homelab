@@ -1,0 +1,45 @@
+services:
+  kasm:
+    image: lscr.io/linuxserver/kasm:latest
+    container_name: kasm
+    restart: unless-stopped
+    shm_size: "1gb"
+    # cap_add:
+    #   - SYS_ADMIN   # required for cgroups/namespaces (Docker-in-Docker)
+    #   - NET_ADMIN   # workspace network setup
+    #   - MKNOD       # device node creation inside workspaces
+    #   - SYS_PTRACE  # workspace process inspection
+    #   - SETUID
+    #   - SETGID
+    privileged: true  # required for cgroups/namespaces (Docker-in-Docker)
+    # security_opt:
+    #   - apparmor:rootlesskit
+    # cgroup: host   # required for cgroupv2 — share host cgroup namespace for workspace management
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: UTC
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    volumes:
+      - kasm_filedata:/opt/kasm
+      # - /sys/fs/cgroup:/sys/fs/cgroup:rw  # required for cgroup management (workspace launching)
+    # ports:
+    #   - 3000:3000  # Access via Nginx Proxy Manager (HTTPS)
+    networks:
+      - container_network
+
+networks:
+  container_network:
+    external: true
+    name: container_network
+
+volumes:
+  kasm_filedata:
+    external: true
+    name: kasm_filedata

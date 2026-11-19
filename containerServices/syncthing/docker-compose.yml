@@ -1,0 +1,30 @@
+services:
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    restart: unless-stopped
+    volumes:
+      - syncthing_filedata:/config
+      - syncthing_data:/var/syncthing   # Access through NPM when possible.
+    # ports:
+    #   - 8384:8384
+    #   - 22000:22000/tcp
+    #   - 22000:22000/udp
+    #   - 21027:21027/udp
+
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+
+volumes:
+  syncthing_filedata:
+    name: syncthing_filedata
+    external: true
+  syncthing_data:
+    name: syncthing_data
+
+networks:
+  default:
+    name: container_network
+    external: true

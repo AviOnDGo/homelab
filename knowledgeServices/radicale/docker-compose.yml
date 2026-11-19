@@ -1,0 +1,26 @@
+name: radicale
+
+services:
+  radicale:
+    image: ghcr.io/kozea/radicale:stable
+    container_name: radicale
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - RADICALE_CONFIG=/var/lib/radicale/.config
+    # ports:
+    #   - "5232:5232" # Access via Nginx Proxy Manager
+    volumes:
+      - radicale_filedata:/var/lib/radicale
+    networks:
+      - knowledge_network
+
+networks:
+  knowledge_network:
+    external: true
+    name: knowledge_network
+
+volumes:
+  radicale_filedata:
+    external: true
+    name: radicale_filedata

@@ -1,0 +1,61 @@
+services:
+  romm:
+    image: rommapp/romm:latest
+    container_name: romm
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+      - DB_HOST=romm-db
+      - DB_NAME=${DB_NAME} # Should match POSTGRES_DB in romm-db
+      - DB_USER=${DB_USER} # Should match POSTGRES_USER in romm-db
+      - DB_PASSWD=${DB_PASSWD} # Should match POSTGRES_PASSWORD in romm-db
+      - IGDB_CLIENT_ID=${IGDB_CLIENT_ID}
+      - IGDB_CLIENT_SECRET=${IGDB_CLIENT_SECRET}
+      - ROMM_AUTH_SECRET_KEY=${ROMM_AUTH_SECRET_KEY} # Generate a key with `openssl rand -hex 32`
+      - SCREENSCRAPER_USER=${SCREENSCRAPER_USER} # These are the recommended metadata providers
+      - SCREENSCRAPER_PASSWORD=${SCREENSCRAPER_PASSWORD} # https://docs.romm.app/latest/getting-started/metadata-providers/#screenscraper
+      - RETROACHIEVEMENTS_API_KEY=${RETROACHIEVEMENTS_API_KEY} # https://docs.romm.app/latest/getting-started/metadata-providers/#retroachievements
+      - STEAMGRIDDB_API_KEY=${STEAMGRIDDB_API_KEY} # https://docs.romm.app/latest/getting-started/metadata-providers/#steamgriddb
+      - HASHEOUS_API_ENABLED=${HASHEOUS_API_ENABLED} # https://docs.romm.app/latest/getting-started/metadata-providers/#hasheous
+      - ROMM_DB_DRIVER=postgresql
+      - DB_PORT=${DB_PORT:-5432} # Should match POSTGRES_PORT in postgres db
+    volumes:
+      # - romm_redis_data:/redis-data # Cached data for background tasks
+      - romm_filedata:/romm
+    # ports:
+    #   - 2000:8080 # Access via Nginx Proxy Manager
+    depends_on:
+      romm-db:
+        condition: service_healthy
+        restart: true
+
+  romm-db:
+    image: postgres:16
+    container_name: romm-db
+    environment:
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWD}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+    volumes:
+        - romm_postgresdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  # romm_redis_data:
+  romm_filedata:
+    external: true
+    name: romm_filedata
+  romm_postgresdata:
+    name: romm_postgresdata
+
+networks:
+  default:
+    name: games_network
+    external: true
