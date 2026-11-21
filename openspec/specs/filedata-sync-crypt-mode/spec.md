@@ -4,7 +4,7 @@ crypt remotes, incremental sync with optional deleted-file retention, and namesp
 
 ## Requirements
 
-### Requirement: Filedata backup supports per-service backup modes
+### REQ-001: Filedata backup supports per-service backup modes
 The `filedata-backup` service SHALL support per-service execution modes with at least `archive` and `sync-crypt` values, selected by environment-driven configuration.
 
 #### Scenario: Service runs in archive mode
@@ -20,7 +20,7 @@ The `filedata-backup` service SHALL support per-service execution modes with at 
 - **THEN** the backup flow SHALL perform incremental `rclone sync` behavior
 - **AND** archive artifact creation SHALL NOT be required for that run
 
-### Requirement: Sync-crypt mode writes latest-good-state to current namespace
+### REQ-002: Sync-crypt mode writes latest-good-state to current namespace
 In `sync-crypt` mode, filedata backup SHALL write the active synchronized dataset into a `current/` namespace on the configured remote path.
 
 #### Scenario: Current namespace is populated
@@ -29,7 +29,7 @@ In `sync-crypt` mode, filedata backup SHALL write the active synchronized datase
 - **THEN** remote objects SHALL exist under `<remote-path>/current/`
 - **AND** the tree under `current/` SHALL represent latest-good-state for that service
 
-### Requirement: Sync-crypt mode preserves replaced/deleted files in dated retention namespace
+### REQ-003: Sync-crypt mode preserves replaced/deleted files in dated retention namespace
 In `sync-crypt` mode, replaced or deleted source files SHALL be moved to a dated retention namespace before removal from `current/`, using `deleted-archive/YYYY-MM-DD/` under the same service remote path.
 
 #### Scenario: Deleted source file is retained remotely
@@ -38,7 +38,7 @@ In `sync-crypt` mode, replaced or deleted source files SHALL be moved to a dated
 - **THEN** that file SHALL be moved under `deleted-archive/YYYY-MM-DD/`
 - **AND** the file SHALL no longer exist under `current/`
 
-### Requirement: Sync-crypt mode enforces retention pruning for deleted-archive
+### REQ-004: Sync-crypt mode enforces retention pruning for deleted-archive
 Sync-crypt mode SHALL prune dated deleted-archive content older than the configured retention threshold for the service.
 
 #### Scenario: Old deleted-archive data is pruned
@@ -47,7 +47,7 @@ Sync-crypt mode SHALL prune dated deleted-archive content older than the configu
 - **THEN** paths older than the threshold SHALL be removed
 - **AND** newer deleted-archive paths SHALL be preserved
 
-### Requirement: Rclone configuration is generated once at startup
+### REQ-005: Rclone configuration is generated once at startup
 The filedata backup container SHALL generate one rclone configuration before cron starts, containing
 each configured plain and crypt remote whose credentials are available. The configuration SHALL be
 owner-readable only and cron jobs SHALL NOT rewrite it.
@@ -64,7 +64,7 @@ owner-readable only and cron jobs SHALL NOT rewrite it.
 - **THEN** the service SHALL synchronize through that configured remote
 - **AND** the backup script SHALL NOT hardcode or select another cloud provider
 
-### Requirement: Zero retention performs a pure mirror
+### REQ-006: Zero retention performs a pure mirror
 When a service's retention is `0`, sync-crypt SHALL synchronize directly into `current/` without
 `--backup-dir` and SHALL NOT create or prune a `deleted-archive` namespace.
 
@@ -74,7 +74,7 @@ When a service's retention is `0`, sync-crypt SHALL synchronize directly into `c
 - **THEN** the file SHALL be absent from `current/`
 - **AND** no deleted copy SHALL be retained by that run
 
-### Requirement: Volume exclusions apply to both modes
+### REQ-007: Volume exclusions apply to both modes
 The backup script SHALL apply volume-specific exclusion rules to archive and sync-crypt runs.
 
 #### Scenario: Paperless derived files are excluded

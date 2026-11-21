@@ -3,13 +3,16 @@ Define Watchtower-specific update automation behavior, notification behavior, an
 
 ## Requirements
 
-### REQ-001: Watchtower schedule and Docker daemon access are required
-Watchtower SHALL mount `/var/run/docker.sock` and SHALL consume an explicit `WATCHTOWER_SCHEDULE` value via `.env`.
+### REQ-001: Watchtower schedule and proxied Docker daemon access are required
+Watchtower SHALL consume an explicit `WATCHTOWER_SCHEDULE` value via `.env` and
+SHALL access the Docker API through a dedicated socket proxy. Watchtower SHALL NOT
+mount `/var/run/docker.sock` directly.
 
 #### Scenario: Required runtime inputs are present
 - **GIVEN** `securityServices/watchtower/docker-compose.yml` and runtime inputs are inspected
-- **WHEN** volume mounts and schedule configuration are reviewed
-- **THEN** Docker socket access SHALL be configured
+- **WHEN** service dependencies, image references, volume mounts, and schedule configuration are reviewed
+- **THEN** the socket proxy SHALL be pinned by digest and SHALL mount the Docker socket
+- **AND** Watchtower SHALL reference the proxy through `DOCKER_HOST`
 - **AND** a valid schedule SHALL be defined before deployment
 
 ### REQ-002: Watchtower updates unlabeled containers by default

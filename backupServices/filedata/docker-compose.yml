@@ -13,10 +13,8 @@ services:
       - openwebui_filedata:/backup-sources/openwebui:ro
       ## Container Services
       - firefox_filedata:/backup-sources/firefox:ro
-      - kasm_filedata:/backup-sources/kasm:ro
       - syncthing_filedata:/backup-sources/syncthing:ro
       ## Knowledge Services
-      - affine_filedata:/backup-sources/affine:ro
       - freshrss_filedata:/backup-sources/freshrss:ro
       - paperless_filedata:/backup-sources/paperless:ro
       - radicale_filedata:/backup-sources/radicale:ro
@@ -45,10 +43,8 @@ services:
       echo '${OPENWEBUI_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh openwebui >> /var/log/cron_openwebui.log 2>&1' >> /etc/crontabs/root &&
       echo '# Container Services' >> /etc/crontabs/root &&
       echo '${FIREFOX_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh firefox >> /var/log/cron_firefox.log 2>&1' >> /etc/crontabs/root &&
-      echo '${KASM_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh kasm >> /var/log/cron_kasm.log 2>&1' >> /etc/crontabs/root &&
       echo '${SYNCTHING_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh syncthing >> /var/log/cron_syncthing.log 2>&1' >> /etc/crontabs/root &&
       echo '# Knowledge Services' >> /etc/crontabs/root &&
-      echo '${AFFINE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh affine >> /var/log/cron_affine.log 2>&1' >> /etc/crontabs/root &&
       echo '${FRESHRSS_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh freshrss >> /var/log/cron_freshrss.log 2>&1' >> /etc/crontabs/root &&
       echo '${PAPERLESS_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh paperless >> /var/log/cron_paperless.log 2>&1' >> /etc/crontabs/root &&
       echo '${RADICALE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh radicale >> /var/log/cron_radicale.log 2>&1' >> /etc/crontabs/root &&
@@ -87,16 +83,10 @@ volumes:
   firefox_filedata:
     external: true
     name: firefox_filedata
-  kasm_filedata:
-    external: true
-    name: kasm_filedata
   syncthing_filedata:
     external: true
     name: syncthing_filedata
   ## Knowledge Services
-  affine_filedata:
-    external: true
-    name: affine_filedata
   freshrss_filedata:
     external: true
     name: freshrss_filedata

@@ -2,7 +2,10 @@
 
 ## Overview
 
-A PostgreSQL backup solution that backs up multiple databases (invidious, firefly, paperless, affine, immich, firefoxsync) using GPG encryption, Dropbox synchronization, and per-service retention policies. Cron schedules are configured via per-service environment variables in `.env`.
+A PostgreSQL backup solution that backs up multiple databases (invidious, firefly,
+paperless, immich, firefoxsync) using GPG encryption, Dropbox synchronization,
+and per-service retention policies. Cron schedules are configured via per-service
+environment variables in `.env`.
 
 ## Architecture
 
@@ -16,7 +19,6 @@ A PostgreSQL backup solution that backs up multiple databases (invidious, firefl
 │  ├─ ${INVIDIOUS_CRON_SCHEDULE}: invidious                  │
 │  ├─ ${FIREFLY_CRON_SCHEDULE}: firefly                      │
 │  ├─ ${PAPERLESS_CRON_SCHEDULE}: paperless                  │
-│  ├─ ${AFFINE_CRON_SCHEDULE}: affine                        │
 │  ├─ ${IMMICH_CRON_SCHEDULE}: immich                        │
 │  └─ ${FIREFOXSYNC_CRON_SCHEDULE}: firefoxsync              │
 │                                                              │
@@ -58,7 +60,6 @@ services:
       - invidious_postgresdata:/var/lib/postgresql/invidious:ro
       - firefly_postgresdata:/var/lib/postgresql/firefly:ro
       - paperless_postgresdata:/var/lib/postgresql/paperless:ro
-      - affine_postgresdata:/var/lib/postgresql/affine:ro
       - immich_postgresdata:/var/lib/postgresql/immich:ro
       - firefoxsync_postgresdata:/var/lib/postgresql/firefoxsync:ro
       - gpg-secrets:/run/secrets:ro
@@ -71,7 +72,7 @@ services:
 
 ### 2. .env
 Environment configuration file containing:
-- Database config for invidious, firefly, paperless, affine, immich, firefoxsync
+- Database config for invidious, firefly, paperless, immich, firefoxsync
 - Dropbox authentication token
 - Discord webhook URI
 - GPG passphrase
@@ -206,15 +207,6 @@ Database:     paperless
 User:         paperless
 Schedule Var: PAPERLESS_CRON_SCHEDULE
 Retention:    PAPERLESS_BACKUP_RETENTION_DAYS
-```
-
-### Affine
-```
-Host:         affine-db
-Database:     affine
-User:         affine
-Schedule Var: AFFINE_CRON_SCHEDULE
-Retention:    AFFINE_BACKUP_RETENTION_DAYS
 ```
 
 ### Immich

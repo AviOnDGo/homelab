@@ -407,33 +407,6 @@ The Ollama service SHALL run without enforced resource limits by default, and SH
 - **THEN** the container SHALL apply the configured limits after recreation
 - **AND** the change SHALL not require redesign of compose structure
 
-### REQ-026: OpenWebUI Tier C Data Classification
-The OpenWebUI data volume `openwebui_filedata` SHALL classify SQLite state and uploads as backup-essential for Tier C policy, and SHALL classify cache and vector index directories as rebuildable.
-
-#### Scenario: Tier C classification is documented for operators
-- **GIVEN** an operator reviews OpenWebUI backup and restore documentation
-- **WHEN** data classes are listed
-- **THEN** essential paths SHALL include `webui.db`, `webui.db-wal`, `webui.db-shm`, and `uploads/`
-- **AND** rebuildable paths SHALL include `cache/` and `vector_db/`
-
-### REQ-027: OpenWebUI Restore Documentation Script Priority
-The OpenWebUI restore guide SHALL present `aiServices/openwebui/restore.sh` as the primary recovery workflow and manual command restore as fallback guidance.
-
-#### Scenario: Operator follows restore guide primary path
-- **GIVEN** an operator opens `aiServices/openwebui/RESTORE_GUIDE.md`
-- **WHEN** they follow the documented procedure
-- **THEN** the first-class restore path SHALL be script-led
-- **AND** verification steps SHALL include explicit core-service readiness checks
-
-### REQ-028: OpenWebUI Core Restore SLO
-OpenWebUI restore operations SHALL target core service usability within 10 minutes from restore start to successful core verification.
-
-#### Scenario: Restore drill validates core SLO target
-- **GIVEN** a controlled OpenWebUI restore drill is executed
-- **WHEN** phase timestamps are collected
-- **THEN** total time to core readiness SHALL be measurable against a 10-minute objective
-- **AND** SLO evaluation SHALL not require immediate RAG or vector availability
-
 ### REQ-035: OpenWebUI Proxied External Egress via Gluetun
 Open WebUI SHALL route external HTTP(S) egress through the Gluetun VPN proxy at `gluetun:8888` using lowercase `http_proxy` and `https_proxy` environment variables, SHALL join `security_network` to reach this endpoint, and SHALL exempt internal hosts via lowercase `no_proxy`.
 
@@ -652,3 +625,30 @@ The Gemini CLI service SHALL mount only the host Obsidian vault configured by `O
 - **WHEN** the operator runs the Gemini Compose service
 - **THEN** Compose SHALL report a configuration or mount error
 - **AND** Compose SHALL NOT create a new host vault directory
+
+### REQ-049: OpenWebUI Tier C Data Classification
+The OpenWebUI data volume `openwebui_filedata` SHALL classify SQLite state and uploads as backup-essential for Tier C policy, and SHALL classify cache and vector index directories as rebuildable.
+
+#### Scenario: Tier C classification is documented for operators
+- **GIVEN** an operator reviews OpenWebUI backup and restore documentation
+- **WHEN** data classes are listed
+- **THEN** essential paths SHALL include `webui.db`, `webui.db-wal`, `webui.db-shm`, and `uploads/`
+- **AND** rebuildable paths SHALL include `cache/` and `vector_db/`
+
+### REQ-050: OpenWebUI Restore Documentation Script Priority
+The OpenWebUI restore guide SHALL present `aiServices/openwebui/restore.sh` as the primary recovery workflow and manual command restore as fallback guidance.
+
+#### Scenario: Operator follows restore guide primary path
+- **GIVEN** an operator opens `aiServices/openwebui/RESTORE_GUIDE.md`
+- **WHEN** they follow the documented procedure
+- **THEN** the first-class restore path SHALL be script-led
+- **AND** verification steps SHALL include explicit core-service readiness checks
+
+### REQ-051: OpenWebUI Core Restore SLO
+OpenWebUI restore operations SHALL target core service usability within 10 minutes from restore start to successful core verification.
+
+#### Scenario: Restore drill validates core SLO target
+- **GIVEN** a controlled OpenWebUI restore drill is executed
+- **WHEN** phase timestamps are collected
+- **THEN** total time to core readiness SHALL be measurable against a 10-minute objective
+- **AND** SLO evaluation SHALL not require immediate RAG or vector availability

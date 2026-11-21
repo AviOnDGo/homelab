@@ -165,11 +165,12 @@ Pattern to follow from securityServices:
 
 ### 3. Scheduled Automation
 - Add cron job or systemd timer for automatic backups
-- Consider using `scheduledGitPush.sh` pattern from other services
+- Integrate with the centralized backup services rather than committing backups
+  to Git
 - Daily backup schedule recommended
 
 ### 4. Notification System
-- Add `notifier.py` script for Discord webhooks
+- Use the existing backup-service notification mechanism for Discord webhooks
 - Notify on backup success/failure
 - Include backup size and duration in notifications
 

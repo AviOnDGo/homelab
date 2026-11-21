@@ -1,6 +1,6 @@
 ---
 name: "commit"
-description: "Group and commit staged changes with proper messages following AGENTS.md rules"
+description: "Group all logical changes and commit each group following AGENTS.md rules"
 type: "prompt"
 category: "git"
 icon: "📝"
@@ -29,7 +29,9 @@ Before grouping, scan staged files for hardcoded secrets:
 
 ### 2. Analyze & Group Files
 
-Examine staged files and categorize by concern:
+Examine all requested worktree changes and categorize them by concern. If the operator
+pre-staged files, inspect them in the same grouping pass but do not assume every staged or
+modified file belongs in one commit:
 
 **Reference**: [AGENTS.md § Commit Grouping Strategy (Mandatory)](../../AGENTS.md)
 
@@ -40,7 +42,9 @@ Five categories (apply in order):
 4. **Documentation** — SERVICE_DOCUMENTATION.md, RESTORE_GUIDE.md, etc.
 5. **Repository-wide** — AGENTS.md, root scripts, `.github/` files
 
-**Decision rule**: "Would a reviewer expect these files to change together?" → same commit
+**Decision rule**: "Would a reviewer expect these files to change together?" → same
+commit. Create one commit per logical group. Commit all files together only when every
+file belongs to the same logical group; never sweep unrelated work into one commit.
 
 ### 3. Create Compliant Commit Messages
 
@@ -75,7 +79,7 @@ Before pushing, scan all commits:
 | Never commit without operator saying "commit" | AGENTS.md § Git Safety Rules |
 | Never push without operator saying "push" | AGENTS.md § Git Safety Rules |
 | Never override secret scan gates | AGENTS.md § Pre-Commit/Pre-Push Secret Scan |
-| Never lump unrelated files into single commit | AGENTS.md § Commit Grouping Strategy |
+| Create one commit per logical group, unless all files form one group | AGENTS.md § Commit Grouping Strategy |
 | Explain **what** changed AND **why** | AGENTS.md § Commit message format |
 | All `.env` values go in `.env` + `.env.example` | AGENTS.md § Environment & Secrets |
 

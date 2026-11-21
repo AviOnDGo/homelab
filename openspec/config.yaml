@@ -10,7 +10,7 @@ context: |
   Service Categories:
   - Core Infrastructure: Homepage, Watchtower, Nginx Proxy Manager
   - Media Services: Jellyfin, Sonarr, Radarr, Jackett, Transmission, Invidious, Immich
-  - Knowledge Services: AFFiNE, FreshRSS
+  - Knowledge Services: FreshRSS
   - AI Services: Ollama, Open WebUI
   - Security Services: Vaultwarden, Pi-hole, Gluetun VPN
   - Backup Infrastructure: PostgreSQL backups, filesystem backups, multi-cloud sync

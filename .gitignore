@@ -12,27 +12,9 @@
 # OpenSpec working directory (local scratchpad — canonical knowledge lives in openspec/specs/)
 /openspec/changes/
 
-# Media service data
-mediaServices/jellyfin/data/metadata/
-mediaServices/jellyfin/data/transcodes/
-mediaServices/transmission/resume
-mediaServices/transmission/torrents/
-mediaServices/radarr/MediaCover/
-mediaServices/radarr/logs/
-mediaServices/sonarr/MediaCover/
-mediaServices/sonarr/logs/
-mediaServices/immich/cache/
-mediaServices/radarr/*.db
-mediaServices/sonarr/*.db
-
 # Downloaded packages
 *.deb
 *.deb.*
-
-# AI model data
-aiServices/ollama/models/
-aiServices/openwebui/cache/
-aiServices/whisper/models/
 
 #======================================
 # OS generated
@@ -61,20 +43,10 @@ RemoteSystemsTempFiles/
 *.old
 
 *.dbus/
-mediaServices/jellyfin/data/
 
-# OpenVPN keys
-securityServices/gluetun/*.ovpn
-
-# WireGuard configuration files (contain private keys)
+# VPN configurations (contain private keys and connection credentials)
 wg-*.conf
-
-# Pi-hole databases
-securityServices/pihole/gravity.db
-securityServices/pihole/gravity_old.db
-securityServices/pihole/pihole-FTL.db
-*.com.domains
-*.com.domains.*
+*.ovpn
 
 # Keys and secrets
 *.key
@@ -90,6 +62,7 @@ id_ed25519*
 *.cred
 *client_secret*.json
 *client_secrets*.json
+terraform-sa-key.json
 *.kdbx
 *.agekey
 
@@ -101,6 +74,8 @@ tfplan
 .terraform
 .terraform.lock.hcl
 backend.hcl
+*.tfvars
+!*.tfvars.example
 
 #======================================
 # container secrets
@@ -113,40 +88,3 @@ backend.hcl
 !.env.*.example
 !*env.example
 __pycache__/
-
-#======================================
-# securityServices --> Pi-hole
-#--------------------------------------
-securityServices/pihole/hosts/
-securityServices/pihole/adlists.list
-securityServices/pihole/custom.list
-securityServices/pihole/cli_pw
-securityServices/pihole/dnsmasq.conf
-securityServices/pihole/dns-servers.conf
-securityServices/pihole/gravity_old*
-securityServices/pihole/gravity.db*
-securityServices/pihole/logrotate
-securityServices/pihole/pihole-FTL.conf
-securityServices/pihole/pihole-FTL.db-*
-securityServices/pihole/*.crt
-securityServices/pihole/*.pem
-securityServices/pihole/setupVars.conf
-securityServices/pihole/versions
-
-#======================================
-# securityServices --> Nginx Proxy Manager
-#--------------------------------------
-securityServices/npm/data/logs
-securityServices/npm/letsencrypt/**/README*
-
-#======================================
-# googleCloud --> Cloud Resources
-#--------------------------------------
-googleCloud/*.tfvars
-googleCloud/terraform-sa-key.json
-
-#======================================
-# securityServices/tailscale --> Terraform
-#--------------------------------------
-securityServices/tailscale/*.tfvars
-securityServices/tailscale/terraform-sa-key.json

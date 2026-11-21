@@ -34,7 +34,7 @@ The unencrypted intermediate file SHALL be deleted immediately after encryption.
  - **AND** no unencrypted `.sql` or `.tar.zst` intermediates SHALL remain
 
 ### REQ-003: Encrypted backups are uploaded via mode-specific rclone destinations
-After encryption or sync preparation, each backup run SHALL upload or synchronize data through rclone using destination variables defined for that service and selected mode. Database backups SHALL remain Dropbox-targeted. Filedata backups MAY target provider-specific remotes (for example Dropbox or MEGA) based on per-service mode configuration.
+After encryption or sync preparation, each backup run SHALL upload or synchronize data through rclone using destination variables defined for that service and selected mode. Database backups SHALL remain Dropbox-targeted. Filedata backups SHALL be permitted to target provider-specific remotes (for example Dropbox or MEGA) based on per-service mode configuration.
 
 #### Scenario: Dropbox archive mode does not use rclone crypt
 - **GIVEN** a filedata service is configured with mode `archive` and Dropbox destination
@@ -227,7 +227,7 @@ these two standard files and removed.
 - **AND** `IMPLEMENTATION_DETAILS.md` and `QUICKSTART_GUIDE.md` SHALL NOT exist
 
 ### REQ-016: Both backup services have env.acc.example and env.prd.example
-Both `backupServices/filedata/` and `backupServices/postgres/` SHALL provide `env.acc.example` and `env.prd.example`. Both files SHALL declare exactly the same variable names per service domain. Provider-specific path values MAY differ by environment and mode, and are not restricted to Dropbox for filedata services.
+Both `backupServices/filedata/` and `backupServices/postgres/` SHALL provide `env.acc.example` and `env.prd.example`. Both files SHALL declare exactly the same variable names per service domain. Provider-specific path values SHALL be permitted to differ by environment and mode, and are not restricted to Dropbox for filedata services.
 
 #### Scenario: env examples cover all registered services
 - **GIVEN** `env.acc.example` and `env.prd.example` are compared for a backup service
@@ -258,7 +258,7 @@ When deploying backup services to a remote host, the operator SHALL use
 `backupServices/postgres/` and `backupServices/filedata/`.
 
 #### Scenario: Remote postgres backup deployed with correct scope
-- **GIVEN** the remote host has the `gcp` branch checked out
+- **GIVEN** a remote host is configured for the remote PostgreSQL backup profile
 - **WHEN** the operator starts the postgres backup service
 - **THEN** the command SHALL be `docker compose -f docker-compose.remote.yml up -d`
 - **AND** only `firefly_postgresdata` and `firefoxsync_postgresdata` volumes SHALL be mounted
@@ -266,7 +266,7 @@ When deploying backup services to a remote host, the operator SHALL use
 - **AND** `firefly` and `firefoxsync` SHALL each have a scheduled backup job
 
 #### Scenario: Remote filedata backup deployed with correct scope
-- **GIVEN** the remote host has the `gcp` branch checked out
+- **GIVEN** a remote host is configured for the remote filedata backup profile
 - **WHEN** the operator starts the filedata backup service
 - **THEN** the command SHALL be `docker compose -f docker-compose.remote.yml up -d`
 - **AND** only `pihole_filedata`, `npm_filedata`, `vaultwarden_filedata`, and
@@ -275,36 +275,35 @@ When deploying backup services to a remote host, the operator SHALL use
 ### REQ-019: Remote-scoped compose files SHALL be self-contained and tracked on main
 Each `docker-compose.remote.yml` file SHALL be a fully valid, standalone Docker Compose
 file that does not use `extends:` or `include:` to reference `docker-compose.yml`.
-Both files SHALL exist on the `main` branch and be distributed to `gcp` via the
-existing `sync main → gcp` workflow.
+Both files SHALL remain versioned on the `main` branch.
 
 #### Scenario: Remote compose files exist on main
 - **GIVEN** the `main` branch
 - **WHEN** the paths `backupServices/postgres/docker-compose.remote.yml` and
   `backupServices/filedata/docker-compose.remote.yml` are checked
-- **THEN** both files SHALL exist and be valid Docker Compose v3.8+ documents
+- **THEN** both files SHALL exist and be valid Docker Compose Specification
+  documents
 - **AND** neither file SHALL reference `extends:` or `include:` directives
 
-### REQ-020: The canonical docker-compose.yml files SHALL be identical on main and gcp
-`backupServices/postgres/docker-compose.yml` and `backupServices/filedata/docker-compose.yml` SHALL
-SHALL NOT differ between the `main` and `gcp` branches.
+### REQ-020: Remote backup profiles SHALL validate independently
+Each remote backup profile SHALL render successfully with `docker compose
+config` without requiring the canonical default profile.
 
-#### Scenario: No divergence in canonical compose files
-- **GIVEN** the `main` and `gcp` branches are both up to date
-- **WHEN** a git diff is run between them on the two compose files
-- **THEN** `git diff origin/gcp origin/main -- backupServices/postgres/docker-compose.yml backupServices/filedata/docker-compose.yml`
-  SHALL produce no output
+#### Scenario: Remote compose configuration is independently valid
+- **GIVEN** the operator is in a backup service directory
+- **WHEN** `docker compose -f docker-compose.remote.yml config` is run
+- **THEN** the command SHALL produce a valid Compose model
+- **AND** it SHALL NOT require `docker-compose.yml` to be present or included
 
-### REQ-021: The sync main → gcp workflow SHALL succeed without merge conflicts on backup compose files
-Every push to `main` SHALL result in a successful `git merge origin/main --no-edit` step
-in the `sync main → gcp` workflow for the backup service compose files.
+### REQ-021: Remote backup profile changes SHALL remain deployment-scoped
+Changes to a remote-scoped backup profile SHALL affect only services deployed
+to that remote profile and SHALL NOT enable default or Local profile jobs.
 
-#### Scenario: Sync workflow succeeds after a new service is added to main
-- **GIVEN** a new backup volume is added to `backupServices/filedata/docker-compose.yml` on `main`
-- **WHEN** the commit is pushed to `main` and the `sync main → gcp` workflow runs
-- **THEN** the merge step SHALL complete without conflict
-- **AND** a sync PR SHALL be opened targeting the `gcp` branch
-- **AND** the PR SHALL not require manual conflict resolution
+#### Scenario: Remote profile addition preserves default and Local scope
+- **GIVEN** a backup job is added to the remote profile
+- **WHEN** all backup profile Compose files are inspected
+- **THEN** the remote profile SHALL contain only that profile's deployed jobs
+- **AND** the default and Local profiles SHALL retain their documented service sets
 
 ### REQ-022: Paperless retained documents are registered with filedata-backup
 The `paperless_filedata` volume SHALL be mounted read-only in `filedata-backup` at `/backup-sources/paperless`. The filedata backup service SHALL declare Paperless-specific schedule, Dropbox path, and retention variables in both `env.acc.example` and `env.prd.example`.
@@ -364,17 +363,9 @@ When deploying backup services to the Local environment, the operator SHALL use
   `paperless_filedata`, `radicale_filedata`, `immich_library`, `immich_profile`,
   `immich_upload`, `jackett_filedata`, `radarr_filedata`, `sonarr_filedata`,
   `transmission_filedata`, and `npm_filedata`, in that order
-- **AND** commented AFFiNE, n8n, and Syncthing mounts SHALL remain disabled
+- **AND** commented n8n and Syncthing mounts SHALL remain disabled
 - **AND** the RomM source volume SHALL be read-only and its schedule SHALL use
   `ROMM_CRON_SCHEDULE`
-
-#### Scenario: Disabled AFFiNE entries retain reusable configuration
-- **GIVEN** AFFiNE backup entries are commented out in the Local compose profiles
-- **WHEN** the AFFiNE entries are reviewed
-- **THEN** `AFFINE_DROPBOX_PATH`, `AFFINE_RETENTION_DAYS`, and
-  `AFFINE_CRON_SCHEDULE` SHALL remain defined in both `env.acc.example` and
-  `env.prd.example` for deployments that enable AFFiNE
-- **AND** the Local profile SHALL NOT schedule AFFiNE while its backup entries are disabled
 
 #### Scenario: Local compose files exist and are self-contained
 - **GIVEN** the `main` branch is inspected

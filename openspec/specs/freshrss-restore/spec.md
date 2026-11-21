@@ -1,6 +1,6 @@
 ## Requirements
 
-### Requirement: Preflight validation
+### REQ-001: Preflight validation
 The restore script SHALL verify that all required tools (`docker`, `rclone`, `gpg`, `zstd`) are present and that the Docker daemon and Dropbox rclone remote are reachable before performing any destructive operation.
 
 #### Scenario: Missing required tool
@@ -18,7 +18,7 @@ The restore script SHALL verify that all required tools (`docker`, `rclone`, `gp
 - **WHEN** the `dropbox` rclone remote cannot be listed
 - **THEN** the script SHALL exit with a non-zero status and print instructions for configuring or reconnecting the remote
 
-### Requirement: Passphrase acquisition
+### REQ-002: Passphrase acquisition
 The restore script SHALL acquire the GPG passphrase before downloading any backup, either from the `PASSPHRASE` environment variable or by prompting the operator interactively (without echoing input).
 
 #### Scenario: Passphrase via environment variable
@@ -36,7 +36,7 @@ The restore script SHALL acquire the GPG passphrase before downloading any backu
 - **WHEN** the passphrase validation check runs
 - **THEN** the script SHALL exit with a non-zero status and print an error
 
-### Requirement: Latest backup discovery
+### REQ-003: Latest backup discovery
 The restore script SHALL identify the most recent backup archive at the configured Dropbox path without requiring the operator to specify a filename.
 
 #### Scenario: Backups present
@@ -49,7 +49,7 @@ The restore script SHALL identify the most recent backup archive at the configur
 - **WHEN** the script attempts to list backups
 - **THEN** it SHALL exit with a non-zero status and print the Dropbox path along with instructions to verify it
 
-### Requirement: Destructive operation confirmation
+### REQ-004: Destructive operation confirmation
 The restore script SHALL require explicit operator confirmation before stopping a running container and before wiping an existing volume.
 
 #### Scenario: Service running at restore time
@@ -67,7 +67,7 @@ The restore script SHALL require explicit operator confirmation before stopping 
 - **WHEN** the script reaches the volume preparation step
 - **THEN** it SHALL print a warning and prompt for `[y/N]` confirmation before removing and recreating the volume
 
-### Requirement: Archive extraction
+### REQ-005: Archive extraction
 The restore script SHALL decrypt and extract the backup archive into the `freshrss_filedata` volume using a streaming pipeline that avoids writing intermediate plaintext to disk.
 
 #### Scenario: Successful extraction
@@ -75,7 +75,7 @@ The restore script SHALL decrypt and extract the backup archive into the `freshr
 - **WHEN** the extraction pipeline runs
 - **THEN** `gpg --batch --yes --passphrase` SHALL decrypt the archive, `zstd -d` SHALL decompress it, and `tar -xf -` SHALL extract it into the root of the `freshrss_filedata` volume via a temporary Alpine container
 
-### Requirement: Post-restore health verification
+### REQ-006: Post-restore health verification
 The restore script SHALL verify that FreshRSS is healthy after restart using the FreshRSS CLI, retrying for up to 300 seconds before declaring failure.
 
 #### Scenario: FreshRSS becomes healthy within timeout
@@ -88,7 +88,7 @@ The restore script SHALL verify that FreshRSS is healthy after restart using the
 - **WHEN** 300 seconds elapse without `check-install.php` exiting 0
 - **THEN** the script SHALL exit with a non-zero status and print the command to inspect container logs
 
-### Requirement: Cleanup on exit
+### REQ-007: Cleanup on exit
 The restore script SHALL remove all temporary files and unset the passphrase from the environment on any exit path (success or failure).
 
 #### Scenario: Cleanup runs after successful restore

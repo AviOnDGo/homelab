@@ -65,10 +65,9 @@ The `specs/` directory contains the authoritative specification for the homelab 
 
 #### 3. Knowledge Services (`knowledge-services/`)
 **Capabilities:**
-- All-in-one workspace (AFFiNE)
 - RSS feed aggregation (FreshRSS)
 
-**Key Services:** AFFiNE, FreshRSS
+**Key Services:** FreshRSS
 
 #### 4. AI Services (`ai-services/`)
 **Capabilities:**

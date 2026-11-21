@@ -335,7 +335,7 @@ volumes:
 > **Network block standard** — Every `docker-compose.yml` MUST include a top-level `networks:` block declaring all referenced networks as `external: true`. Never rely on implicit network creation; the block makes network membership auditable at a glance.
 
 ### Volume Naming Convention
-Named external Docker volumes use the pattern **`<service_name>_filedata`** (e.g., `freshrss_filedata`, `vaultwarden_filedata`). Services with multiple distinct volumes append a purpose suffix instead: `<service>_<purpose>` (e.g., `affine_storage`, `affine_config`, `immich_library`). Never use generic names like `data` or `config` without a service prefix.
+Named external Docker volumes use the pattern **`<service_name>_filedata`** (e.g., `freshrss_filedata`, `vaultwarden_filedata`). Services with multiple distinct volumes append a purpose suffix instead: `<service>_<purpose>` (e.g., `immich_library`, `immich_profile`). Never use generic names like `data` or `config` without a service prefix.
 
 ### Environment & Secrets
 - `PUID: 1000`, `PGID: 1000` standard for linuxserver.io images
@@ -542,7 +542,13 @@ When you finish implementing changes, leave files in the working tree and inform
 
 ### Commit Grouping Strategy (Mandatory)
 
-When the operator says "commit", **never** stage and commit all changed files in a single monolithic commit. Instead, group files by logical concern and create one commit per group.
+Whenever the operator explicitly asks to "commit", assess all worktree changes and group
+them by logical concern before staging. Create one commit per logical group. If and only
+if every changed file belongs to the same logical group, commit the complete change set
+in one commit; otherwise, do not combine unrelated groups into one monolithic commit.
+
+The operator's "commit" instruction applies to the current worktree, but files from
+unrelated work MUST NOT be swept into a commit merely because they are also modified.
 
 **Grouping rules (apply in order):**
 
