@@ -42,7 +42,6 @@ updates:
       - /backupServices/postgres
       - /containerServices
       - /containerServices/firefox
-      - /containerServices/kasm
       - /containerServices/syncthing
       - /financialServices/firefly
       - /gamingServices/romm

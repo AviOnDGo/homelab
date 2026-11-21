@@ -78,11 +78,6 @@ to their respective licenses and terms.
 |-----------|---------|
 | `rtmp` | RTMP ingest server |
 
-### Container / Remote Access
-| Container | Purpose |
-|-----------|---------|
-| `kasm` | Browser-based virtual desktops |
-
 ### Backup Services
 | Container | Purpose |
 |-----------|---------|

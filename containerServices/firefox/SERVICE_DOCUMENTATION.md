@@ -2,7 +2,7 @@
 
 ## Overview
 
-Firefox is a self-hosted, containerised browser running in `containerServices/firefox/`. It streams a full Firefox browser session directly to any web browser via noVNC over HTTP (port 5800 inside the container, mapped to host port 3000). It provides isolated, persistent browser sessions without requiring KasmVNC or a secure context.
+Firefox is a self-hosted, containerised browser running in `containerServices/firefox/`. It streams a full Firefox browser session directly to any web browser via noVNC over HTTP (port 5800 inside the container, mapped to host port 3000). It provides isolated, persistent browser sessions without requiring a separate remote desktop platform or a secure context.
 
 Firefox is deployed in `containerServices/firefox/` and is accessible directly on host port 3000 or via Nginx Proxy Manager.
 
