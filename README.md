@@ -1,6 +1,8 @@
 # Homelab
 
-Personal homelab infrastructure running media, knowledge, AI, security, financial, gaming, and backup services — orchestrated via Docker Compose with Nginx Proxy Manager as the central gateway.
+Personal homelab infrastructure for media, knowledge, AI, security, financial,
+gaming, streaming, and backup workloads. Each stack is defined independently
+with Docker Compose and can be fronted by Nginx Proxy Manager where applicable.
 
 ## Project Scope and Expectations
 
@@ -14,6 +16,11 @@ volumes, and access controls. Do not expose services to the internet without und
 and reviewing their security requirements. No particular level of availability, support,
 or fitness for your use case is promised. Third-party services and images remain subject
 to their respective licenses and terms.
+
+The repository contains configuration examples, not live credentials, backup
+payloads, database contents, or a portable snapshot of an existing deployment.
+Never publish a local `.env`, generated Terraform state, private key, stream key,
+or service data.
 
 ---
 
@@ -41,11 +48,14 @@ to their respective licenses and terms.
 |-----------|---------|
 | `freshrss` | RSS aggregator |
 | `paperless` | Document management (OCR) |
+| `radicale` | CalDAV/CardDAV service |
 
 ### AI Services
 | Container | Purpose |
 |-----------|---------|
 | `gemini` | Interactive Gemini CLI agent for the Obsidian vault workspace |
+| `hermes` | Agent gateway and automation service |
+| `n8n` | Workflow automation |
 | `ollama` | Local LLM inference engine |
 | `omniroute` | OpenAI-compatible gateway with automatic provider routing |
 | `opencode` | OpenCode browser-based coding agent (optional; see [service documentation](./aiServices/opencode/SERVICE_DOCUMENTATION.md)) |
@@ -58,7 +68,6 @@ to their respective licenses and terms.
 | `pihole` | Network-level ad blocker and DNS |
 | `gluetun` | VPN client sidecar |
 | `syncserver` | Firefox Sync server |
-| `watchtower` | Automatic image updates |
 
 ### Financial Services
 | Container | Purpose |
@@ -77,6 +86,12 @@ to their respective licenses and terms.
 |-----------|---------|
 | `rtmp` | RTMP ingest server |
 
+### Container Services
+| Container | Purpose |
+|-----------|---------|
+| `firefox` | Browser accessible through noVNC |
+| `syncthing` | Peer-to-peer file synchronization |
+
 ### Backup Services
 | Container | Purpose |
 |-----------|---------|
@@ -87,9 +102,15 @@ to their respective licenses and terms.
 
 ## Cloud & VPN
 
-**Tailscale** network policy (ACLs, device tags) is managed as Terraform code in `tailscale/`. Changes to `tailscale/**.tf` merged to `main` are applied automatically via the `tailscale-deploy` GitHub Actions workflow using GCP-backed state.
+**Tailscale** network policy (ACLs, device tags) is managed as Terraform in
+[`securityServices/tailscale/`](securityServices/tailscale/). Changes to
+that configuration can be applied through the `tailscale-deploy` workflow
+after the required repository variables and secrets are configured.
 
-**GCP VM** runs a fixed subset of services (pihole, npm, vaultwarden, firefly, freshrss). The `gcp` branch tracks the GCP-specific configuration. A `sync-gcp-branch` workflow opens a PR to sync `main` → `gcp` on every push.
+**GCP VM** infrastructure is defined in [`googleCloud/`](googleCloud/) and
+managed by guarded Terraform plan/apply/destroy workflow jobs. The VM bootstrap
+can optionally clone this repository; it does not imply that every service in
+the repository is deployed there.
 
 ---
 
@@ -98,11 +119,10 @@ to their respective licenses and terms.
 ### Private configuration
 
 Machine-specific MCP and OpenCode settings are intentionally not tracked.
-Existing local `.mcp.json` and `opencode.json` files are preserved by the cleanup.
-For a new checkout, copy `.mcp.json.example` and `opencode.json.example` to their
-corresponding names only if those local files do not already exist. Customize
-the GitHub MCP token privately and export `GITHUB_TOKEN` in the environment
-that launches your client.
+For a new checkout, copy `.mcp.json.example` and `opencode.json.example` to
+their corresponding names only when those local files do not already exist.
+Customize the GitHub MCP token privately and export `GITHUB_TOKEN` in the
+environment that launches your client.
 
 The OpenCode example uses its supported `{env:VARIABLE}` substitutions. Export
 `OLLAMA_REMOTE_BASE_URL` and `OLLAMA_LOCAL_BASE_URL` before launching OpenCode;
@@ -176,10 +196,13 @@ sudo tailscale up
 tailscale status
 ```
 
-### 3. Start container services
+### 3. Start services selectively
 
-Create the shared external network once, then start each service from its own
-directory:
+There is no root aggregate Compose deployment. Each service declares the
+external networks and named volumes it expects; review its Compose file and
+service documentation before creating those prerequisites.
+
+For example, to start the container-services stacks:
 
 ```bash
 docker network inspect container_network >/dev/null 2>&1 ||
@@ -189,11 +212,13 @@ docker compose -f containerServices/firefox/docker-compose.yml up -d
 docker compose -f containerServices/syncthing/docker-compose.yml up -d
 ```
 
-### 4. Cron jobs
+Do not start every Compose file on a single host without reviewing port
+conflicts, GPU support, storage paths, VPN requirements, and backup profiles.
+Use each service's `SERVICE_DOCUMENTATION.md`; use its script-first
+`RESTORE_GUIDE.md` when present for recovery.
 
-```bash
-sudo crontab -e
-```
+Backup schedules are embedded in the backup-service Compose definitions and
+do not require a repository-level host crontab.
 
 ---
 
@@ -201,11 +226,13 @@ sudo crontab -e
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `tailscale-deploy.yml` | Push to `main` (paths: `tailscale/**.tf`) | Applies Tailscale ACL and device tag changes via Terraform |
-| `sync-gcp-branch.yml` | Push to `main` | Opens/updates a PR to sync `main` into the `gcp` branch |
+| `tailscale-deploy.yml` | Relevant pushes or manual dispatch | Validates and applies Tailscale Terraform configuration |
+| `gcp-vm-deploy.yml` | GCP Terraform changes or manual dispatch | Plans and, with explicit action/guarding, applies or destroys the GCP VM |
+| `gcp-freshrss-restore.yml` | Manual dispatch with confirmation | Restores FreshRSS backups on the GCP VM |
 | `cleanup-workflow-runs.yml` | 1st of each month, 02:00 UTC | Deletes workflow run records older than 60 days (keeps ≥ 3 per workflow) |
 | `pr-title.yml` | PR updates targeting `main` | Advisory check for the title that will become the squash commit subject |
 | `release.yml` | Push to `main`, or manual dispatch on `main` | Validates and previews or publishes a source release; publishing is opt-in |
+| `secret-scan.yml` | Pushes and pull requests | Scans tracked changes for secret patterns |
 
 ### Release conventions
 
@@ -280,18 +307,22 @@ All service and infrastructure specifications live in **[openspec/specs/](opensp
 
 | Spec | Coverage |
 |------|---------|
-| [homelab-core-infrastructure](openspec/specs/homelab-core-infrastructure/) | Docker, NPM, Homepage |
-| [media-services](openspec/specs/media-services/) | Jellyfin, Sonarr, Radarr, Immich, Paperless |
+| [homelab-core-infrastructure](openspec/specs/homelab-core-infrastructure/) | Host provisioning, networking, and shared infrastructure |
+| [media-services](openspec/specs/media-services/) | Jellyfin, Sonarr, Radarr, Transmission, Invidious, Immich |
 | [knowledge-services](openspec/specs/knowledge-services/) | FreshRSS, Paperless |
-| [ai-services](openspec/specs/ai-services/) | Ollama, Open WebUI |
+| [ai-services](openspec/specs/ai-services/) | AI and automation services |
 | [security-services](openspec/specs/security-services/) | Vaultwarden, Pi-hole, Gluetun |
+| [container-services](openspec/specs/container-services/) | Firefox and Syncthing |
+| [stream-services-rtmp](openspec/specs/stream-services-rtmp/) | RTMP ingest and restreaming |
 | [financial-services](openspec/specs/financial-services/) | Firefly III |
 | [gaming-services](openspec/specs/gaming-services/) | RomM |
-| [cloud-integration](openspec/specs/cloud-integration/) | Tailscale (Terraform), GCP sync workflow, run cleanup |
+| [cloud-integration](openspec/specs/cloud-integration/) | GCP provisioning and recovery automation |
 | [backup-services](openspec/specs/backup-services/) | PostgreSQL and volume backup automation |
+| [repository-conventions](openspec/specs/repository-conventions/) | Layout, secrets, documentation, and Git conventions |
 | [operational-procedures](openspec/specs/operational-procedures/) | Standard operating procedures |
 | [troubleshooting](openspec/specs/troubleshooting/) | Common issues and solutions |
 | [onboarding-guide](openspec/specs/onboarding-guide/) | New maintainer and agent onboarding |
-| [dropbox-download-guide](openspec/specs/dropbox-download-guide/) | Downloading backups from Dropbox |
 
-For agent and tooling conventions, see [AGENTS.md](AGENTS.md).
+For contribution and agent conventions, see [AGENTS.md](AGENTS.md). Report
+suspected vulnerabilities through the private process in
+[SECURITY.md](SECURITY.md).
