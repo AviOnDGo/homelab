@@ -14,7 +14,6 @@ services:
       ## Financial Services
       - firefly_postgresdata:/var/lib/postgresql/firefly:ro
       ## Knowledge Services
-      - affine_postgresdata:/var/lib/postgresql/affine:ro
       - paperless_postgresdata:/var/lib/postgresql/paperless:ro
       ## Media Services
       - immich_postgresdata:/var/lib/postgresql/immich:ro
@@ -32,7 +31,6 @@ services:
       echo '# Financial Services' >> /etc/crontabs/root &&
       echo '${FIREFLY_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh firefly' >> /etc/crontabs/root &&
       echo '# Knowledge Services' >> /etc/crontabs/root &&
-      echo '${AFFINE_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh affine' >> /etc/crontabs/root &&
       echo '${PAPERLESS_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh paperless' >> /etc/crontabs/root &&
       echo '# Media Services' >> /etc/crontabs/root &&
       echo '${IMMICH_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh immich' >> /etc/crontabs/root &&
@@ -64,9 +62,6 @@ volumes:
     name: firefly_postgresdata
     external: true
   ## Knowledge Services
-  affine_postgresdata:
-    name: affine_postgresdata
-    external: true
   paperless_postgresdata:
     name: paperless_postgresdata
     external: true

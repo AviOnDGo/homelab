@@ -17,7 +17,6 @@ services:
       ## Gaming Services
       - romm_postgresdata:/var/lib/postgresql/romm:ro
       ## Knowledge Services
-      # - affine_postgresdata:/var/lib/postgresql/affine:ro
       - paperless_postgresdata:/var/lib/postgresql/paperless:ro
       ## Media Services
       - immich_postgresdata:/var/lib/postgresql/immich:ro
@@ -65,9 +64,6 @@ volumes:
     name: romm_postgresdata
     external: true
   ## Knowledge Services
-  # affine_postgresdata:
-  #   name: affine_postgresdata
-  #   external: true
   paperless_postgresdata:
     name: paperless_postgresdata
     external: true
