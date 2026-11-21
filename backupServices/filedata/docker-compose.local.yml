@@ -17,7 +17,6 @@ services:
       ## Gaming Services
       - romm_filedata:/backup-sources/romm:ro
       ## Knowledge Services
-      # - affine_filedata:/backup-sources/affine:ro
       - paperless_filedata:/backup-sources/paperless:ro
       - radicale_filedata:/backup-sources/radicale:ro
       ## Media Services
@@ -82,9 +81,6 @@ volumes:
     external: true
     name: romm_filedata
   ## Knowledge Services
-  # affine_filedata:
-  #   external: true
-  #   name: affine_filedata
   paperless_filedata:
     external: true
     name: paperless_filedata
