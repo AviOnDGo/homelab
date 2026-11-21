@@ -1,0 +1,96 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directories:
+      - /aiServices/gemini
+      - /aiServices/hermes
+      - /aiServices/n8n
+      - /aiServices/ollama
+      - /aiServices/omniroute
+      - /aiServices/opencode
+      - /aiServices/openwebui
+      - /backupServices/filedata
+      - /backupServices/postgres
+      - /containerServices
+      - /containerServices/firefox
+      - /containerServices/kasm
+      - /containerServices/syncthing
+      - /financialServices/firefly
+      - /gamingServices/romm
+      - /knowledgeServices/freshrss
+      - /knowledgeServices/paperless
+      - /knowledgeServices/radicale
+      - /mediaServices/immich
+      - /mediaServices/invidious
+      - /mediaServices/jackett
+      - /mediaServices/jellyfin
+      - /mediaServices/radarr
+      - /mediaServices/sonarr
+      - /mediaServices/transmission
+      - /securityServices/firefoxsync
+      - /securityServices/gluetun
+      - /securityServices/npm
+      - /securityServices/pihole
+      - /securityServices/vaultwarden
+      - /securityServices/watchtower
+      - /streamServices/rtmp
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      container-images-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: terraform
+    directories:
+      - /googleCloud
+      - /securityServices/tailscale
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore(terraform)
+    groups:
+      terraform-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
