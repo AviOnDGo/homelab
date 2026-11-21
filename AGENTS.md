@@ -542,7 +542,13 @@ When you finish implementing changes, leave files in the working tree and inform
 
 ### Commit Grouping Strategy (Mandatory)
 
-When the operator says "commit", **never** stage and commit all changed files in a single monolithic commit. Instead, group files by logical concern and create one commit per group.
+Whenever the operator explicitly asks to "commit", assess all worktree changes and group
+them by logical concern before staging. Create one commit per logical group. If and only
+if every changed file belongs to the same logical group, commit the complete change set
+in one commit; otherwise, do not combine unrelated groups into one monolithic commit.
+
+The operator's "commit" instruction applies to the current worktree, but files from
+unrelated work MUST NOT be swept into a commit merely because they are also modified.
 
 **Grouping rules (apply in order):**
 
