@@ -1,2 +1,3 @@
-## the configuration file has keys. Hence the same is removed
+## Local RTMP configuration contains destination stream keys.
 nginx.conf
+!nginx.conf.example
