@@ -364,17 +364,9 @@ When deploying backup services to the Local environment, the operator SHALL use
   `paperless_filedata`, `radicale_filedata`, `immich_library`, `immich_profile`,
   `immich_upload`, `jackett_filedata`, `radarr_filedata`, `sonarr_filedata`,
   `transmission_filedata`, and `npm_filedata`, in that order
-- **AND** commented AFFiNE, n8n, and Syncthing mounts SHALL remain disabled
+- **AND** commented n8n and Syncthing mounts SHALL remain disabled
 - **AND** the RomM source volume SHALL be read-only and its schedule SHALL use
   `ROMM_CRON_SCHEDULE`
-
-#### Scenario: Disabled AFFiNE entries retain reusable configuration
-- **GIVEN** AFFiNE backup entries are commented out in the Local compose profiles
-- **WHEN** the AFFiNE entries are reviewed
-- **THEN** `AFFINE_DROPBOX_PATH`, `AFFINE_RETENTION_DAYS`, and
-  `AFFINE_CRON_SCHEDULE` SHALL remain defined in both `env.acc.example` and
-  `env.prd.example` for deployments that enable AFFiNE
-- **AND** the Local profile SHALL NOT schedule AFFiNE while its backup entries are disabled
 
 #### Scenario: Local compose files exist and are self-contained
 - **GIVEN** the `main` branch is inspected
