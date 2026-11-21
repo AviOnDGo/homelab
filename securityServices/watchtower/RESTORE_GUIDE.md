@@ -39,4 +39,6 @@ docker compose logs --tail=80 watchtower
 ## Notes
 
 - No volume data restore is performed.
-- Watchtower requires host Docker socket access at `/var/run/docker.sock`.
+- The pinned `watchtower-socket-proxy` sidecar mounts the host Docker socket.
+- Watchtower reaches the Docker API through the proxy and does not mount the host
+  socket directly.

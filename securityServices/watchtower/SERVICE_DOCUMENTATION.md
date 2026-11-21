@@ -190,15 +190,19 @@ If an update causes issues:
 ## Network Architecture
 
 - **Network**: `security_network` (external)
-- **Socket Access**: `/var/run/docker.sock` (read-write) - provides cross-network container management capability
-- **No exposed ports** - Watchtower operates entirely through Docker socket
+- **Socket Access**: A pinned `watchtower-socket-proxy` service mounts
+  `/var/run/docker.sock`; Watchtower cannot mount the host socket directly
+- **No exposed ports** - Watchtower reaches the socket proxy by container DNS only
 
 ## Security Considerations
 
-- Watchtower has read-write access to Docker socket (root-equivalent privileges)
-- This is standard practice for container orchestration tools
-- Network isolation limits blast radius if compromised
-- Use of official, trusted `containrrr/watchtower` image from Docker Hub
+- Watchtower and the socket proxy are pinned to immutable image digests
+- The proxy allowlist limits Docker API categories, but container update access
+  remains security-sensitive
+- Watchtower retains the ability to inspect, create, start, stop, restart, and
+  replace containers through the proxy
+- Services that do not require automatic updates must use the
+  `com.centurylinklabs.watchtower.enable=false` exclusion label
 - Homelab environment (single administrator, no multi-tenancy)
 
 ## References
