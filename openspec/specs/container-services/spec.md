@@ -29,6 +29,7 @@ Compose file or setup script.
 The system SHALL deploy a Firefox container at `containerServices/firefox/docker-compose.yml` on `container_network` (via compose `default` alias), serving a noVNC web UI accessible directly on host port 3000 and via Nginx Proxy Manager.
 
 #### Scenario: Service location
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** Firefox is deployed or managed
 - **THEN** its compose file SHALL reside at `containerServices/firefox/docker-compose.yml`
 - **AND** the container SHALL be named `firefox`
@@ -50,15 +51,18 @@ The system SHALL deploy a Firefox container at `containerServices/firefox/docker
 The Firefox service SHALL store all persistent data (browser profile, bookmarks, extensions, preferences) in the named external Docker volume `firefox_filedata`.
 
 #### Scenario: Volume naming convention
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `docker volume ls` is executed
 - **THEN** a volume named `firefox_filedata` SHALL exist
 
 #### Scenario: Volume declared as external in compose with alias
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `containerServices/firefox/docker-compose.yml` is inspected
 - **THEN** a top-level `volumes:` block SHALL declare a `filedata:` key with `external: true` and `name: firefox_filedata`
 - **AND** the volume SHALL be mounted as `filedata:/config` inside the container
 
 #### Scenario: Data survives container recreation
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** the Firefox container is stopped and recreated with `docker compose up -d --force-recreate`
 - **THEN** all previously configured bookmarks, extensions, and browser preferences SHALL be preserved
 
@@ -73,6 +77,7 @@ audio support and SHALL NOT use an `env_file:` directive.
 - **AND** no `env_file:` directive SHALL be present
 
 #### Scenario: SHM size configured
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `containerServices/firefox/docker-compose.yml` is inspected
 - **THEN** `shm_size: "4gb"` SHALL be present as a top-level service key
 - **AND** this prevents browser crashes due to insufficient shared memory
@@ -81,15 +86,18 @@ audio support and SHALL NOT use an `env_file:` directive.
 The `firefox_filedata` volume SHALL be registered in the `backupServices/filedata` backup pipeline to ensure the Firefox browser profile is protected.
 
 #### Scenario: Volume mounted in backup service
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `backupServices/filedata/docker-compose.yml` is inspected
 - **THEN** `firefox_filedata` SHALL appear in the `filedata-backup` service's `volumes:` list as `/backup-sources/firefox:ro`
 - **AND** `firefox_filedata` SHALL appear in the top-level `volumes:` block as an external volume
 
 #### Scenario: Cron entry present
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** the `filedata-backup` container's cron schedule is inspected
 - **THEN** an entry matching `${FIREFOX_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh firefox` SHALL be present
 
 #### Scenario: Backup environment variables defined
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `backupServices/filedata/.env` is inspected
 - **THEN** `FIREFOX_CRON_SCHEDULE`, `FIREFOX_DROPBOX_PATH`, and `FIREFOX_RETENTION_DAYS` SHALL be present
 
@@ -97,6 +105,7 @@ The `firefox_filedata` volume SHALL be registered in the `backupServices/filedat
 The Firefox service directory SHALL contain `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md`.
 
 #### Scenario: Documentation files present
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `containerServices/firefox/` is listed
 - **THEN** both `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md` SHALL be present
 
@@ -104,6 +113,7 @@ The Firefox service directory SHALL contain `SERVICE_DOCUMENTATION.md` and `REST
 Firefox SHALL be accessible via Nginx Proxy Manager with WebSocket support enabled, as required for noVNC browser streaming.
 
 #### Scenario: WebSocket support required
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** the NPM proxy host for Firefox is configured
 - **THEN** the "WebSockets Support" toggle SHALL be enabled
 - **AND** the upstream SHALL point to `http://firefox:5800`
@@ -112,12 +122,14 @@ Firefox SHALL be accessible via Nginx Proxy Manager with WebSocket support enabl
 The Firefox service SHALL have CPU and memory limits to prevent host resource exhaustion and protect co-located containers.
 
 #### Scenario: Deploy resource limits declared
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `containerServices/firefox/docker-compose.yml` is inspected
 - **THEN** a `deploy.resources.limits` block SHALL be present under the `firefox` service
 - **AND** `cpus` SHALL be set to `'4.0'`
 - **AND** `memory` SHALL be set to `4G`
 
 #### Scenario: Container respects CPU cap at runtime
+- **GIVEN** the relevant container-services configuration and deployment state are available for inspection
 - **WHEN** `docker inspect firefox` is executed
 - **THEN** `HostConfig.NanoCpus` SHALL equal `4000000000` (4 CPUs)
 - **AND** `HostConfig.Memory` SHALL equal `4294967296` (4 GiB)

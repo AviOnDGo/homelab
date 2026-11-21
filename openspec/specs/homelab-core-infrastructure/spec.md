@@ -128,6 +128,7 @@ Every service deployed in the homelab SHALL comply with the service documentatio
 The homelab SHALL provide a lightweight self-hosted browser capability through a containerised Firefox instance at `containerServices/firefox/`, joining `container_network` and accessible via Nginx Proxy Manager and directly on host port 3000.
 
 #### Scenario: Firefox access via NPM or direct
+- **GIVEN** the relevant infrastructure configuration and deployment state are available for inspection
 - **WHEN** a user accesses Firefox via Nginx Proxy Manager or directly on host port 3000
 - **THEN** the noVNC Firefox interface is displayed over HTTP
 - **AND** the user can interact with an isolated browser session streamed to their browser
@@ -143,29 +144,6 @@ The homelab SHALL provide a lightweight self-hosted browser capability through a
 - **WHEN** a user accesses the Firefox domain
 - **THEN** the noVNC Firefox interface SHALL be displayed
 - **AND** the "WebSockets Support" toggle SHALL be enabled in the NPM proxy host configuration
-
-### Requirement: Syncthing is categorized under container services
-The homelab SHALL classify Syncthing as a container-services workload located under `containerServices/syncthing/`.
-
-#### Scenario: Service directory follows category placement
-- **WHEN** the repository service layout is inspected
-- **THEN** Syncthing compose and documentation files SHALL reside under `containerServices/syncthing/`
-
-### Requirement: Syncthing follows single-network isolation model
-Syncthing SHALL use the container services network only and SHALL NOT join other category networks directly.
-
-#### Scenario: Network declaration enforces isolation
-- **WHEN** Syncthing compose configuration is inspected
-- **THEN** the top-level `networks` block SHALL declare `container_network` as external
-- **AND** the Syncthing service SHALL not declare membership in media, knowledge, security, finance, ai, or games networks
-
-### Requirement: Syncthing can be fronted by NPM gateway
-Syncthing web access SHALL be compatible with the existing NPM gateway model.
-
-#### Scenario: NPM-to-Syncthing routing is valid
-- **WHEN** an NPM proxy host targets the Syncthing service container endpoint
-- **THEN** the route SHALL resolve within `container_network`
-- **AND** direct cross-category networking SHALL not be required
 
 ### REQ-010: Host provisioning is separate from service setup
 Host-wide provisioning scripts SHALL live under `scripts/host/`. The bootstrap
@@ -198,3 +176,28 @@ file in place, and SHALL NOT resize or reformat an existing file.
 - **WHEN** the operator reruns the swap script
 - **THEN** it SHALL leave both swap devices active without recreating the file or duplicating its entry
 
+### REQ-013: Syncthing is categorized under container services
+The homelab SHALL classify Syncthing as a container-services workload located under `containerServices/syncthing/`.
+
+#### Scenario: Service directory follows category placement
+- **GIVEN** the relevant infrastructure configuration and deployment state are available for inspection
+- **WHEN** the repository service layout is inspected
+- **THEN** Syncthing compose and documentation files SHALL reside under `containerServices/syncthing/`
+
+### REQ-014: Syncthing follows single-network isolation model
+Syncthing SHALL use the container services network only and SHALL NOT join other category networks directly.
+
+#### Scenario: Network declaration enforces isolation
+- **GIVEN** the relevant infrastructure configuration and deployment state are available for inspection
+- **WHEN** Syncthing compose configuration is inspected
+- **THEN** the top-level `networks` block SHALL declare `container_network` as external
+- **AND** the Syncthing service SHALL not declare membership in media, knowledge, security, finance, ai, or games networks
+
+### REQ-015: Syncthing can be fronted by NPM gateway
+Syncthing web access SHALL be compatible with the existing NPM gateway model.
+
+#### Scenario: NPM-to-Syncthing routing is valid
+- **GIVEN** the relevant infrastructure configuration and deployment state are available for inspection
+- **WHEN** an NPM proxy host targets the Syncthing service container endpoint
+- **THEN** the route SHALL resolve within `container_network`
+- **AND** direct cross-category networking SHALL not be required

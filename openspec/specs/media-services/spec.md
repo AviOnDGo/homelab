@@ -136,6 +136,63 @@ The `mediaServices/invidious/` directory SHALL contain a `RESTORE_GUIDE.md` that
 - **THEN** the guide SHALL describe explicit confirmation before volume recreation
 - **AND** SHALL state that on restore failure the stack is intentionally left down for manual inspection
 
+### REQ-013: Invidious Restore Script SHALL Use Remote-First Latest Backup Flow
+The Invidious restore script SHALL discover and restore the latest available Dropbox backup file matching `*.sql.zst.gpg` using selection behavior consistent with Firefly/Firefox Sync scripts.
+
+#### Scenario: Latest encrypted compressed backup is selected
+- **GIVEN** multiple backup files exist in the configured Dropbox path
+- **WHEN** `restore.sh` resolves the restore source
+- **THEN** it SHALL select the latest file using the same latest-selection approach as Firefly/Firefox Sync
+- **AND** SHALL reject restore when no `*.sql.zst.gpg` file is available
+
+### REQ-014: Invidious Restore Script SHALL Enforce Preflight and `.env` Presence
+The Invidious restore script SHALL fail fast if required runtime prerequisites are not present, including mandatory `.env` availability in the service directory.
+
+#### Scenario: `.env` file is missing
+- **GIVEN** `mediaServices/invidious/.env` is absent
+- **WHEN** the operator runs `restore.sh`
+- **THEN** the script SHALL exit before backup lookup or download begins
+- **AND** SHALL present a clear error explaining `.env` is required
+
+### REQ-015: Invidious Restore Script SHALL Use Passphrase Precedence and Cleanup
+The restore script SHALL prefer an environment-provided passphrase and prompt interactively only when no passphrase is supplied; it SHALL clear passphrase state during cleanup.
+
+#### Scenario: Passphrase exists in environment
+- **GIVEN** `PASSPHRASE` is already set in the shell environment
+- **WHEN** `restore.sh` executes decrypt-and-restore steps
+- **THEN** the script SHALL use the environment passphrase without prompting
+- **AND** SHALL clear passphrase state during cleanup at script exit
+
+#### Scenario: Passphrase absent in environment
+- **GIVEN** `PASSPHRASE` is not set in the shell environment
+- **WHEN** `restore.sh` reaches credential collection
+- **THEN** the script SHALL prompt interactively for passphrase input
+- **AND** SHALL fail if an empty passphrase is provided
+
+### REQ-016: Invidious Restore Script SHALL Gate Destructive Operations
+The restore script SHALL require explicit operator confirmation before deleting and recreating `invidious_postgresdata` while keeping confirmation behavior aligned with Firefly/Firefox Sync UX.
+
+#### Scenario: Existing volume requires operator confirmation
+- **GIVEN** `invidious_postgresdata` already exists
+- **WHEN** `restore.sh` prepares to restore into a clean database volume
+- **THEN** the script SHALL prompt the operator to confirm recreation
+- **AND** SHALL follow Firefly/Firefox Sync-style default confirmation semantics
+
+### REQ-017: Invidious Restore Script SHALL Validate PostgreSQL Readiness and Failure Safety
+The restore script SHALL wait for PostgreSQL readiness before import and SHALL leave the stack down with explicit messaging when restore validation fails.
+
+#### Scenario: Database readiness check passes
+- **GIVEN** the database container is started for restore
+- **WHEN** readiness checks complete successfully
+- **THEN** the script SHALL proceed with decrypt, decompress, and `psql` import
+- **AND** SHALL start the full Invidious stack after successful verification
+
+#### Scenario: Database readiness or verification fails
+- **GIVEN** readiness or post-restore verification does not succeed
+- **WHEN** `restore.sh` handles the failure
+- **THEN** the script SHALL exit non-zero
+- **AND** SHALL explicitly state the stack is intentionally left down for manual inspection
+
 ### REQ-018: Immich Container Resource Limits
 The `immich` server container and `immich-ml` container SHALL each have explicit Docker memory limits to prevent resource starvation of co-hosted services.
 
@@ -222,15 +279,6 @@ The Immich stack SHALL support NVIDIA GPU acceleration for both machine-learning
 - **THEN** `immich-ml` SHALL use the CPU-only image (no `-cuda` tag, no `hwaccel.ml.yml` extends)
 - **AND** the `immich` server SHALL continue to use the NVENC transcoding backend unaffected
 
-### REQ-024a: Immich ML model cache volume persistence
-The `immich-ml` container SHALL mount the named external volume `immich_model_cache` at `/cache` so that downloaded CLIP and facial-recognition models persist across container restarts and image upgrades, avoiding repeated model downloads.
-
-#### Scenario: ML models survive container recreation
-- **GIVEN** `immich_model_cache` is an external Docker volume
-- **WHEN** the `immich-ml` container is recreated or upgraded
-- **THEN** previously downloaded models SHALL already be present in `/cache`
-- **AND** the container SHALL NOT re-download models that are already cached
-
 ### REQ-025: Immich ML Service Network Alias
 The `immich-ml` container SHALL declare the network alias `immich-machine-learning` on its default network so that the Immich server can resolve the ML service at the URL `http://immich-machine-learning:3003` — matching Immich's built-in default and any system config stored in the database.
 
@@ -240,62 +288,14 @@ The `immich-ml` container SHALL declare the network alias `immich-machine-learni
 - **THEN** it SHALL successfully resolve `immich-machine-learning` to the `immich-ml` container
 - **AND** the ML service SHALL respond without a "failed for all URLs" error
 
-### Requirement: Invidious Restore Script SHALL Use Remote-First Latest Backup Flow
-The Invidious restore script SHALL discover and restore the latest available Dropbox backup file matching `*.sql.zst.gpg` using selection behavior consistent with Firefly/Firefox Sync scripts.
+### REQ-026: Immich ML model cache volume persistence
+The `immich-ml` container SHALL mount the named external volume `immich_model_cache` at `/cache` so that downloaded CLIP and facial-recognition models persist across container restarts and image upgrades, avoiding repeated model downloads.
 
-#### Scenario: Latest encrypted compressed backup is selected
-- **GIVEN** multiple backup files exist in the configured Dropbox path
-- **WHEN** `restore.sh` resolves the restore source
-- **THEN** it SHALL select the latest file using the same latest-selection approach as Firefly/Firefox Sync
-- **AND** SHALL reject restore when no `*.sql.zst.gpg` file is available
-
-### Requirement: Invidious Restore Script SHALL Enforce Preflight and `.env` Presence
-The Invidious restore script SHALL fail fast if required runtime prerequisites are not present, including mandatory `.env` availability in the service directory.
-
-#### Scenario: `.env` file is missing
-- **GIVEN** `mediaServices/invidious/.env` is absent
-- **WHEN** the operator runs `restore.sh`
-- **THEN** the script SHALL exit before backup lookup or download begins
-- **AND** SHALL present a clear error explaining `.env` is required
-
-### Requirement: Invidious Restore Script SHALL Use Passphrase Precedence and Cleanup
-The restore script SHALL prefer an environment-provided passphrase and prompt interactively only when no passphrase is supplied; it SHALL clear passphrase state during cleanup.
-
-#### Scenario: Passphrase exists in environment
-- **GIVEN** `PASSPHRASE` is already set in the shell environment
-- **WHEN** `restore.sh` executes decrypt-and-restore steps
-- **THEN** the script SHALL use the environment passphrase without prompting
-- **AND** SHALL clear passphrase state during cleanup at script exit
-
-#### Scenario: Passphrase absent in environment
-- **GIVEN** `PASSPHRASE` is not set in the shell environment
-- **WHEN** `restore.sh` reaches credential collection
-- **THEN** the script SHALL prompt interactively for passphrase input
-- **AND** SHALL fail if an empty passphrase is provided
-
-### Requirement: Invidious Restore Script SHALL Gate Destructive Operations
-The restore script SHALL require explicit operator confirmation before deleting and recreating `invidious_postgresdata` while keeping confirmation behavior aligned with Firefly/Firefox Sync UX.
-
-#### Scenario: Existing volume requires operator confirmation
-- **GIVEN** `invidious_postgresdata` already exists
-- **WHEN** `restore.sh` prepares to restore into a clean database volume
-- **THEN** the script SHALL prompt the operator to confirm recreation
-- **AND** SHALL follow Firefly/Firefox Sync-style default confirmation semantics
-
-### Requirement: Invidious Restore Script SHALL Validate PostgreSQL Readiness and Failure Safety
-The restore script SHALL wait for PostgreSQL readiness before import and SHALL leave the stack down with explicit messaging when restore validation fails.
-
-#### Scenario: Database readiness check passes
-- **GIVEN** the database container is started for restore
-- **WHEN** readiness checks complete successfully
-- **THEN** the script SHALL proceed with decrypt, decompress, and `psql` import
-- **AND** SHALL start the full Invidious stack after successful verification
-
-#### Scenario: Database readiness or verification fails
-- **GIVEN** readiness or post-restore verification does not succeed
-- **WHEN** `restore.sh` handles the failure
-- **THEN** the script SHALL exit non-zero
-- **AND** SHALL explicitly state the stack is intentionally left down for manual inspection
+#### Scenario: ML models survive container recreation
+- **GIVEN** `immich_model_cache` is an external Docker volume
+- **WHEN** the `immich-ml` container is recreated or upgraded
+- **THEN** previously downloaded models SHALL already be present in `/cache`
+- **AND** the container SHALL NOT re-download models that are already cached
 
 ### REQ-029: Invidious Proxied External Egress via Gluetun
 The `invidious` service SHALL join `security_network` for external HTTP(S) egress and SHALL use the Gluetun proxy at `http://gluetun:8888` through lowercase `http_proxy` and `https_proxy` environment variables. The `invidious-db` and `companion` services SHALL remain exclusively on `media_network`.
@@ -390,4 +390,3 @@ The Transmission service documentation SHALL distinguish proxy-aware HTTP(S) req
 - **WHEN** its operator documentation is reviewed
 - **THEN** HTTP(S) proxy behavior SHALL be described separately from BitTorrent peer traffic
 - **AND** the documentation SHALL state that the current proxy variables alone do not tunnel peer traffic
-

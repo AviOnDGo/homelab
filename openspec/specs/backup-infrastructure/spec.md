@@ -1,153 +1,28 @@
+## Purpose
+
+Define service registration, deployment-profile, migration, and ordering constraints for the standard backup services. Common encryption, scheduling, retention, destination, and notification behavior is specified in `backup-services/spec.md`; this specification SHALL NOT redefine that common behavior.
+
 ## Requirements
-
-### REQ-001: Database Backup
-The system SHALL provide automated PostgreSQL database backups.
-
-#### Scenario: Automated backup execution
-- **WHEN** the scheduled backup time arrives
-- **THEN** the backup system creates PostgreSQL dumps
-- **AND** encrypts them using GPG
-
-#### Scenario: Database passphrase is missing
-- **GIVEN** a PostgreSQL backup has an empty or missing GPG passphrase
-- **WHEN** the backup job runs
-- **THEN** it SHALL fail before creating or uploading a database dump
-
-### REQ-002: Filesystem Backup
-The system SHALL provide automated backups of Docker volumes and filesystem data using a standardized filedata backup service.
-
-#### Scenario: Volume backup
-- **WHEN** the backup system runs
-- **THEN** it backs up configured Docker volumes
-- **AND** compresses and encrypts the backup files
-
-#### Scenario: Filedata backup service location
-- **WHEN** the filedata backup service is deployed
-- **THEN** it MUST be located at `backupServices/filedata/`
-- **AND** the service name MUST be `filedata-backup`
-- **AND** the container name MUST be `filedata-backup`
-
-#### Scenario: Filedata backup scripts
-- **GIVEN** the filedata backup image is built from its service directory
-- **WHEN** backup scripts are used for filedata backups
-- **THEN** `filedata-backup-script.sh` SHALL be included in the image as
-  `/usr/local/bin/backup-script.sh`
-- **AND** `configure-rclone.sh` SHALL be included in the image
-- **AND** the scripts SHALL NOT require host bind mounts at runtime
-- **AND** the backup script SHALL support multiple volume types (pihole, npm, vaultwarden)
-
-#### Scenario: Filedata backup documentation
-- **WHEN** filedata backup service is deployed
-- **THEN** it MUST include a `RESTORE_GUIDE.md` with restoration procedures
-- **AND** it MUST include a `SERVICE_DOCUMENTATION.md` with operational details
-- **AND** documentation MUST follow service documentation standards
-
-#### Scenario: Cross-service backup references
-- **WHEN** a service is backed up by the filedata backup service
-- **THEN** the service's restore guide MUST reference `backupServices/filedata`
-- **AND** the reference MUST use the service name `filedata-backup`
-- **AND** references MUST be updated when backup service location or name changes
-
-### REQ-003: Backup Encryption
-The system SHALL encrypt all backups using GPG with AES256 cipher algorithm.
-
-#### Scenario: Backup encryption
-- **WHEN** a backup is created
-- **THEN** the backup file is encrypted with GPG
-- **AND** cannot be decrypted without the proper passphrase
-
-### REQ-004: Multi-Cloud Support
-The system SHALL support backup synchronization to multiple cloud storage providers.
-
-#### Scenario: Dropbox backup
-- **WHEN** backups are synchronized
-- **THEN** encrypted backups are uploaded to Dropbox
-- **AND** stored in the configured directory
-
-#### Scenario: Google Drive backup
-- **WHEN** backups are synchronized
-- **THEN** encrypted backups are uploaded to Google Drive
-- **AND** stored in the configured directory
-
-#### Scenario: OneDrive backup
-- **WHEN** backups are synchronized
-- **THEN** encrypted backups are uploaded to OneDrive
-- **AND** stored in the configured directory
-
-### REQ-005: Retention Policies
-The system SHALL implement retention policies for backup management.
-
-#### Scenario: Old backup cleanup
-- **WHEN** retention period expires
-- **THEN** old backups are automatically deleted
-- **AND** storage space is managed efficiently
-
-### REQ-006: Backup Notifications
-The system SHALL send backup status notifications through Discord.
-
-#### Scenario: Success notification
-- **WHEN** a backup completes successfully
-- **THEN** a success notification is sent to Discord
-- **AND** includes backup details
-
-#### Scenario: Failure notification
-- **WHEN** a backup fails
-- **THEN** a failure notification is sent to Discord
-- **AND** includes error details
-
-### REQ-007: Scheduled Backups
-The system SHALL schedule backups at regular intervals using cron jobs.
-
-#### Scenario: Daily backup execution
-- **WHEN** the scheduled backup time arrives
-- **THEN** the backup system executes automatically
-- **AND** performs the configured backup operations
-
-### REQ-008: Database Specific Backups
-The system SHALL provide specialized backup services for critical databases.
-
-#### Scenario: PostgreSQL backup
-- **WHEN** PostgreSQL backup runs
-- **THEN** it uses pg_dump to create consistent backups
-- **AND** backs up all databases and schemas
-
-### REQ-009: Service-Specific Backups
-The system SHALL provide backup capabilities for individual services.
-
-#### Scenario: Vaultwarden backup
-- **WHEN** Vaultwarden backup runs
-- **THEN** it backs up password vault data
-- **AND** encrypts the backup with GPG
-
-#### Scenario: Homepage backup
-- **WHEN** Homepage backup runs
-- **THEN** it backs up configuration and user data
-- **AND** ensures service continuity
-
-### REQ-010: Backup Network Isolation
-The system SHALL isolate backup services in a dedicated network.
-
-#### Scenario: Backup service communication
-- **WHEN** backup services communicate
-- **THEN** all communication occurs within the backup network
-- **AND** unauthorized access from other networks is prevented
 
 ### REQ-011: Filedata backups run on staggered per-service cron schedules
 The filedata backup service SHALL schedule each service backup independently using per-service cron schedule environment variables, starting no earlier than 2:00 AM daily and staggered at minimum 5-minute intervals to avoid simultaneous I/O contention.
 
 #### Scenario: Per-service schedule variables declared
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the `backupServices/filedata/docker-compose.yml` command block is inspected
-- **THEN** each service (pihole, npm, vaultwarden) MUST reference its own schedule variable (`PIHOLE_CRON_SCHEDULE`, `NPM_CRON_SCHEDULE`, `VAULTWARDEN_CRON_SCHEDULE`)
+- **THEN** each service (pihole, npm, vaultwarden) SHALL reference its own schedule variable (`PIHOLE_CRON_SCHEDULE`, `NPM_CRON_SCHEDULE`, `VAULTWARDEN_CRON_SCHEDULE`)
 - **AND** the first cron `echo` in each filedata command block SHALL rewrite `/etc/crontabs/root` with `>` so container starts remain idempotent
-- **AND** the variables MUST NOT share a single `CRON_SCHEDULE` value
+- **AND** the variables SHALL NOT share a single `CRON_SCHEDULE` value
 
 #### Scenario: Default filedata backup schedule staggering
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the filedata backup service is deployed with default schedule values
 - **THEN** pihole backs up every 10 days at 2:00 AM (`0 2 */10 * *`)
 - **AND** npm backs up every 7 days at 2:10 AM (`10 2 */7 * *`)
 - **AND** vaultwarden backs up at 2:15 AM (`15 2 * * *`)
 
 #### Scenario: Vaultwarden schedule remains independent
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the filedata backup service is deployed
 - **THEN** vaultwarden backup schedule is controlled by `VAULTWARDEN_CRON_SCHEDULE` independently of the other service schedule variables
 
@@ -170,23 +45,27 @@ The postgres backup service SHALL schedule database backups using per-service cr
 The backup system SHALL use per-service configurable cron schedules that reflect each service's data change frequency and acceptable backup intervals.
 
 #### Scenario: Pi-hole backup schedule
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the filedata backup system is configured
-- **THEN** Pi-hole backups MUST run every 10 days (`0 2 */10 * *`)
-- **AND** Pi-hole backup retention MUST be set to 61 days
+- **THEN** Pi-hole backups SHALL run every 10 days (`0 2 */10 * *`)
+- **AND** Pi-hole backup retention SHALL be set to 61 days
 
 #### Scenario: NPM backup schedule
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the filedata backup system is configured
-- **THEN** NPM (Nginx Proxy Manager) backups MUST run every 7 days (`0 2 */7 * *`)
-- **AND** NPM backup retention MUST be set to 57 days
+- **THEN** NPM (Nginx Proxy Manager) backups SHALL run every 7 days (`0 2 */7 * *`)
+- **AND** NPM backup retention SHALL be set to 57 days
 
 #### Scenario: Invidious backup schedule
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the PostgreSQL backup system is configured
-- **THEN** Invidious database backups MUST run every 2 days (`0 3 */2 * *`)
-- **AND** Invidious backup retention MUST be set to 30 days
+- **THEN** Invidious database backups SHALL run every 2 days (`0 3 */2 * *`)
+- **AND** Invidious backup retention SHALL be set to 30 days
 
 #### Scenario: Unchanged services
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** backup schedules are updated
-- **THEN** Vaultwarden and Firefly backup schedules and retention MUST remain unchanged
+- **THEN** Vaultwarden and Firefly backup schedules and retention SHALL remain unchanged
 
 ### REQ-014: Every service SHALL be covered by backup before deployment is considered complete
 When a service is newly added or standardized, it SHALL have backup integration configured as part of the standardization work. A service without backup coverage SHALL be considered incompletely standardized.
@@ -198,20 +77,24 @@ The backup mechanism is determined by the type of persistent data:
 | PostgreSQL database | `backupServices/postgres/` (`db-backup` service) | Add cron entry + case block to `db-backup-script.sh`; mount the postgres volume |
 | Docker volume / filesystem data | `backupServices/filedata/` (`filedata-backup` service) | Register the volume via env vars in `.env` and mount in `docker-compose.yml` |
 
-A service MAY use both mechanisms (e.g., has both a postgres DB and file storage).
+A service with both PostgreSQL and filedata persistence SHALL use both
+mechanisms.
 
 #### Scenario: Service standardized without backup
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** a service's docker-compose.yml is updated to follow homelab standards (network, volumes, etc.)
 - **THEN** a backup task for that service SHALL also be present in the same change's task list
 - **AND** the service's `SERVICE_DOCUMENTATION.md` SHALL explicitly state whether backup is configured or explicitly deferred with a rationale
 
 #### Scenario: PostgreSQL-backed service backup integration
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** a service uses a PostgreSQL database
 - **THEN** the service's postgres volume SHALL be mounted into `db-backup` in `backupServices/postgres/docker-compose.yml`
 - **AND** a cron entry SHALL be present in the `db-backup` command for that service
 - **AND** a case block SHALL exist in `backupServices/postgres/db-backup-script.sh` for that service's database
 
 #### Scenario: Filesystem/volume-backed service backup integration
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** a service uses persistent Docker volumes (non-database storage)
 - **THEN** those volumes SHALL be registered in `backupServices/filedata/` via mount declarations in `docker-compose.yml`
 - **AND** the volume name and retention period SHALL be defined via environment variables in `backupServices/filedata/.env` (e.g., `{VOLUME_NAME}_DROPBOX_PATH`, `{VOLUME_NAME}_RETENTION_DAYS`)
@@ -219,6 +102,7 @@ A service MAY use both mechanisms (e.g., has both a postgres DB and file storage
 - **NOTE** `filedata-backup-script.sh` is fully generic and resolves configuration via env var indirection — no per-service block is required in the script itself
 
 #### Scenario: Backup deferred with documented rationale
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** backup integration is explicitly deferred (e.g., service not yet production-ready)
 - **THEN** the deferral SHALL be documented in the service's `SERVICE_DOCUMENTATION.md` under the "Backup Coverage" section
 - **AND** a tracking task SHALL be created in the relevant OpenSpec change or a follow-up change
@@ -228,6 +112,7 @@ A service MAY use both mechanisms (e.g., has both a postgres DB and file storage
 The system SHALL NOT contain Duplicity- or MEGA-based backup scripts in the `mediaServices/immich/` directory. These scripts are superseded by the homelab standard backup infrastructure.
 
 #### Scenario: Legacy files absent from the repository
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the repository is inspected
 - **THEN** the following files SHALL NOT exist under `mediaServices/immich/`:
   - `configureDuplicityRclone.sh`
@@ -315,14 +200,6 @@ The Immich file-lane restore workflow SHALL use the existing `filedata-backup` c
 - **THEN** each of `immich_library`, `immich_profile`, and `immich_upload` SHALL be restorable using the `filedata-backup` container's rclone
 - **AND** the restore flow SHALL read from the configured `mega-crypt` `current/` paths
 
-### REQ-019: Immich upload data migrated from bind-mount to named volumes
-The system SHALL provide a migration path for existing photo data from the legacy `${UPLOAD_LOCATION}` host path into the three named Docker volumes (`immich_library`, `immich_profile`, `immich_upload`) before the service is restarted with the new compose configuration.
-
-#### Scenario: Existing photo data preserved after migration
-- **WHEN** the migration script or manual copy completes
-- **THEN** all files previously at `${UPLOAD_LOCATION}/library`, `${UPLOAD_LOCATION}/profile`, and `${UPLOAD_LOCATION}/upload` SHALL be present inside their respective named volumes
-- **AND** the `immich` container SHALL start without reporting missing library data
-
 ### REQ-020: Remote Backup Profile — Scoped Volume Set
 When deployed to a remote host, the `filedata-backup` service SHALL protect only the
 four remote-profile source volumes plus `gpg-secrets` using
@@ -339,13 +216,15 @@ four remote-profile source volumes plus `gpg-secrets` using
   present
 
 #### Scenario: Remote backup .env is scoped to active services
-- **WHEN** `backupServices/filedata/.env` is inspected on the `gcp` branch
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
+- **WHEN** the remote filedata backup environment is inspected
 - **THEN** cron schedule, Dropbox path, and retention variables SHALL exist for:
   pihole, npm, vaultwarden, and freshrss
 - **AND** variables for openwebui and immich SHALL NOT be
   present
 
 #### Scenario: freshrss_filedata volume is backed up remotely
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the `FRESHRSS_CRON_SCHEDULE` fires on the remote host
 - **THEN** the `filedata-backup` container SHALL create a GPG-encrypted tar
   archive of `freshrss_filedata`
@@ -389,20 +268,24 @@ example file convention defined in `backup-env-file-standards`.
 The `firefox_filedata` Docker volume SHALL be registered in `backupServices/filedata/` so that the Firefox browser profile is included in the standard GPG-encrypted, multi-cloud backup pipeline.
 
 #### Scenario: Volume mount present in backup service
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** `backupServices/filedata/docker-compose.yml` is inspected
 - **THEN** the `filedata-backup` service's `volumes:` list SHALL contain `firefox_filedata:/backup-sources/firefox:ro`
 - **AND** the top-level `volumes:` block SHALL declare `firefox_filedata` with `external: true`
 
 #### Scenario: Cron entry present
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** the `filedata-backup` container startup command is inspected
 - **THEN** an `echo` line adding `${FIREFOX_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh firefox` to `/etc/crontabs/root` SHALL be present
 
 #### Scenario: Per-service environment variables declared
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** `backupServices/filedata/.env` is inspected
 - **THEN** `FIREFOX_CRON_SCHEDULE`, `FIREFOX_DROPBOX_PATH`, and `FIREFOX_RETENTION_DAYS` SHALL be present
 - **AND** `FIREFOX_CRON_SCHEDULE` SHALL NOT share its cron expression with any other service's schedule variable
 
 #### Scenario: env.prd.example and env.acc.example updated
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** `backupServices/filedata/env.prd.example` and `env.acc.example` are inspected
 - **THEN** a `# Firefox` section SHALL be present in both files containing `FIREFOX_DROPBOX_PATH`, `FIREFOX_RETENTION_DAYS`, and `FIREFOX_CRON_SCHEDULE`
 - **AND** `FIREFOX_CRON_SCHEDULE` SHALL be `10 4 * * *` (staggered at least 5 minutes after FreshRSS at `0 4 * * *`)
@@ -431,3 +314,12 @@ empty modes to `archive`; sync-crypt volumes SHALL have explicit mode settings.
 - **THEN** the command SHALL NOT export `{SERVICE}_BACKUP_MODE` defaults
 - **AND** Immich and Paperless sync-crypt mode settings SHALL be documented as
   explicit environment configuration
+
+### REQ-025: Immich upload data migrated from bind-mount to named volumes
+The system SHALL provide a migration path for existing photo data from the legacy `${UPLOAD_LOCATION}` host path into the three named Docker volumes (`immich_library`, `immich_profile`, `immich_upload`) before the service is restarted with the new compose configuration.
+
+#### Scenario: Existing photo data preserved after migration
+- **GIVEN** the relevant backup configuration and deployment state are available for inspection
+- **WHEN** the migration script or manual copy completes
+- **THEN** all files previously at `${UPLOAD_LOCATION}/library`, `${UPLOAD_LOCATION}/profile`, and `${UPLOAD_LOCATION}/upload` SHALL be present inside their respective named volumes
+- **AND** the `immich` container SHALL start without reporting missing library data

@@ -218,7 +218,7 @@ service directory covering architecture, configuration, operational procedures, 
 ### REQ-012: Restore documentation is required for stateful services
 Any service that uses persistent Docker volumes or a database SHALL have a `RESTORE_GUIDE.md`
 file in its service directory. Backup infrastructure services that document restore
-procedures in the services they back up MAY omit this file.
+procedures in the services they back up SHALL be permitted to omit this file.
 
 #### Scenario: Stateful service has restore guide
 - **GIVEN** a service mounts at least one external Docker named volume
@@ -343,7 +343,7 @@ Every long-running service that exposes an HTTP health endpoint or a database re
 - **AND** the rationale SHALL be documented in a comment in the compose file
 
 ### REQ-020: PostgreSQL companion volumes are internal (not external)
-When a service deploys a companion PostgreSQL container, the PostgreSQL data volume SHALL be declared as an internal named volume — without `external: true`. The `name:` field SHALL follow the pattern `<service>_postgresdata`. The `backupServices/postgres/` compose file MAY reference the same volume as `external: true` for backup mount purposes; this does not affect the owning service's declaration.
+When a service deploys a companion PostgreSQL container, the PostgreSQL data volume SHALL be declared as an internal named volume — without `external: true`. The `name:` field SHALL follow the pattern `<service>_postgresdata`. The `backupServices/postgres/` compose file SHALL be permitted to reference the same volume as `external: true` for backup mount purposes; this does not affect the owning service's declaration.
 
 #### Scenario: Postgres data volume is declared internally
 - **GIVEN** a `docker-compose.yml` includes a companion PostgreSQL service
@@ -423,7 +423,7 @@ Each service directory SHALL include an executable `restore.sh` script as the op
 - **GIVEN** a service has `RESTORE_GUIDE.md`
 - **WHEN** recovery instructions are reviewed
 - **THEN** `./restore.sh` SHALL be documented as the primary restore path
-- **AND** manual fallback steps MAY be included for exceptional recovery
+- **AND** manual fallback steps SHALL be permitted to be included for exceptional recovery
 
 #### Scenario: Stateless service provides no-op restore helper
 - **GIVEN** a service has no persistent state to restore
