@@ -1,7 +1,10 @@
 ## Requirements
 
 ### REQ-001: Container services network isolation
-All services under `containerServices/` SHALL join `container_network`, a dedicated external Docker network. This network isolates container-management tooling from other service categories.
+The Firefox and Syncthing services under `containerServices/` SHALL join
+`container_network`, a dedicated external Docker network. Each service SHALL be
+deployed independently from its own directory, without a parent-level aggregate
+Compose file or setup script.
 
 #### Scenario: container_network is declared as external
 - **GIVEN** any `docker-compose.yml` under `containerServices/` (except a future NPM integration) is inspected
@@ -15,6 +18,13 @@ All services under `containerServices/` SHALL join `container_network`, a dedica
 - **THEN** a network named `container_network` SHALL exist
 - **AND** it SHALL have been created with `docker network create container_network` before any containerServices stack is started
 
+#### Scenario: Service directories are self-contained
+- **GIVEN** `containerServices/` contains the Firefox and Syncthing services
+- **WHEN** the directory structure is reviewed
+- **THEN** Firefox SHALL be managed through `containerServices/firefox/docker-compose.yml`
+- **AND** Syncthing SHALL be managed through `containerServices/syncthing/docker-compose.yml`
+- **AND** no parent-level aggregate Compose file, setup script, or backup scripts SHALL be present
+
 ### REQ-008: Firefox Browser Service
 The system SHALL deploy a Firefox container at `containerServices/firefox/docker-compose.yml` on `container_network` (via compose `default` alias), serving a noVNC web UI accessible directly on host port 3000 and via Nginx Proxy Manager.
 
@@ -23,10 +33,12 @@ The system SHALL deploy a Firefox container at `containerServices/firefox/docker
 - **THEN** its compose file SHALL reside at `containerServices/firefox/docker-compose.yml`
 - **AND** the container SHALL be named `firefox`
 
-#### Scenario: Default bridge network
-- **WHEN** `docker inspect firefox` is executed
-- **THEN** the container SHALL be attached to the default bridge network
-- **AND** no custom `networks:` block SHALL be present in `containerServices/firefox/docker-compose.yml`
+#### Scenario: External container network via default alias
+- **GIVEN** `containerServices/firefox/docker-compose.yml` is inspected
+- **WHEN** its network configuration is reviewed
+- **THEN** the `default` network alias SHALL reference `container_network`
+- **AND** that network SHALL be declared with `external: true`
+- **AND** the running Firefox container SHALL be attached to `container_network`
 
 #### Scenario: Port 3000 exposed on host (noVNC)
 - **GIVEN** Firefox is deployed
@@ -50,12 +62,14 @@ The Firefox service SHALL store all persistent data (browser profile, bookmarks,
 - **WHEN** the Firefox container is stopped and recreated with `docker compose up -d --force-recreate`
 - **THEN** all previously configured bookmarks, extensions, and browser preferences SHALL be preserved
 
-### REQ-010: Minimal Configuration — shm_size Only
-The Firefox service SHALL have no `environment:` block and no `env_file:` directive. Only `shm_size` is required.
+### REQ-010: Minimal Configuration
+The Firefox service SHALL use only the `WEB_AUDIO` environment value needed for
+audio support and SHALL NOT use an `env_file:` directive.
 
-#### Scenario: No environment variables
-- **WHEN** `containerServices/firefox/docker-compose.yml` is inspected
-- **THEN** no `environment:` block SHALL be present
+#### Scenario: Environment configuration
+- **GIVEN** `containerServices/firefox/docker-compose.yml` is inspected
+- **WHEN** its service environment is reviewed
+- **THEN** `WEB_AUDIO` SHALL be configured
 - **AND** no `env_file:` directive SHALL be present
 
 #### Scenario: SHM size configured

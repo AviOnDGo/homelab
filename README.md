@@ -23,7 +23,6 @@ to their respective licenses and terms.
 | Container | Purpose |
 |-----------|---------|
 | `npm` | Nginx Proxy Manager — reverse proxy and SSL termination |
-| `homepage` | Service dashboard |
 | `watchtower` | Automatic container image updates |
 
 ### Media Services
@@ -179,18 +178,18 @@ tailscale status
 
 ### 3. Start container services
 
-```bash
-cd containerServices
-sh ./setup.sh
-```
-
-### 4. Create AGE credentials (secrets encryption)
+Create the shared external network once, then start each service from its own
+directory:
 
 ```bash
-echo "my-secret-password" | age -p > restic-pass.age
+docker network inspect container_network >/dev/null 2>&1 ||
+  docker network create container_network
+
+docker compose -f containerServices/firefox/docker-compose.yml up -d
+docker compose -f containerServices/syncthing/docker-compose.yml up -d
 ```
 
-### 5. Cron jobs
+### 4. Cron jobs
 
 ```bash
 sudo crontab -e

@@ -40,7 +40,6 @@ updates:
       - /aiServices/openwebui
       - /backupServices/filedata
       - /backupServices/postgres
-      - /containerServices
       - /containerServices/firefox
       - /containerServices/syncthing
       - /financialServices/firefly
