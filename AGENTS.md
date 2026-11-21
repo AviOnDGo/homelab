@@ -335,7 +335,7 @@ volumes:
 > **Network block standard** — Every `docker-compose.yml` MUST include a top-level `networks:` block declaring all referenced networks as `external: true`. Never rely on implicit network creation; the block makes network membership auditable at a glance.
 
 ### Volume Naming Convention
-Named external Docker volumes use the pattern **`<service_name>_filedata`** (e.g., `freshrss_filedata`, `vaultwarden_filedata`). Services with multiple distinct volumes append a purpose suffix instead: `<service>_<purpose>` (e.g., `affine_storage`, `affine_config`, `immich_library`). Never use generic names like `data` or `config` without a service prefix.
+Named external Docker volumes use the pattern **`<service_name>_filedata`** (e.g., `freshrss_filedata`, `vaultwarden_filedata`). Services with multiple distinct volumes append a purpose suffix instead: `<service>_<purpose>` (e.g., `immich_library`, `immich_profile`). Never use generic names like `data` or `config` without a service prefix.
 
 ### Environment & Secrets
 - `PUID: 1000`, `PGID: 1000` standard for linuxserver.io images
