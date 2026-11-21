@@ -40,7 +40,6 @@ to their respective licenses and terms.
 ### Knowledge Services
 | Container | Purpose |
 |-----------|---------|
-| `affine_server` | AFFiNE collaborative workspace |
 | `freshrss` | RSS aggregator |
 | `paperless` | Document management (OCR) |
 
@@ -289,7 +288,7 @@ All service and infrastructure specifications live in **[openspec/specs/](opensp
 |------|---------|
 | [homelab-core-infrastructure](openspec/specs/homelab-core-infrastructure/) | Docker, NPM, Homepage |
 | [media-services](openspec/specs/media-services/) | Jellyfin, Sonarr, Radarr, Immich, Paperless |
-| [knowledge-services](openspec/specs/knowledge-services/) | AFFiNE, FreshRSS |
+| [knowledge-services](openspec/specs/knowledge-services/) | FreshRSS, Paperless |
 | [ai-services](openspec/specs/ai-services/) | Ollama, Open WebUI |
 | [security-services](openspec/specs/security-services/) | Vaultwarden, Pi-hole, Gluetun |
 | [financial-services](openspec/specs/financial-services/) | Firefly III |
