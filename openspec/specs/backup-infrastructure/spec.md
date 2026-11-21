@@ -164,7 +164,7 @@ The postgres backup service SHALL schedule database backups using per-service cr
 #### Scenario: Environment examples define one cron variable per postgres service
 - **GIVEN** `backupServices/postgres/.env.acc.example` and `.env.prd.example` are inspected
 - **WHEN** checking cron-related variable names
-- **THEN** each postgres-backed service SHALL define exactly one cron variable: `INVIDIOUS_CRON_SCHEDULE`, `FIREFLY_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`, `AFFINE_CRON_SCHEDULE`, `IMMICH_CRON_SCHEDULE`, `FIREFOXSYNC_CRON_SCHEDULE`
+- **THEN** each postgres-backed service SHALL define exactly one cron variable: `INVIDIOUS_CRON_SCHEDULE`, `FIREFLY_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`, `IMMICH_CRON_SCHEDULE`, `FIREFOXSYNC_CRON_SCHEDULE`
 
 ### REQ-013: Service-Specific Backup Schedules
 The backup system SHALL use per-service configurable cron schedules that reflect each service's data change frequency and acceptable backup intervals.
@@ -335,14 +335,14 @@ four remote-profile source volumes plus `gpg-secrets` using
 - **THEN** the `volumes:` mount list of the `filedata-backup` service SHALL
   contain source volumes `freshrss_filedata`, `npm_filedata`, `pihole_filedata`,
   and `vaultwarden_filedata`, followed by `gpg-secrets`, in that order
-- **AND** volumes for openwebui, affine, and immich SHALL NOT be
+- **AND** volumes for openwebui and immich SHALL NOT be
   present
 
 #### Scenario: Remote backup .env is scoped to active services
 - **WHEN** `backupServices/filedata/.env` is inspected on the `gcp` branch
 - **THEN** cron schedule, Dropbox path, and retention variables SHALL exist for:
   pihole, npm, vaultwarden, and freshrss
-- **AND** variables for openwebui, affine, and immich SHALL NOT be
+- **AND** variables for openwebui and immich SHALL NOT be
   present
 
 #### Scenario: freshrss_filedata volume is backed up remotely
@@ -367,8 +367,7 @@ example file convention defined in `backup-env-file-standards`.
 - **GIVEN** `backupServices/filedata/env.acc.example` and `env.prd.example` are inspected
 - **WHEN** checking the set of variable names
 - **THEN** both files SHALL declare variables for: pihole, npm, vaultwarden,
-  openwebui, affine, freshrss, immich (library, profile, upload)
-- **AND** neither file SHALL omit AFFiNE variables that were absent from the old `.env.example`
+  openwebui, freshrss, immich (library, profile, upload)
 
 #### Scenario: postgres backup service env examples
 - **GIVEN** `backupServices/postgres/` is inspected
@@ -381,7 +380,7 @@ example file convention defined in `backup-env-file-standards`.
 - **GIVEN** `backupServices/postgres/env.acc.example` and `env.prd.example` are inspected
 - **WHEN** checking the set of variable names
 - **THEN** both files SHALL declare database credentials and backup config for:
-  invidious, firefly, paperless, affine, immich, firefoxsync
+  invidious, firefly, paperless, immich, firefoxsync
 - **AND** both files SHALL declare one cron schedule variable per service (`{SERVICE}_CRON_SCHEDULE`)
 - **AND** both files SHALL declare shared credentials: `DROPBOX_AUTH_TOKEN`,
   `DROPBOX_REFRESH_TOKEN`, `GPG_PASSPHRASE`, `DISCORD_WEBHOOK_URL`, `TZ`
