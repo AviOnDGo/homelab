@@ -88,8 +88,10 @@ jobs:
           fi
 
       - name: Guard confirmation input
+        env:
+          CONFIRM_RESTORE: ${{ github.event.inputs.confirm_restore }}
         run: |
-          if [[ "${{ github.event.inputs.confirm_restore }}" != "RESTORE_FRESHRSS" ]]; then
+          if [[ "$CONFIRM_RESTORE" != "RESTORE_FRESHRSS" ]]; then
             echo "Aborting: confirm_restore must equal RESTORE_FRESHRSS"
             exit 1
           fi
