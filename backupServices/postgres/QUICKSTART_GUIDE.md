@@ -11,7 +11,7 @@ Choose the compose file that matches your deployment target:
 | Local | `docker-compose.local.yml` | `romm`, `invidious`, `immich`, `paperless` |
 
 All profiles use the same per-service cron variables from `.env`:
-`FIREFLY_CRON_SCHEDULE`, `ROMM_CRON_SCHEDULE`, `AFFINE_CRON_SCHEDULE`,
+`FIREFLY_CRON_SCHEDULE`, `ROMM_CRON_SCHEDULE`,
 `IMMICH_CRON_SCHEDULE`, `INVIDIOUS_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`,
 and `FIREFOXSYNC_CRON_SCHEDULE`, as applicable to the selected profile.
 
@@ -147,15 +147,13 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
 | Invidious   | `INVIDIOUS_CRON_SCHEDULE`   | `0 3 */2 * *`  | 30 days   |
 | Firefly     | `FIREFLY_CRON_SCHEDULE`     | `5 3 * * *`    | 120 days  |
 | Paperless   | `PAPERLESS_CRON_SCHEDULE`   | `10 3 * * *`   | 30 days   |
-| Affine      | `AFFINE_CRON_SCHEDULE`      | `15 3 * * *`   | 120 days  |
 | Immich      | `IMMICH_CRON_SCHEDULE`      | `0 4 * * *`    | 30 days   |
 | FirefoxSync | `FIREFOXSYNC_CRON_SCHEDULE` | `20 3 * * *`   | 30 days   |
 
 ### Profile Notes
 
-- `docker-compose.yml` schedules all six databases using the shared `.env` cron vars.
+- `docker-compose.yml` schedules all five databases using the shared `.env` cron vars.
 - `docker-compose.local.yml` schedules `romm`, `paperless`, and `invidious`.
-  AFFiNE remains commented out and is not scheduled in the Local profile.
 - Paperless runs in `knowledgeServices/paperless/` on `knowledge_network`. Both the
   default and Local backup profiles join that network to reach `paperless-db`;
   keep `media_network` for Invidious.
@@ -328,7 +326,6 @@ backupServices/postgres/
   ├── invidious/           # Invidious backups (*.sql.zst.gpg)
   ├── firefly/             # Firefly backups (*.sql.zst.gpg)
   ├── paperless/           # Paperless backups (*.sql.zst.gpg)
-  ├── affine/              # Affine backups (*.sql.zst.gpg)
   ├── immich/              # Immich backups (*.sql.zst.gpg)
   └── firefoxsync/         # Firefox Sync backups (*.sql.zst.gpg)
 ```
