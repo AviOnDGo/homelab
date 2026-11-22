@@ -296,10 +296,16 @@ For breaking PRs, use `!` in the title and include migration steps in the PR bod
 under a `BREAKING CHANGE:` footer. Start the footer with a description, and include
 the affected services, prerequisites, and steps operators must take. Keep that
 footer in the squash commit body so those steps appear in the generated notes.
-**Validate PR title** reports invalid titles and is required by branch protection
+**Validate PR title** reports invalid titles and is required by a branch ruleset
 on `main`. Review the final squash subject before merging: semantic-release reads
 commits on `main`, and an unrecognized subject may miss its intended version bump.
-Direct pushes follow the same convention.
+Changes to `main` require a pull request.
+
+The `main` rulesets require one code-owner approval, resolved conversations, and
+the configured status checks. Repository administrators can bypass the review
+requirement for a pull request, including their own; this does not allow direct
+pushes or bypass the separate checks and conversation requirements. Once
+`CODEOWNERS` is on `main`, its owner assignment applies to subsequent PRs.
 
 ### Activate or recover releases
 
@@ -307,7 +313,7 @@ Publishing is disabled until an operator approves and completes this sequence:
 
 1. After the workflow and title checker are on `main`, enable squash merging only,
    with **Pull request title and description** as the default message. Require the
-   `Validate PR title` status check in `main` branch protection.
+   `Validate PR title` status check in a `main` branch ruleset.
    Restrict direct pushes where available, and review tag and notes write restrictions.
    The publishing job uses `GITHUB_TOKEN` with `contents: write`; do not add a PAT
    to bypass restrictions.
