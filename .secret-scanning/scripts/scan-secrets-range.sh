@@ -4,17 +4,25 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-if git -C "$repo_root" rev-parse --verify --quiet '@{u}' >/dev/null; then
-  commit_range="@{u}..HEAD"
-else
-  base_ref="$(git -C "$repo_root" show-ref --verify --quiet refs/heads/main && printf main || printf master)"
-  merge_base="$(git -C "$repo_root" merge-base HEAD "$base_ref")"
-  commit_range="$merge_base..HEAD"
-fi
-
 branch="$(git -C "$repo_root" branch --show-current)"
 if ! remote="$(git -C "$repo_root" config --get "branch.$branch.remote")"; then
   remote=origin
+fi
+
+if git -C "$repo_root" rev-parse --verify --quiet '@{u}' >/dev/null; then
+  commit_range="@{u}..HEAD"
+else
+  remote_branch="refs/remotes/$remote/$branch"
+  if git -C "$repo_root" rev-parse --verify --quiet "$remote_branch" >/dev/null; then
+    commit_range="$remote_branch..HEAD"
+  else
+    remote_head="refs/remotes/$remote/HEAD"
+    if git -C "$repo_root" rev-parse --verify --quiet "$remote_head" >/dev/null; then
+      commit_range="$remote_head..HEAD"
+    else
+      commit_range="HEAD"
+    fi
+  fi
 fi
 
 # Merging another remote branch does not introduce its existing commits to the remote.

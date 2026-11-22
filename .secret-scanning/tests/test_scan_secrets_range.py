@@ -34,7 +34,7 @@ class PushRangeTests(unittest.TestCase):
 
     def commit_file(self, name: str, content: str) -> None:
         fixture = self.repo / name
-        fixture.write_text(content, encoding="utf-8")  # codeql[py/clear-text-storage-sensitive-data]
+        fixture.write_text(content, encoding="utf-8")  # lgtm[py/clear-text-storage-sensitive-data]
         self.git("add", "--", name)
         self.git("commit", "--quiet", "-m", "Add fixture")
 
@@ -85,6 +85,13 @@ class PushRangeTests(unittest.TestCase):
 
     def test_no_upstream_still_scans_new_commits(self) -> None:
         self.git("branch", "--unset-upstream")
+        self.commit_file("new.txt", f"password={TEST_VALUE}\n")
+        result = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Secret scan failed", result.stdout)
+
+    def test_local_main_without_upstream_scans_new_commits(self) -> None:
+        self.git("switch", "--quiet", "main")
         self.commit_file("new.txt", f"password={TEST_VALUE}\n")
         result = self.scan()
         self.assertEqual(result.returncode, 1, result.stderr)
