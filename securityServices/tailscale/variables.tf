@@ -30,9 +30,9 @@ variable "tailscale_admin_email" {
   sensitive   = true
 }
 
-variable "tailscale_privileged_email" {
-  type        = string
-  description = "Secret: email with privileged Tailscale ACL access"
+variable "tailscale_privileged_emails" {
+  type        = list(string)
+  description = "Secret: emails with privileged Tailscale ACL access"
   sensitive   = true
 }
 
