@@ -77,3 +77,13 @@ Tailscale Terraform inputs, local examples, and GitHub Actions configuration SHA
 - **THEN** non-secret project, tailnet, and state-bucket values SHALL use `${{ vars.* }}`
 - **AND** GCP credentials, OAuth credentials, and member identities SHALL use `${{ secrets.* }}`
 - **AND** documentation SHALL provide the attribute name and classification for each input
+
+### REQ-007: Privileged group accepts multiple identities
+The Tailscale privileged ACL group SHALL use a sensitive list of identities supplied
+through Terraform inputs and the deployment workflow.
+
+#### Scenario: Multiple privileged identities are configured
+- **GIVEN** multiple identities are supplied in `tailscale_privileged_emails`
+- **WHEN** Terraform constructs the Tailscale ACL
+- **THEN** all supplied identities SHALL be members of `group:privileged`
+- **AND** the deployment workflow SHALL obtain the list from a GitHub secret
