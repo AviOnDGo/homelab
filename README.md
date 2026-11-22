@@ -258,7 +258,7 @@ do not require a repository-level host crontab.
 | `gcp-vm-deploy.yml` | GCP Terraform changes or manual dispatch | Plans and, with explicit action/guarding, applies or destroys the GCP VM |
 | `gcp-freshrss-restore.yml` | Manual dispatch with confirmation | Restores FreshRSS backups on the GCP VM |
 | `cleanup-workflow-runs.yml` | 1st of each month, 02:00 UTC | Deletes workflow run records older than 60 days (keeps ≥ 3 per workflow) |
-| `pr-title.yml` | PR updates targeting `main` | Advisory check for the title that will become the squash commit subject |
+| `pr-title.yml` | PR updates targeting `main` | Required check for the title that will become the squash commit subject |
 | `release.yml` | Push to `main`, or manual dispatch on `main` | Validates and previews or publishes a source release; publishing is opt-in |
 | `secret-scan.yml` | Pushes and pull requests | Scans tracked changes for secret patterns |
 
@@ -279,18 +279,18 @@ For breaking PRs, use `!` in the title and include migration steps in the PR bod
 under a `BREAKING CHANGE:` footer. Start the footer with a description, and include
 the affected services, prerequisites, and steps operators must take. Keep that
 footer in the squash commit body so those steps appear in the generated notes.
-**Validate PR title (advisory)** reports invalid titles without being a required
-merge check. Review the final squash subject before merging: semantic-release
-reads commits on `main`, and an unrecognized subject may miss its intended
-version bump. Direct pushes follow the same convention.
+**Validate PR title** reports invalid titles and is required by branch protection
+on `main`. Review the final squash subject before merging: semantic-release reads
+commits on `main`, and an unrecognized subject may miss its intended version bump.
+Direct pushes follow the same convention.
 
 ### Activate or recover releases
 
 Publishing is disabled until an operator approves and completes this sequence:
 
 1. After the workflow and title checker are on `main`, enable squash merging only,
-   with **Pull request title and description** as the default message. Leave the
-   title check advisory; branch protection is not needed to activate publishing.
+   with **Pull request title and description** as the default message. Require the
+   `Validate PR title` status check in `main` branch protection.
    Restrict direct pushes where available, and review tag and notes write restrictions.
    The publishing job uses `GITHUB_TOKEN` with `contents: write`; do not add a PAT
    to bypass restrictions.

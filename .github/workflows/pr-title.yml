@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   validate-title:
-    name: Validate PR title (advisory)
+    name: Validate PR title
     runs-on: ubuntu-latest
     steps:
       # Use the trusted base commit, never the PR head.

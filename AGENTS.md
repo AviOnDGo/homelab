@@ -300,8 +300,8 @@ release, even for documentation or maintenance.
 For example, `fix(ollama): restore boot startup` is a patch; `docs!: change the
 restore procedure` is major. For a breaking PR, include `!` in the title and
 write operator migration steps in a `BREAKING CHANGE:` footer in the PR body.
-The PR-title check is advisory. Verify the final squash subject and preserve
-the migration footer before merging. Follow
+The `Validate PR title` check is required on pull requests targeting `main`.
+Verify the final squash subject and preserve the migration footer before merging. Follow
 [the release runbook](./README.md#activate-or-recover-releases) for required
 GitHub settings, baseline approval, preview, retries, and disabling publication
 without changing deployed services or moving tags.
