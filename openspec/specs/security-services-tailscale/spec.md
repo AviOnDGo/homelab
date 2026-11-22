@@ -39,14 +39,20 @@ The Tailscale deployment workflow SHALL pass sensitive Terraform variables from 
 - **THEN** sensitive `-var` flags SHALL reference GitHub Secrets
 - **AND** no sensitive literal SHALL appear in the workflow file
 
-### REQ-005: setup.sh remains self-documenting and variable-driven
-`securityServices/tailscale/setup.sh` SHALL declare editable GCP-related variables near the top and SHALL reference those variables throughout script logic.
+### REQ-005: initial_setup.sh remains self-documenting and variable-driven
+`securityServices/tailscale/initial_setup.sh` SHALL be identified as a one-time GCP bootstrap and SHALL declare editable GCP-related variables near the top. It SHALL reference those variables throughout script logic and SHALL NOT be required for normal Terraform deployments.
 
 #### Scenario: Script configuration is centralized
-- **GIVEN** `securityServices/tailscale/setup.sh` is inspected
-- **WHEN** setup variable declarations are reviewed
+- **GIVEN** `securityServices/tailscale/initial_setup.sh` is inspected
+- **WHEN** initial setup variable declarations are reviewed
 - **THEN** project-specific values SHALL be declared in one editable block
 - **AND** hardcoded project identifiers SHALL NOT appear in later script body sections
+
+#### Scenario: Normal deployments do not rerun initial setup
+- **GIVEN** the Tailscale deployment workflow or Terraform command is run
+- **WHEN** applying ACL configuration
+- **THEN** `initial_setup.sh` SHALL NOT be invoked
+- **AND** normal deployment SHALL use the existing GCP credentials and Terraform state bucket
 
 ### REQ-006: Tailscale inputs explicitly identify variables and secrets
 Tailscale Terraform inputs, local examples, and GitHub Actions configuration SHALL clearly distinguish non-secret variables from secrets.

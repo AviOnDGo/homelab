@@ -107,6 +107,13 @@ or service data.
 that configuration can be applied through the `tailscale-deploy` workflow
 after the required repository variables and secrets are configured.
 
+[`securityServices/tailscale/initial_setup.sh`](securityServices/tailscale/initial_setup.sh)
+is for **one-time GCP bootstrap only**. Run it after editing its project-specific
+values to install the local tools, create the Terraform service account,
+credential file, billing binding, and state bucket. It is not needed for routine
+ACL deployments: use Terraform locally or run the `tailscale-deploy` GitHub
+Actions workflow.
+
 ### Tailscale deployment attributes
 
 The workflow distinguishes non-secret GitHub Actions variables from credential
