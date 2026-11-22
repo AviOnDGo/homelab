@@ -40,13 +40,20 @@ The Tailscale deployment workflow SHALL pass sensitive Terraform variables from 
 - **AND** no sensitive literal SHALL appear in the workflow file
 
 ### REQ-005: initial_setup.sh remains self-documenting and variable-driven
-`securityServices/tailscale/initial_setup.sh` SHALL be identified as a one-time GCP bootstrap and SHALL declare editable GCP-related variables near the top. It SHALL reference those variables throughout script logic and SHALL NOT be required for normal Terraform deployments.
+`securityServices/tailscale/initial_setup.sh` SHALL be identified as a one-time GCP bootstrap and SHALL declare editable non-secret GCP-related variables near the top. It SHALL receive the billing account through the environment and SHALL NOT be required for normal Terraform deployments.
 
 #### Scenario: Script configuration is centralized
 - **GIVEN** `securityServices/tailscale/initial_setup.sh` is inspected
 - **WHEN** initial setup variable declarations are reviewed
-- **THEN** project-specific values SHALL be declared in one editable block
+- **THEN** non-secret project-specific values SHALL be declared in one editable block
+- **AND** the billing account SHALL be supplied through the environment
 - **AND** hardcoded project identifiers SHALL NOT appear in later script body sections
+
+#### Scenario: Existing service-account key is reused safely
+- **GIVEN** a credential file already exists at the configured path
+- **WHEN** initial setup is run
+- **THEN** the script SHALL reuse the file only if its client email matches the configured service account
+- **AND** an invalid or mismatched file SHALL be left unchanged and reported as an error
 
 #### Scenario: Normal deployments do not rerun initial setup
 - **GIVEN** the Tailscale deployment workflow or Terraform command is run
