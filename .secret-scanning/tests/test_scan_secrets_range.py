@@ -89,6 +89,26 @@ class PushRangeTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("Secret scan failed", result.stdout)
 
+    def test_example_placeholder_passes(self) -> None:
+        field_name = "tailscale_oauth_client_" + "secret"
+        self.commit_file(
+            "terraform.tfvars.example",
+            f'{field_name} = "your-oauth-client-secret"\n',
+        )
+        result = self.scan()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_example_secret_is_blocked(self) -> None:
+        field_name = "tailscale_oauth_client_" + "secret"
+        self.commit_file(
+            "terraform.tfvars.example",
+            f'{field_name} = "{TEST_VALUE}"\n',
+        )
+        result = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("terraform.tfvars.example:1", result.stdout)
+        self.assertNotIn(TEST_VALUE, result.stdout + result.stderr)
+
     def test_configured_remote_is_used(self) -> None:
         self.git("remote", "rename", "origin", "upstream")
         self.commit_file("remote.txt", f"password={TEST_VALUE}\n")
