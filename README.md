@@ -108,11 +108,14 @@ that configuration can be applied through the `tailscale-deploy` workflow
 after the required repository variables and secrets are configured.
 
 [`securityServices/tailscale/initial_setup.sh`](securityServices/tailscale/initial_setup.sh)
-is for **one-time GCP bootstrap only**. Run it after editing its project-specific
-values to install the local tools, create the Terraform service account,
-credential file, billing binding, and state bucket. It is not needed for routine
-ACL deployments: use Terraform locally or run the `tailscale-deploy` GitHub
-Actions workflow.
+is for **one-time GCP bootstrap only**. Edit its non-secret project-specific
+values and set `BILLING_ACCOUNT` privately in the environment before running it
+to install the local tools, create the Terraform service account, credential
+file, billing binding, and state bucket. For example, in an interactive Bash
+shell, use `read -r -s -p "Billing account: " BILLING_ACCOUNT`, press Enter,
+then run `export BILLING_ACCOUNT` and the script. Unset the variable afterward.
+The script is not needed for routine ACL deployments: use Terraform locally or
+run the `tailscale-deploy` GitHub Actions workflow.
 
 ### Tailscale deployment attributes
 
@@ -136,6 +139,20 @@ maps repository variables and secrets to Terraform inputs such as
 `var.tailscale_oauth_client_secret`. For local runs, copy
 [`securityServices/tailscale/terraform.tfvars.example`](securityServices/tailscale/terraform.tfvars.example)
 to a gitignored `terraform.tfvars` and replace only the example values.
+The `credentials_file` input authenticates the Google provider, not the GCS
+backend. Before local initialization, configure the state bucket in a private
+`backend.hcl` based on
+[`backend.hcl.example`](securityServices/tailscale/backend.hcl.example), then
+point Application Default Credentials to the bootstrap service-account key:
+
+```bash
+cd securityServices/tailscale
+export GOOGLE_APPLICATION_CREDENTIALS="/tmp/gcp-credentials.json"
+terraform init -backend-config=backend.hcl
+```
+
+Use the actual credential path if it differs from the bootstrap default. Keep
+the key private, and unset `GOOGLE_APPLICATION_CREDENTIALS` when finished.
 
 **GCP VM** infrastructure is defined in [`googleCloud/`](googleCloud/) and
 managed by guarded Terraform plan/apply/destroy workflow jobs. The VM bootstrap
