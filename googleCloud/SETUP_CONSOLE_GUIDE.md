@@ -154,7 +154,6 @@ Add these variables:
 - `GCP_WIF_PROVIDER`
 - `GCP_SERVICE_ACCOUNT`
 - `GCP_PROJECT_ID`
-- `GCP_BILLING_ACCOUNT_ID`
 - `GCP_BUDGET_CURRENCY_CODE` = the billing account's three-letter uppercase ISO 4217 currency code
 - `GCP_TF_STATE_BUCKET` = the exact existing VM state bucket name
 - `GCP_REGION` = `us-central1` (recommended for free tier)
@@ -171,8 +170,9 @@ projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/WIF_POOL_ID/provi
 Navigation: GitHub -> repository -> Settings -> Environments -> New environment
 
 1. Create environment `prod`.
-2. Add required reviewers.
-3. Keep apply approvals gated by this environment.
+2. Add `GCP_BILLING_ACCOUNT_ID` as an environment secret.
+3. Add required reviewers.
+4. Keep apply approvals gated by this environment.
 
 ## 10. Validate with Safe First Run
 

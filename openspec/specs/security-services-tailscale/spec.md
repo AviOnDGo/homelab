@@ -39,11 +39,41 @@ The Tailscale deployment workflow SHALL pass sensitive Terraform variables from 
 - **THEN** sensitive `-var` flags SHALL reference GitHub Secrets
 - **AND** no sensitive literal SHALL appear in the workflow file
 
-### REQ-005: setup.sh remains self-documenting and variable-driven
-`securityServices/tailscale/setup.sh` SHALL declare editable GCP-related variables near the top and SHALL reference those variables throughout script logic.
+### REQ-005: initial_setup.sh remains self-documenting and variable-driven
+`securityServices/tailscale/initial_setup.sh` SHALL be identified as a one-time GCP bootstrap and SHALL declare editable non-secret GCP-related variables near the top. It SHALL receive the billing account through the environment and SHALL NOT be required for normal Terraform deployments.
 
 #### Scenario: Script configuration is centralized
-- **GIVEN** `securityServices/tailscale/setup.sh` is inspected
-- **WHEN** setup variable declarations are reviewed
-- **THEN** project-specific values SHALL be declared in one editable block
+- **GIVEN** `securityServices/tailscale/initial_setup.sh` is inspected
+- **WHEN** initial setup variable declarations are reviewed
+- **THEN** non-secret project-specific values SHALL be declared in one editable block
+- **AND** the billing account SHALL be supplied through the environment
 - **AND** hardcoded project identifiers SHALL NOT appear in later script body sections
+
+#### Scenario: Existing service-account key is reused safely
+- **GIVEN** a credential file already exists at the configured path
+- **WHEN** initial setup is run
+- **THEN** the script SHALL reuse the file only if its client email matches the configured service account
+- **AND** an invalid or mismatched file SHALL be left unchanged and reported as an error
+
+#### Scenario: Normal deployments do not rerun initial setup
+- **GIVEN** the Tailscale deployment workflow or Terraform command is run
+- **WHEN** applying ACL configuration
+- **THEN** `initial_setup.sh` SHALL NOT be invoked
+- **AND** normal deployment SHALL use the existing GCP credentials and Terraform state bucket
+
+### REQ-006: Tailscale inputs explicitly identify variables and secrets
+Tailscale Terraform inputs, local examples, and GitHub Actions configuration SHALL clearly distinguish non-secret variables from secrets.
+
+#### Scenario: Terraform input declarations are classified
+- **GIVEN** `securityServices/tailscale/variables.tf` is inspected
+- **WHEN** each Terraform input is reviewed
+- **THEN** non-secret inputs SHALL be described as variables
+- **AND** credential, OAuth, and identity inputs SHALL be described as secrets
+- **AND** only secret inputs SHALL use `sensitive = true`
+
+#### Scenario: GitHub Actions attributes are classified
+- **GIVEN** `.github/workflows/tailscale-deploy.yml` is inspected
+- **WHEN** deployment attributes are reviewed
+- **THEN** non-secret project, tailnet, and state-bucket values SHALL use `${{ vars.* }}`
+- **AND** GCP credentials, OAuth credentials, and member identities SHALL use `${{ secrets.* }}`
+- **AND** documentation SHALL provide the attribute name and classification for each input

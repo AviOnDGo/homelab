@@ -107,6 +107,53 @@ or service data.
 that configuration can be applied through the `tailscale-deploy` workflow
 after the required repository variables and secrets are configured.
 
+[`securityServices/tailscale/initial_setup.sh`](securityServices/tailscale/initial_setup.sh)
+is for **one-time GCP bootstrap only**. Edit its non-secret project-specific
+values and set `BILLING_ACCOUNT` privately in the environment before running it
+to install the local tools, create the Terraform service account, credential
+file, billing binding, and state bucket. For example, in an interactive Bash
+shell, use `read -r -s -p "Billing account: " BILLING_ACCOUNT`, press Enter,
+then run `export BILLING_ACCOUNT` and the script. Unset the variable afterward.
+The script is not needed for routine ACL deployments: use Terraform locally or
+run the `tailscale-deploy` GitHub Actions workflow.
+
+### Tailscale deployment attributes
+
+The workflow distinguishes non-secret GitHub Actions variables from credential
+or identity secrets:
+
+| Attribute | GitHub Actions classification | Use |
+|-----------|-------------------------------|-----|
+| `GCP_PROJECT_ID` | **Variable** (`vars`) | GCP project identifier passed to Terraform |
+| `TAILSCALE_TF_STATE_BUCKET` | **Variable** (`vars`) | GCS bucket name for Terraform state |
+| `TAILSCALE_TAILNET` | **Variable** (`vars`) | Tailnet name passed to Terraform |
+| `GCP_CREDENTIALS` | **Secret** (`secrets`) | GCP service-account credential JSON |
+| `TAILSCALE_OAUTH_CLIENT_ID` | **Secret** (`secrets`) | Tailscale OAuth client identifier |
+| `TAILSCALE_OAUTH_CLIENT_SECRET` | **Secret** (`secrets`) | Tailscale OAuth client secret |
+| `TAILSCALE_ADMIN_EMAIL` | **Secret** (`secrets`) | Identity in the Tailscale admin group |
+| `TAILSCALE_PRIVILEGED_EMAIL` | **Secret** (`secrets`) | Identity in the Tailscale privileged group |
+
+GitHub Actions variable names are not Terraform variable names. The workflow
+maps repository variables and secrets to Terraform inputs such as
+`var.project_id`, `var.tailscale_tailnet`, and
+`var.tailscale_oauth_client_secret`. For local runs, copy
+[`securityServices/tailscale/terraform.tfvars.example`](securityServices/tailscale/terraform.tfvars.example)
+to a gitignored `terraform.tfvars` and replace only the example values.
+The `credentials_file` input authenticates the Google provider, not the GCS
+backend. Before local initialization, configure the state bucket in a private
+`backend.hcl` based on
+[`backend.hcl.example`](securityServices/tailscale/backend.hcl.example), then
+point Application Default Credentials to the bootstrap service-account key:
+
+```bash
+cd securityServices/tailscale
+export GOOGLE_APPLICATION_CREDENTIALS="/tmp/gcp-credentials.json"
+terraform init -backend-config=backend.hcl
+```
+
+Use the actual credential path if it differs from the bootstrap default. Keep
+the key private, and unset `GOOGLE_APPLICATION_CREDENTIALS` when finished.
+
 **GCP VM** infrastructure is defined in [`googleCloud/`](googleCloud/) and
 managed by guarded Terraform plan/apply/destroy workflow jobs. The VM bootstrap
 can optionally clone this repository; it does not imply that every service in
@@ -126,9 +173,7 @@ environment that launches your client.
 
 The OpenCode example uses its supported `{env:VARIABLE}` substitutions. Export
 `OLLAMA_REMOTE_BASE_URL` and `OLLAMA_LOCAL_BASE_URL` before launching OpenCode;
-both must include `/v1`. The root `.env.example` documents sample values, but
-copying it does not automatically export variables into a tool's environment.
-Do not launch a client with unset endpoint variables.
+both must include `/v1`. Do not launch a client with unset endpoint variables.
 
 Back up private client configuration in other existing clones before pulling
 the cleanup: Git can remove files that were previously tracked.
@@ -230,7 +275,7 @@ do not require a repository-level host crontab.
 | `gcp-vm-deploy.yml` | GCP Terraform changes or manual dispatch | Plans and, with explicit action/guarding, applies or destroys the GCP VM |
 | `gcp-freshrss-restore.yml` | Manual dispatch with confirmation | Restores FreshRSS backups on the GCP VM |
 | `cleanup-workflow-runs.yml` | 1st of each month, 02:00 UTC | Deletes workflow run records older than 60 days (keeps ≥ 3 per workflow) |
-| `pr-title.yml` | PR updates targeting `main` | Advisory check for the title that will become the squash commit subject |
+| `pr-title.yml` | PR updates targeting `main` | Required check for the title that will become the squash commit subject |
 | `release.yml` | Push to `main`, or manual dispatch on `main` | Validates and previews or publishes a source release; publishing is opt-in |
 | `secret-scan.yml` | Pushes and pull requests | Scans tracked changes for secret patterns |
 
@@ -251,18 +296,24 @@ For breaking PRs, use `!` in the title and include migration steps in the PR bod
 under a `BREAKING CHANGE:` footer. Start the footer with a description, and include
 the affected services, prerequisites, and steps operators must take. Keep that
 footer in the squash commit body so those steps appear in the generated notes.
-**Validate PR title (advisory)** reports invalid titles without being a required
-merge check. Review the final squash subject before merging: semantic-release
-reads commits on `main`, and an unrecognized subject may miss its intended
-version bump. Direct pushes follow the same convention.
+**Validate PR title** reports invalid titles and is required by a branch ruleset
+on `main`. Review the final squash subject before merging: semantic-release reads
+commits on `main`, and an unrecognized subject may miss its intended version bump.
+Changes to `main` require a pull request.
+
+The `main` rulesets require one code-owner approval, resolved conversations, and
+the configured status checks. Repository administrators can bypass the review
+requirement for a pull request, including their own; this does not allow direct
+pushes or bypass the separate checks and conversation requirements. Once
+`CODEOWNERS` is on `main`, its owner assignment applies to subsequent PRs.
 
 ### Activate or recover releases
 
 Publishing is disabled until an operator approves and completes this sequence:
 
 1. After the workflow and title checker are on `main`, enable squash merging only,
-   with **Pull request title and description** as the default message. Leave the
-   title check advisory; branch protection is not needed to activate publishing.
+   with **Pull request title and description** as the default message. Require the
+   `Validate PR title` status check in a `main` branch ruleset.
    Restrict direct pushes where available, and review tag and notes write restrictions.
    The publishing job uses `GITHUB_TOKEN` with `contents: write`; do not add a PAT
    to bypass restrictions.

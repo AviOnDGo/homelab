@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-US
+early_access: false
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  path_instructions:
+    - path: "**/*.{yml,yaml}"
+      instructions: |
+        Check Docker Compose and GitHub Actions conventions in AGENTS.md.
+        Verify YAML indentation, required secret handling, pinned action/container
+        versions where applicable, and no live credentials or environment secrets.
+    - path: "**/*.tf"
+      instructions: |
+        Follow AGENTS.md and the Tailscale/OpenSpec conventions. Verify Terraform
+        sensitive variables are clearly classified, no secrets are hardcoded, and
+        provider/backend settings remain consistent.
+    - path: "openspec/specs/**/*.md"
+      instructions: |
+        Keep the spec format in AGENTS.md: flat Requirements with stable REQ IDs,
+        SHALL/SHALL NOT normative language, and GIVEN/WHEN/THEN/AND scenarios.
+    - path: "**/*.sh"
+      instructions: |
+        Require bash shebang and set -euo pipefail for Bash scripts. Check shell
+        safety, secret handling, idempotence for setup scripts, and concrete
+        operator verification steps.
+chat:
+  auto_reply: true
