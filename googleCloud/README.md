@@ -301,7 +301,8 @@ terraform plan \
 
 ## Verification Checklist
 
-- Confirm `prod` environment contains required variables: `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_BILLING_ACCOUNT_ID`, `GCP_BUDGET_CURRENCY_CODE`, `GCP_TF_STATE_BUCKET`, `GCP_REGION`, `GCP_ZONE`.
+- Confirm required variables are configured: `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_BUDGET_CURRENCY_CODE`, `GCP_TF_STATE_BUCKET`, `GCP_REGION`, `GCP_ZONE`.
+- Confirm `prod` contains the `GCP_BILLING_ACCOUNT_ID` environment secret.
 - Confirm `GCP_SERVICE_ACCOUNT` uses full email format (`<name>@<project>.iam.gserviceaccount.com`).
 - Confirm Netdata/Tailscale onboarding config is set (`NETDATA_CLAIM_URL`, `NETDATA_CLAIM_TOKEN`, `NETDATA_CLAIM_ROOMS`, and either OAuth or ephemeral auth key path).
 - Confirm WIF provider condition matches repository and owner values.

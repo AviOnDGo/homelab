@@ -159,8 +159,6 @@ Add these variables:
 - `GCP_REGION` = `us-central1` (recommended for free tier)
 - `GCP_ZONE` = `us-central1-a` (recommended for free tier)
 
-Add `GCP_BILLING_ACCOUNT_ID` to the `prod` GitHub Environment as a Secret.
-
 `GCP_WIF_PROVIDER` must be the full provider resource path:
 
 ```text
@@ -172,8 +170,9 @@ projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/WIF_POOL_ID/provi
 Navigation: GitHub -> repository -> Settings -> Environments -> New environment
 
 1. Create environment `prod`.
-2. Add required reviewers.
-3. Keep apply approvals gated by this environment.
+2. Add `GCP_BILLING_ACCOUNT_ID` as an environment secret.
+3. Add required reviewers.
+4. Keep apply approvals gated by this environment.
 
 ## 10. Validate with Safe First Run
 
