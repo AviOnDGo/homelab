@@ -1,1 +1,2 @@
+# Non-secret Terraform variable
 bucket = "your-tailscale-terraform-state-bucket"

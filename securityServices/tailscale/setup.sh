@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────
-# GCP Configuration — EDIT THESE BEFORE RUNNING
+# Non-secret GCP variables — EDIT THESE BEFORE RUNNING
 # ─────────────────────────────────────────────────────
 PROJECT_ID="your-gcp-project-id"
 BILLING_ACCOUNT="000000-000000-000000"

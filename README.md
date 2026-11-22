@@ -107,6 +107,29 @@ or service data.
 that configuration can be applied through the `tailscale-deploy` workflow
 after the required repository variables and secrets are configured.
 
+### Tailscale deployment attributes
+
+The workflow distinguishes non-secret GitHub Actions variables from credential
+or identity secrets:
+
+| Attribute | GitHub Actions classification | Use |
+|-----------|-------------------------------|-----|
+| `GCP_PROJECT_ID` | **Variable** (`vars`) | GCP project identifier passed to Terraform |
+| `TAILSCALE_TF_STATE_BUCKET` | **Variable** (`vars`) | GCS bucket name for Terraform state |
+| `TAILSCALE_TAILNET` | **Variable** (`vars`) | Tailnet name passed to Terraform |
+| `GCP_CREDENTIALS` | **Secret** (`secrets`) | GCP service-account credential JSON |
+| `TAILSCALE_OAUTH_CLIENT_ID` | **Secret** (`secrets`) | Tailscale OAuth client identifier |
+| `TAILSCALE_OAUTH_CLIENT_SECRET` | **Secret** (`secrets`) | Tailscale OAuth client secret |
+| `TAILSCALE_ADMIN_EMAIL` | **Secret** (`secrets`) | Identity in the Tailscale admin group |
+| `TAILSCALE_PRIVILEGED_EMAIL` | **Secret** (`secrets`) | Identity in the Tailscale privileged group |
+
+GitHub Actions variable names are not Terraform variable names. The workflow
+maps repository variables and secrets to Terraform inputs such as
+`var.project_id`, `var.tailscale_tailnet`, and
+`var.tailscale_oauth_client_secret`. For local runs, copy
+[`securityServices/tailscale/terraform.tfvars.example`](securityServices/tailscale/terraform.tfvars.example)
+to a gitignored `terraform.tfvars` and replace only the example values.
+
 **GCP VM** infrastructure is defined in [`googleCloud/`](googleCloud/) and
 managed by guarded Terraform plan/apply/destroy workflow jobs. The VM bootstrap
 can optionally clone this repository; it does not imply that every service in

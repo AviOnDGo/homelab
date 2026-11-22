@@ -47,3 +47,20 @@ The Tailscale deployment workflow SHALL pass sensitive Terraform variables from 
 - **WHEN** setup variable declarations are reviewed
 - **THEN** project-specific values SHALL be declared in one editable block
 - **AND** hardcoded project identifiers SHALL NOT appear in later script body sections
+
+### REQ-006: Tailscale inputs explicitly identify variables and secrets
+Tailscale Terraform inputs, local examples, and GitHub Actions configuration SHALL clearly distinguish non-secret variables from secrets.
+
+#### Scenario: Terraform input declarations are classified
+- **GIVEN** `securityServices/tailscale/variables.tf` is inspected
+- **WHEN** each Terraform input is reviewed
+- **THEN** non-secret inputs SHALL be described as variables
+- **AND** credential, OAuth, and identity inputs SHALL be described as secrets
+- **AND** only secret inputs SHALL use `sensitive = true`
+
+#### Scenario: GitHub Actions attributes are classified
+- **GIVEN** `.github/workflows/tailscale-deploy.yml` is inspected
+- **WHEN** deployment attributes are reviewed
+- **THEN** non-secret project, tailnet, and state-bucket values SHALL use `${{ vars.* }}`
+- **AND** GCP credentials, OAuth credentials, and member identities SHALL use `${{ secrets.* }}`
+- **AND** documentation SHALL provide the attribute name and classification for each input

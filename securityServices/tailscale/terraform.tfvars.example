@@ -1,12 +1,12 @@
-# GCP Project
+# Non-secret Terraform variables
 project_id        = "your-gcp-project-id"
-credentials_file  = "/tmp/gcp-credentials.json"
 region            = "us-central1"
 zone              = "us-central1-a"
+tailscale_tailnet = "your-tailnet-name"
 
-# Tailscale
-tailscale_tailnet            = "your-tailnet-name"
-tailscale_oauth_client_id    = "your-oauth-client-id"
-tailscale_oauth_client_secret = ""
-tailscale_admin_email         = "admin@example.com"
-tailscale_privileged_email    = "admin@example.com"
+# Secret Terraform variables
+credentials_file               = "/tmp/gcp-credentials.json"
+tailscale_oauth_client_id      = "your-oauth-client-id"
+tailscale_oauth_client_secret  = "your-oauth-client-secret"
+tailscale_admin_email          = "admin@example.com"
+tailscale_privileged_email     = "privileged@example.com"
