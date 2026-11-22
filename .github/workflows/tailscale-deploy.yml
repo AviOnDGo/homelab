@@ -21,6 +21,9 @@ on:
     paths:
       - "securityServices/tailscale/**.tf"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -66,7 +69,7 @@ jobs:
             -var="tailscale_oauth_client_id=${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}" \
             -var="tailscale_oauth_client_secret=${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}" \
             -var="tailscale_tailnet=${{ vars.TAILSCALE_TAILNET }}" \
-            -var="tailscale_admin_email=${{ secrets.TAILSCALE_ADMIN_EMAIL }}" \
-            -var="tailscale_privileged_email=${{ secrets.TAILSCALE_PRIVILEGED_EMAIL }}"
+            -var="tailscale_admin_email=${{ secrets.TAILSCALE_ADMIN_EMAIL }}"
         env:
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/gcp-credentials.json
+          TF_VAR_tailscale_privileged_emails: ${{ secrets.TAILSCALE_PRIVILEGED_EMAILS }}

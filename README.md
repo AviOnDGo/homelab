@@ -131,7 +131,7 @@ or identity secrets:
 | `TAILSCALE_OAUTH_CLIENT_ID` | **Secret** (`secrets`) | Tailscale OAuth client identifier |
 | `TAILSCALE_OAUTH_CLIENT_SECRET` | **Secret** (`secrets`) | Tailscale OAuth client secret |
 | `TAILSCALE_ADMIN_EMAIL` | **Secret** (`secrets`) | Identity in the Tailscale admin group |
-| `TAILSCALE_PRIVILEGED_EMAIL` | **Secret** (`secrets`) | Identity in the Tailscale privileged group |
+| `TAILSCALE_PRIVILEGED_EMAILS` | **Secret** (`secrets`) | JSON array of identities in the Tailscale privileged group |
 
 GitHub Actions variable names are not Terraform variable names. The workflow
 maps repository variables and secrets to Terraform inputs such as
@@ -139,6 +139,11 @@ maps repository variables and secrets to Terraform inputs such as
 `var.tailscale_oauth_client_secret`. For local runs, copy
 [`securityServices/tailscale/terraform.tfvars.example`](securityServices/tailscale/terraform.tfvars.example)
 to a gitignored `terraform.tfvars` and replace only the example values.
+Before deploying this change, replace the `TAILSCALE_PRIVILEGED_EMAIL` secret
+with `TAILSCALE_PRIVILEGED_EMAILS`, containing a JSON array such as
+`["first@example.com", "second@example.com"]`. For local runs, rename
+`tailscale_privileged_email` to `tailscale_privileged_emails` and supply a list,
+even when it contains only one address. Review `terraform plan` before applying.
 The `credentials_file` input authenticates the Google provider, not the GCS
 backend. Before local initialization, configure the state bucket in a private
 `backend.hcl` based on

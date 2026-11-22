@@ -5,8 +5,8 @@ zone              = "us-central1-a"
 tailscale_tailnet = "your-tailnet-name"
 
 # Secret Terraform variables
-credentials_file               = "/tmp/gcp-credentials.json"
-tailscale_oauth_client_id      = "your-oauth-client-id"
-tailscale_oauth_client_secret  = "your-oauth-client-secret"
-tailscale_admin_email          = "admin@example.com"
-tailscale_privileged_email     = "privileged@example.com"
+credentials_file              = "/tmp/gcp-credentials.json"
+tailscale_oauth_client_id     = "your-oauth-client-id"
+tailscale_oauth_client_secret = "your-oauth-client-secret"
+tailscale_admin_email         = "admin@example.com"
+tailscale_privileged_emails   = ["first@example.com", "second@example.com"]

@@ -33,7 +33,8 @@ class PushRangeTests(unittest.TestCase):
         ).strip()
 
     def commit_file(self, name: str, content: str) -> None:
-        (self.repo / name).write_text(content, encoding="utf-8")
+        fixture = self.repo / name
+        fixture.write_text(content, encoding="utf-8")  # lgtm[py/clear-text-storage-sensitive-data]
         self.git("add", "--", name)
         self.git("commit", "--quiet", "-m", "Add fixture")
 
@@ -88,6 +89,33 @@ class PushRangeTests(unittest.TestCase):
         result = self.scan()
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("Secret scan failed", result.stdout)
+
+    def test_local_main_without_upstream_scans_new_commits(self) -> None:
+        self.git("switch", "--quiet", "main")
+        self.commit_file("new.txt", f"password={TEST_VALUE}\n")
+        result = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("Secret scan failed", result.stdout)
+
+    def test_example_placeholder_passes(self) -> None:
+        field_name = "tailscale_oauth_client_" + "secret"
+        self.commit_file(
+            "terraform.tfvars.example",
+            f'{field_name} = "your-oauth-client-secret"\n',
+        )
+        result = self.scan()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_example_secret_is_blocked(self) -> None:
+        field_name = "tailscale_oauth_client_" + "secret"
+        self.commit_file(
+            "terraform.tfvars.example",
+            f'{field_name} = "{TEST_VALUE}"\n',
+        )
+        result = self.scan()
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("terraform.tfvars.example:1", result.stdout)
+        self.assertNotIn(TEST_VALUE, result.stdout + result.stderr)
 
     def test_configured_remote_is_used(self) -> None:
         self.git("remote", "rename", "origin", "upstream")

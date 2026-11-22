@@ -51,7 +51,7 @@ resource "tailscale_acl" "main" {
   acl = jsonencode({
     groups = {
       "group:admin":      [var.tailscale_admin_email],
-      "group:privileged": [var.tailscale_privileged_email],
+      "group:privileged": var.tailscale_privileged_emails,
       "group:member":     [],
     },
     tagOwners = {
