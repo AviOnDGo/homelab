@@ -591,22 +591,18 @@ git diff --cached -- . ':(exclude)*.example' | grep -En \
 
 ### Pre-Push Secret Scan Gate
 
-Before executing **any** `git push`, scan every commit in the push range. If matches are found, **abort the push** and report findings.
+Before executing **any** `git push`, scan the outgoing commits with the repository's
+pre-push scanner. It scans example files too, while allowing explicit placeholders.
+If matches are found or the scan fails, **abort the push** and report findings.
 
 ```bash
-# Run this before every push (branch has upstream)
-git log @{u}..HEAD --pretty=format:"%H" 2>/dev/null | \
-  xargs -I{} git show {} | grep -En \
-  "(password|passwd|secret|token|api_key|apikey|access_key|private_key|auth_token)\s*[=:]\s*['\"]?[A-Za-z0-9/+_\-]{8,}"
-
-# Fallback: branch has no upstream yet — scan from merge-base with main
-git log $(git merge-base HEAD main)..HEAD --pretty=format:"%H" | \
-  xargs -I{} git show {} | grep -En \
-  "(password|passwd|secret|token|api_key|apikey|access_key|private_key|auth_token)\s*[=:]\s*['\"]?[A-Za-z0-9/+_\-]{8,}"
+bash .secret-scanning/scripts/scan-secrets-range.sh
 ```
 
-- **No matches** → proceed with push
-- **Matches found** → abort, report the commit hash, file, and line; recommend amending or squashing before pushing
+- **Scan passes** → proceed with push
+- **Matches found** → abort, report the file and line, and recommend removing the
+  literal from the affected commits before pushing
+- **Scan errors** → abort and resolve the error before pushing
 
 ---
 
