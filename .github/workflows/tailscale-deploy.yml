@@ -61,11 +61,11 @@ jobs:
       - name: Terraform Apply
         run: |
           terraform apply -auto-approve -input=false \
-            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
             -var="credentials_file=/tmp/gcp-credentials.json" \
             -var="tailscale_oauth_client_id=${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}" \
             -var="tailscale_oauth_client_secret=${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}" \
-            -var="tailscale_tailnet=${{ secrets.TAILSCALE_TAILNET }}" \
+            -var="tailscale_tailnet=${{ vars.TAILSCALE_TAILNET }}" \
             -var="tailscale_admin_email=${{ secrets.TAILSCALE_ADMIN_EMAIL }}" \
             -var="tailscale_privileged_email=${{ secrets.TAILSCALE_PRIVILEGED_EMAIL }}"
         env:

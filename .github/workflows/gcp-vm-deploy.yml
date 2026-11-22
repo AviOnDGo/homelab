@@ -74,8 +74,8 @@ jobs:
             echo "Missing required repository/environment variable: GCP_PROJECT_ID"
             missing=1
           fi
-          if [[ -z "${{ vars.GCP_BILLING_ACCOUNT_ID }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_BILLING_ACCOUNT_ID"
+          if [[ -z "${{ secrets.GCP_BILLING_ACCOUNT_ID }}" ]]; then
+            echo "Missing required repository/environment secret: GCP_BILLING_ACCOUNT_ID"
             missing=1
           fi
           if [[ -z "${{ vars.GCP_REGION }}" ]]; then
@@ -96,7 +96,7 @@ jobs:
           TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
           TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
-          TS_TAILNET: ${{ secrets.TAILSCALE_TAILNET }}
+          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
           NETDATA_CLAIM_TOKEN: ${{ secrets.NETDATA_CLAIM_TOKEN }}
           NETDATA_CLAIM_ROOMS: ${{ secrets.NETDATA_CLAIM_ROOMS }}
           NETDATA_CLAIM_URL: ${{ vars.NETDATA_CLAIM_URL }}
@@ -178,7 +178,7 @@ jobs:
 
           # Budget read access is checked by listing budgets on the billing account.
           if ! gcloud billing budgets list \
-            --billing-account="${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            --billing-account="${{ secrets.GCP_BILLING_ACCOUNT_ID }}" \
             --limit=1 \
             --format="value(name)" >/dev/null; then
             echo "Shared identity must include billing.resourcebudgets.read"
@@ -205,7 +205,7 @@ jobs:
           : "${TF_VAR_budget_currency_code:?Set GCP_BUDGET_CURRENCY_CODE to the billing account currency}"
           terraform plan -input=false -lock-timeout=300s -out=tfplan \
             -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
-            -var="billing_account_id=${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            -var="billing_account_id=${{ secrets.GCP_BILLING_ACCOUNT_ID }}" \
             -var="region=${{ vars.GCP_REGION }}" \
             -var="zone=${{ vars.GCP_ZONE }}"
 
@@ -285,8 +285,8 @@ jobs:
             echo "Missing required repository/environment variable: GCP_PROJECT_ID"
             missing=1
           fi
-          if [[ -z "${{ vars.GCP_BILLING_ACCOUNT_ID }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_BILLING_ACCOUNT_ID"
+          if [[ -z "${{ secrets.GCP_BILLING_ACCOUNT_ID }}" ]]; then
+            echo "Missing required repository/environment secret: GCP_BILLING_ACCOUNT_ID"
             missing=1
           fi
           if [[ -z "${{ vars.GCP_REGION }}" ]]; then
@@ -341,7 +341,7 @@ jobs:
 
           # Ensure billing budget API access is present before apply.
           if ! gcloud billing budgets list \
-            --billing-account="${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            --billing-account="${{ secrets.GCP_BILLING_ACCOUNT_ID }}" \
             --limit=1 \
             --format="value(name)" >/dev/null; then
             echo "Shared identity must include billing budget API access"
@@ -389,7 +389,7 @@ jobs:
           TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
           TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
           TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
-          TS_TAILNET: ${{ secrets.TAILSCALE_TAILNET }}
+          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
         run: |
           if [[ -n "$TS_STATIC_AUTH_KEY" ]]; then
             echo "Using Tailscale key from approved secret source"
@@ -642,8 +642,8 @@ jobs:
             echo "Missing required repository/environment variable: GCP_PROJECT_ID"
             missing=1
           fi
-          if [[ -z "${{ vars.GCP_BILLING_ACCOUNT_ID }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_BILLING_ACCOUNT_ID"
+          if [[ -z "${{ secrets.GCP_BILLING_ACCOUNT_ID }}" ]]; then
+            echo "Missing required repository/environment secret: GCP_BILLING_ACCOUNT_ID"
             missing=1
           fi
           if [[ -z "${{ vars.GCP_REGION }}" ]]; then
@@ -712,6 +712,6 @@ jobs:
           : "${TF_VAR_budget_currency_code:?Set GCP_BUDGET_CURRENCY_CODE to the billing account currency}"
           terraform destroy -input=false -lock-timeout=300s -auto-approve \
             -var="project_id=${{ vars.GCP_PROJECT_ID }}" \
-            -var="billing_account_id=${{ vars.GCP_BILLING_ACCOUNT_ID }}" \
+            -var="billing_account_id=${{ secrets.GCP_BILLING_ACCOUNT_ID }}" \
             -var="region=${{ vars.GCP_REGION }}" \
             -var="zone=${{ vars.GCP_ZONE }}"

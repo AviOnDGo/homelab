@@ -119,8 +119,6 @@ Configure these repository or environment variables:
 	- Service account email used for both plan and apply jobs.
 - GCP_PROJECT_ID
 	- Target GCP project.
-- GCP_BILLING_ACCOUNT_ID
-	- Billing account ID for budget resource.
 - GCP_BUDGET_CURRENCY_CODE
 	- Required three-letter uppercase ISO 4217 currency code matching the billing account. Sets Terraform's `budget_currency_code` for plan and destroy. Set it before merging changes that trigger the workflow; there is no default.
 - GCP_TF_STATE_BUCKET
@@ -151,6 +149,8 @@ Optional variables:
 
 ## Required GitHub Secrets
 
+- GCP_BILLING_ACCOUNT_ID
+	- Billing account ID used for budget resources.
 - NETDATA_CLAIM_TOKEN
 	- Netdata Cloud claim token used during post-provision onboarding.
 - NETDATA_CLAIM_ROOMS

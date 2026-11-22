@@ -154,11 +154,12 @@ Add these variables:
 - `GCP_WIF_PROVIDER`
 - `GCP_SERVICE_ACCOUNT`
 - `GCP_PROJECT_ID`
-- `GCP_BILLING_ACCOUNT_ID`
 - `GCP_BUDGET_CURRENCY_CODE` = the billing account's three-letter uppercase ISO 4217 currency code
 - `GCP_TF_STATE_BUCKET` = the exact existing VM state bucket name
 - `GCP_REGION` = `us-central1` (recommended for free tier)
 - `GCP_ZONE` = `us-central1-a` (recommended for free tier)
+
+Add `GCP_BILLING_ACCOUNT_ID` to the `prod` GitHub Environment as a Secret.
 
 `GCP_WIF_PROVIDER` must be the full provider resource path:
 
