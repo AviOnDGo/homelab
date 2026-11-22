@@ -33,7 +33,8 @@ class PushRangeTests(unittest.TestCase):
         ).strip()
 
     def commit_file(self, name: str, content: str) -> None:
-        (self.repo / name).write_text(content, encoding="utf-8")
+        fixture = self.repo / name
+        fixture.write_text(content, encoding="utf-8")  # codeql[py/clear-text-storage-sensitive-data]
         self.git("add", "--", name)
         self.git("commit", "--quiet", "-m", "Add fixture")
 

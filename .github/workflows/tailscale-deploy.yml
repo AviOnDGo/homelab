@@ -21,6 +21,9 @@ on:
     paths:
       - "securityServices/tailscale/**.tf"
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
