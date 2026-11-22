@@ -156,9 +156,7 @@ environment that launches your client.
 
 The OpenCode example uses its supported `{env:VARIABLE}` substitutions. Export
 `OLLAMA_REMOTE_BASE_URL` and `OLLAMA_LOCAL_BASE_URL` before launching OpenCode;
-both must include `/v1`. The root `.env.example` documents sample values, but
-copying it does not automatically export variables into a tool's environment.
-Do not launch a client with unset endpoint variables.
+both must include `/v1`. Do not launch a client with unset endpoint variables.
 
 Back up private client configuration in other existing clones before pulling
 the cleanup: Git can remove files that were previously tracked.
