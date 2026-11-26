@@ -193,24 +193,16 @@ info "Restore complete."
 # --------------------------------------------------------------------------- #
 # 8. Bring up the service
 # --------------------------------------------------------------------------- #
-info "Starting FreshRSS service..."
-docker compose -f "${SCRIPT_DIR}/docker-compose.yml" up -d
-
-# --------------------------------------------------------------------------- #
-# 9. Verify
-# --------------------------------------------------------------------------- #
-info "Waiting for container to become ready..."
-sleep 3
-
-if docker exec "$CONTAINER_NAME" php /var/www/FreshRSS/cli/health.php &>/dev/null; then
-  echo ""
-  echo "=========================================="
-  echo "  FreshRSS restore completed successfully!"
-  echo "  FreshRSS health check passed."
-  echo "  Access FreshRSS via your NPM proxy URL."
-  echo "=========================================="
-else
-  error "FreshRSS health check failed."
-  error "The restore may have failed. Check: docker compose -f ${SCRIPT_DIR}/docker-compose.yml logs"
+info "Starting FreshRSS and waiting up to 300 seconds for it to become healthy..."
+if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" up -d --wait --wait-timeout 300; then
+  error "FreshRSS failed to start or become healthy."
+  error "Check: docker compose -f ${SCRIPT_DIR}/docker-compose.yml logs"
   exit 1
 fi
+
+echo ""
+echo "=========================================="
+echo "  FreshRSS restore completed successfully!"
+echo "  FreshRSS health check passed."
+echo "  Access FreshRSS via your NPM proxy URL."
+echo "=========================================="

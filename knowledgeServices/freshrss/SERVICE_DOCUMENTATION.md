@@ -51,6 +51,8 @@ All configuration is inlined in `docker-compose.yml`. No `.env` file is required
 | `CRON_MIN` | Feed refresh interval (minute pattern) | `*/15` |
 
 To change the refresh interval, edit `CRON_MIN` in `docker-compose.yml` and recreate the container.
+Docker checks service health using FreshRSS's CLI health check. Inspect it with
+`docker inspect -f '{{.State.Health.Status}}' freshrss`.
 
 ---
 

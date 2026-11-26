@@ -97,16 +97,16 @@ The restore script SHALL decrypt and extract the backup archive into the `freshr
 - **THEN** GPG SHALL decrypt the archive using a passphrase file descriptor, `zstd -d` SHALL decompress it, and `tar -xf -` SHALL extract it into the root of the `freshrss_filedata` volume via a temporary Alpine container
 
 ### REQ-006: Post-restore health verification
-The restore script SHALL verify that FreshRSS is healthy after restart using the FreshRSS CLI after a short wait.
+FreshRSS Compose SHALL configure its CLI health check. The restore script SHALL use Docker Compose to wait up to 300 seconds for FreshRSS to become healthy.
 
 #### Scenario: FreshRSS is healthy
 - **GIVEN** the service has been restarted after restore
-- **WHEN** `docker exec freshrss php /var/www/FreshRSS/cli/health.php` exits 0
+- **WHEN** Docker reports the FreshRSS container as healthy
 - **THEN** the script SHALL print a success banner and exit 0
 
-#### Scenario: FreshRSS health check fails
+#### Scenario: FreshRSS remains unhealthy
 - **GIVEN** the service has been restarted after restore
-- **WHEN** the health check exits with a non-zero status
+- **WHEN** the health check continues to fail through the 300-second readiness window
 - **THEN** the script SHALL exit with a non-zero status and print the command to inspect container logs
 
 ### REQ-007: Cleanup on exit

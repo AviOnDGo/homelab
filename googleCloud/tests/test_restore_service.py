@@ -151,7 +151,8 @@ class RestoreServiceTests(unittest.TestCase):
             "docker": """
 echo "$COMPOSE_PROJECT_NAME $*" >> "$ARGUMENTS"
 case "$1" in
-  info|compose|exec) ;;
+  info) ;;
+  compose) ;;
   volume)
     if [[ "$2" == inspect ]]; then [[ "$FORCE" == false ]]; fi ;;
   ps) ;;
@@ -183,10 +184,9 @@ esac""",
                 calls = self.arguments.read_text(encoding="utf-8")
                 if force == "false":
                     self.assertIn("skipping automatic restore", result.stdout)
-                    self.assertNotIn(" compose ", calls)
+                    self.assertNotIn(" up -d --wait ", calls)
                 else:
-                    self.assertIn("freshrss compose ", calls)
-                    self.assertIn("freshrss exec freshrss php ", calls)
+                    self.assertIn("up -d --wait --wait-timeout 300", calls)
 
 
 if __name__ == "__main__":

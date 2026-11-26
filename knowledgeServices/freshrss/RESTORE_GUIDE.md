@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- Docker, Docker Compose, `rclone`, GPG, `zstd`, and `tar` on the host.
+- Docker, Docker Compose with `up --wait --wait-timeout`, `rclone`, GPG,
+  `zstd`, and `tar` on the host.
 - `flock` is also needed for the manual fallback.
 - The external `knowledge_network` network and access to a Dropbox rclone remote.
 - The GPG passphrase used for the filedata backup.
@@ -35,10 +36,10 @@ if the volume is absent.
 
 The script downloads and validates the latest matching `.tar.zst.gpg` archive
 before stopping anything, stops `filedata-backup` only if it was running, clears
-the existing volume in place, restores the archive, starts FreshRSS and checks
-its health once after a short wait. On success or failure, it attempts to
-restart `filedata-backup` if it was running. If restarting it fails, restart it
-manually; the script does not retain its prior state for the next attempt.
+the existing volume in place, restores the archive, and waits up to 300 seconds
+for Docker Compose to report FreshRSS healthy. On success or failure, it
+attempts to restart `filedata-backup` if it was running. If restarting it fails,
+restart it manually; the script does not retain its prior state for the next attempt.
 
 The script does not lock against concurrent restores. Do not run it or the manual
 fallback while another restore is in progress. If an older version left a
@@ -62,7 +63,10 @@ SSH standard input; temporary files are removed on exit. The passphrase must be
 a single line. Avoid shell tracing. The workflow no longer accepts `vm_name`
 or `dropbox_path` inputs or sends Discord notifications. Use the script directly
 for an alternative Dropbox path. Workflow concurrency does not coordinate
-manual script runs or the NPM restore workflow; never run restores concurrently.
+manual script runs or the NPM restore workflow. Within one deployment, FreshRSS
+follows NPM, but restores from separate runs can overlap. An overlapping restore
+can restart `filedata-backup` while another restore is still changing its volume,
+allowing a partial backup. Coordinate overlapping restores and backups manually.
 
 ### 3. Clear sensitive shell state
 
@@ -74,7 +78,7 @@ unset PASSPHRASE
 
 ```bash
 docker compose ps
-docker exec freshrss php /var/www/FreshRSS/cli/health.php
+docker inspect -f '{{.State.Health.Status}}' freshrss
 docker logs --tail 50 freshrss
 ```
 

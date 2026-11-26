@@ -43,8 +43,13 @@ case "$(basename "$0"):$1" in
     if [[ "${FAIL_RUN:-}" == 1 ]]; then exit 1; fi
     if [[ "${FAIL_EXTRACT:-}" == 1 && "$*" == *" -i "* ]]; then exit 1; fi
     cat >/dev/null ;;
-  docker:compose) ;;
-  docker:exec) [[ "${FAIL_HEALTH:-}" != 1 ]] ;;
+  docker:compose)
+    if [[ "$*" == *" up -d --wait --wait-timeout 300" ]]; then
+      if [[ "${FAIL_HEALTH:-}" == 1 ]]; then exit 1; fi
+    elif [[ "$*" != "compose down" && "$*" != "compose up -d" ]]; then
+      echo "Unexpected compose command: $*" >&2
+      exit 1
+    fi ;;
   rclone:lsd) ;;
   rclone:lsf)
     printf '%s\\n' freshrss_2024-01-01_00-00-00.tar.zst.gpg unrelated.txt \\
@@ -171,10 +176,10 @@ class RestoreTests(unittest.TestCase):
                 capture_output=True, text=True,
             )
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("FreshRSS health check failed", result.stderr)
+            self.assertIn("failed to start or become healthy", result.stderr)
             calls = log.read_text()
-            self.assertIn("docker exec freshrss php /var/www/FreshRSS/cli/health.php", calls)
             self.assertIn("docker start filedata-backup", calls)
+            self.assertIn("up -d --wait --wait-timeout 300", calls)
 
     def test_failed_backup_restart_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -199,7 +204,7 @@ class RestoreTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("docker rm -f freshrss", log.read_text())
-            self.assertIn("docker exec freshrss php", log.read_text())
+            self.assertIn("up -d --wait --wait-timeout 300", log.read_text())
 
     def test_manual_fallback_cleanup_and_lock(self):
         fallback = GUIDE.read_text().split("## Manual fallback", 1)[1]
