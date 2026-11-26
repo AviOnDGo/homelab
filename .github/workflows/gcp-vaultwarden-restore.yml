@@ -25,15 +25,14 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: gcp-vaultwarden-restore
-  cancel-in-progress: false
-
 jobs:
   restore:
     name: Restore Vaultwarden
     runs-on: ubuntu-latest
     environment: prod
+    concurrency:
+      group: service-restore
+      queue: max
 
     steps:
       - name: Checkout

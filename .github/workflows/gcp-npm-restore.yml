@@ -25,15 +25,14 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: gcp-npm-restore
-  cancel-in-progress: false
-
 jobs:
   restore:
     name: Restore NPM
     runs-on: ubuntu-latest
     environment: prod
+    concurrency:
+      group: service-restore
+      queue: max
 
     steps:
       - name: Checkout

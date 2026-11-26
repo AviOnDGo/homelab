@@ -25,15 +25,14 @@ permissions:
   contents: read
   id-token: write
 
-concurrency:
-  group: gcp-freshrss-restore
-  cancel-in-progress: false
-
 jobs:
   restore:
     name: Restore FreshRSS
     runs-on: ubuntu-latest
     environment: prod
+    concurrency:
+      group: service-restore
+      queue: max
 
     steps:
       - name: Checkout

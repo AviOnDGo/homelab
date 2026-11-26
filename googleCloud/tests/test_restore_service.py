@@ -173,6 +173,20 @@ esac""",
         self.assertIn("    uses: ./.github/workflows/gcp-vaultwarden-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
 
+    def test_restore_jobs_share_a_queued_concurrency_group(self) -> None:
+        for service in ("npm", "freshrss", "vaultwarden", "watchtower"):
+            with self.subTest(service=service):
+                workflow = (
+                    ROOT / ".github" / "workflows" / f"gcp-{service}-restore.yml"
+                ).read_text(encoding="utf-8")
+                job = workflow.split("\njobs:\n  restore:\n", 1)[1]
+                self.assertIn(
+                    "    concurrency:\n"
+                    "      group: service-restore\n"
+                    "      queue: max\n",
+                    job,
+                )
+
     def test_filedata_workflows_serialize_restores(self) -> None:
         archive_file = self.work / "content"
         archive_file.write_text("test data", encoding="utf-8")
@@ -520,7 +534,7 @@ esac
         compose_path = Path(self.arguments.read_text(encoding="utf-8").strip())
         self.assertFalse(compose_path.parent.exists())
 
-    def test_deployment_runs_in_parallel_with_freshrss(self) -> None:
+    def test_deployment_schedules_watchtower_after_npm(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
             encoding="utf-8"
         )
