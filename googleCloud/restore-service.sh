@@ -94,5 +94,5 @@ fi
       "{access_token:env.token,token_type:\"bearer\",refresh_token:env.refresh,expiry:\"1970-01-01T00:00:00Z\"}")"
     unset token refresh
     export COMPOSE_PROJECT_NAME="$2"
-    flock -x /run/lock/homelab-filedata-restore.lock bash "$workdir/restore.sh" "$1"
+    bash "$workdir/restore.sh" "$1"
   '"'"' _ '"$mode"' '"$SERVICE"

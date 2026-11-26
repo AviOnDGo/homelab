@@ -148,7 +148,6 @@ esac""",
             "gpg": 'cat "$ARCHIVE"',
             "jq": 'echo "{}"',
             "sleep": "exit 0",
-            "flock": 'shift 2; exec "$@"',
         }.items():
             path = self.work / name
             path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
@@ -187,67 +186,6 @@ esac""",
                     job,
                 )
 
-    def test_filedata_workflows_serialize_restores(self) -> None:
-        archive_file = self.work / "content"
-        archive_file.write_text("test data", encoding="utf-8")
-        archive_path = self.work / "backup.tar"
-        with tarfile.open(archive_path, "w") as archive:
-            archive.add(archive_file, arcname="content")
-        for name, body in {
-            "gcloud": """
-for arg in "$@"; do command="$arg"; done
-command="${command//\\/run\\/lock\\/homelab-filedata-restore.lock/$ARGUMENTS.lock}"
-exec bash -c "$command" """,
-            "sudo": 'exec "$@"',
-            "docker": """
-case "$1" in
-  info|compose|exec) ;;
-  volume) [[ "$2" != inspect ]] ;;
-  ps) ;;
-  inspect) echo false ;;
-  run) cat >/dev/null ;;
-  *) exit 1 ;;
-esac""",
-            "rclone": """
-case "$1" in
-  lsd) ;;
-  lsf) echo "${COMPOSE_PROJECT_NAME}_2025-01-01_00-00-00.tar.zst.gpg" ;;
-  copy) printf encrypted > "$3/${2##*/}" ;;
-  *) exit 1 ;;
-esac""",
-            "gpg": 'echo "$COMPOSE_PROJECT_NAME" >> "$ARGUMENTS"; /bin/sleep 0.1; cat "$ARCHIVE"',
-            "zstd": "cat",
-            "jq": 'echo "{}"',
-            "sleep": "exit 0",
-        }.items():
-            path = self.work / name
-            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
-            path.chmod(0o755)
-        env = {
-            **self.env,
-            "FORCE": "true",
-            "ARCHIVE": str(archive_path),
-        }
-        processes = [
-            subprocess.Popen(
-                [str(SCRIPT)],
-                cwd=ROOT,
-                env={**env, "SERVICE": service},
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-            )
-            for service in ("npm", "vaultwarden")
-        ]
-        for process in processes:
-            _, stderr = process.communicate(timeout=10)
-            self.assertEqual(process.returncode, 0, stderr)
-        calls = self.arguments.read_text(encoding="utf-8").splitlines()
-        self.assertIn(calls, [
-            ["npm", "npm", "vaultwarden", "vaultwarden"],
-            ["vaultwarden", "vaultwarden", "npm", "npm"],
-        ])
-
     def test_deployment_requires_successful_npm_restore(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
             encoding="utf-8"
@@ -269,7 +207,6 @@ esac""",
             "zstd": "exit 0",
             "gpg": "exit 0",
             "jq": 'echo "{}"',
-            "flock": 'shift 2; exec "$@"',
         }.items():
             path = self.work / name
             path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
@@ -311,7 +248,6 @@ esac""",
             "gpg": 'cat "$ARCHIVE"',
             "jq": 'echo "{}"',
             "sleep": "exit 0",
-            "flock": 'shift 2; exec "$@"',
         }.items():
             path = self.work / name
             path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
