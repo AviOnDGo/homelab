@@ -510,6 +510,11 @@ jobs:
       DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+  restore-watchtower:
+    name: Restore Watchtower
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-watchtower-restore.yml
+
   teardown:
     name: Terraform Teardown
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' }}
