@@ -40,11 +40,12 @@ Vaultwarden SHALL provide `restore.sh`, and the canonical restore workflow detai
 - **AND** the authoritative restore flow SHALL be documented in the security restore scripts spec
 
 ### REQ-006: Vaultwarden admin panel is disabled
-The Vaultwarden deployment SHALL leave `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` unset. Before recreating an existing deployment, the operator SHALL remove any saved `admin_token` from `/data/config.json` as documented in the service guide.
+The Vaultwarden deployment SHALL leave `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` unset. Before recreating an existing deployment, the operator SHALL remove any saved `admin_token` and remove or set `disable_admin_token` to `false` in `/data/config.json` as documented in the service guide.
 
 #### Scenario: Admin panel remains disabled
 - **GIVEN** the Vaultwarden service is deployed with its default Compose configuration
 - **AND** any saved `admin_token` has been removed from `/data/config.json`
+- **AND** any saved `disable_admin_token` is `false` or absent
 - **WHEN** a user requests the `/admin` route
 - **THEN** the admin panel SHALL be unavailable
 - **AND** the service SHALL NOT receive `ADMIN_TOKEN` or `DISABLE_ADMIN_TOKEN` from Compose
