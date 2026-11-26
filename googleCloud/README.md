@@ -162,6 +162,8 @@ Optional variables:
 	- Default: `gcp-debian-free-tier-vm`
 - TAILSCALE_TAILNET
 	- Tailnet name used when minting short-lived keys from OAuth credentials.
+- DUCKDNS_DOMAIN
+	- DuckDNS subdomain label without `.duckdns.org`, used by the DNS update workflow.
 - BOOTSTRAP_GIT_REPO_SSH_URL
 	- Optional SSH Git URL exported as `TF_VAR_bootstrap_git_repo_ssh_url`.
 - BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME
@@ -178,13 +180,43 @@ on the VM, which is removed after the restore.
 - GCP_BILLING_ACCOUNT_ID
 	- Billing account ID used for budget resources.
 
-Tailscale credential options (configure one path for automatic onboarding;
-otherwise onboarding is skipped with a warning):
+Tailscale credential options (required only when the VM needs to log in):
 
-- Option A (preferred): `TAILSCALE_OAUTH_CLIENT_ID` + `TAILSCALE_OAUTH_CLIENT_SECRET` with `TAILSCALE_TAILNET`
+- Option A: `TAILSCALE_OAUTH_CLIENT_ID` + `TAILSCALE_OAUTH_CLIENT_SECRET` with `TAILSCALE_TAILNET`
 	- Workflow mints a short-lived key at runtime.
-- Option B (fallback): `TAILSCALE_EPHEMERAL_AUTH_KEY`
-	- Workflow fetches pre-generated short-lived key from secret store.
+- Option B: `TAILSCALE_EPHEMERAL_AUTH_KEY`
+	- Workflow uses the pre-generated key; this takes precedence when both paths are configured.
+
+The DuckDNS update workflow requires `DUCKDNS_TOKEN` in `prod` (or repository
+secrets). It runs after a successful VM apply, independently of service restores,
+and can also be started manually using `gcp-duckdns-update.yml`. The VM must
+exist and be reachable over GCP SSH. The workflow installs Tailscale if missing,
+starts its service, and logs in when needed. It preserves an existing running
+session and reconnects a stopped session without changing its settings.
+If Tailscale credentials are missing, the login step warns and skips; the
+DuckDNS update still requires Tailscale to be running. The workflow fails if
+its configuration, SSH, Tailscale installation/login, or DuckDNS update fails.
+Set the `DUCKDNS_DOMAIN` variable and token before applying. Add the workflow
+to the OIDC provider condition below before its first run. Once the workflow is
+available on the default branch, run it manually with:
+
+```bash
+gh workflow run gcp-duckdns-update.yml --ref main
+```
+
+Removing the install phase from the Terraform startup script changes
+`metadata_startup_script`, which can force replacement of the VM and its boot
+disk. Review the Terraform plan and back up data before explicitly allowing any
+replacement; the deployment workflow blocks unapproved replacements.
+
+Test first with a disposable DuckDNS domain: verify that its A record resolves
+to the VM's Tailscale IPv4 address, then test HTTPS from an authorized tailnet
+device. Confirm no other updater overwrites the record and review any existing
+AAAA record. DNS caches can delay changes, and DNS rebinding protection can
+block Tailscale addresses. The address is not publicly reachable; NPM HTTP-01
+certificate validation will not work through it. Verify a working DNS-01
+certificate issuance and renewal method before switching production DNS.
+The update runs on apply or manual dispatch, not continuously or on destroy.
 
 Optional Dropbox credentials for rclone on the VM:
 
@@ -221,11 +253,12 @@ assertion.ref == "refs/heads/main" &&
 (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-duckdns-update.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")
 
 The reusable restore workflows also use this service account. Retain the single
-provider value and include all four workflow refs in the explicit condition
-above. Update an existing provider before running Watchtower restores. Do not rely
+provider value and include all five workflow refs in the explicit condition
+above. Update an existing provider before running the new workflow. Do not rely
 on repository scope alone.
 
 Binding condition baseline (single production service account):
@@ -356,24 +389,25 @@ terraform plan \
 - Confirm required variables are configured: `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_BUDGET_CURRENCY_CODE`, `GCP_TF_STATE_BUCKET`, `GCP_REGION`, `GCP_ZONE`.
 - Confirm `prod` contains the `GCP_BILLING_ACCOUNT_ID` environment secret.
 - Confirm `GCP_SERVICE_ACCOUNT` uses full email format (`<name>@<project>.iam.gserviceaccount.com`).
-- Confirm Tailscale onboarding config is set (`TAILSCALE_TAILNET` and either OAuth credentials or an ephemeral auth key).
+- Confirm Tailscale onboarding credentials are configured if a login is needed:
+  either `TAILSCALE_EPHEMERAL_AUTH_KEY`, or `TAILSCALE_TAILNET` with both OAuth credentials.
 - Confirm WIF provider condition matches repository and owner values.
 - Confirm service-account policy contains `roles/iam.workloadIdentityUser` binding for repository principalSet.
 - Confirm backend bucket exists and includes `roles/storage.objectAdmin` and `roles/storage.legacyBucketReader` for deploy service account.
 - Run workflow_dispatch `action=plan` from branch and confirm completion through auth/validate/init/plan.
 - Run workflow_dispatch `action=apply` and verify post-provision checks:
 	- Docker service active on VM
-	- Tailscale backend state is `Running`
 	- Optional startup clone completed or skipped with explicit non-secret log reason
+- Verify the separate Tailscale and DuckDNS workflow succeeds and Tailscale
+  backend state is `Running`.
 
 ## Onboarding Rollback
 
 If post-provision onboarding fails after Terraform apply:
 
-1. Temporarily remove or rotate failing onboarding secrets in `prod` environment.
-2. Re-run workflow with `action=apply` to reapply infrastructure while skipping/failing fast on secret checks.
-3. If needed, revert workflow onboarding steps to previous commit and re-run apply.
-4. Keep startup script secret-safe during rollback; do not move secrets into Terraform metadata.
+1. Rotate or correct failing onboarding secrets in the `prod` environment.
+2. Re-run `gcp-duckdns-update.yml` independently; service restores do not depend on it.
+3. Keep startup script secret-safe during rollback; do not move secrets into Terraform metadata.
 
 ## Troubleshooting Notes
 
@@ -399,6 +433,7 @@ If post-provision onboarding fails after Terraform apply:
 - Tailscale onboarding fails with OAuth errors
 	- Verify `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_CLIENT_SECRET`, and `TAILSCALE_TAILNET` values.
 	- If OAuth cannot mint key, configure `TAILSCALE_EPHEMERAL_AUTH_KEY` fallback and retry.
+	- If the backend state is `NeedsMachineAuth`, approve the VM in the Tailscale admin console and rerun the workflow.
 - Startup clone skips or fails
 	- Ensure VM service account can access Secret Manager secret version.
 	- Confirm deploy key secret name and SSH repo URL are configured and valid.
