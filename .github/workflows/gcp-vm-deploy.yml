@@ -460,6 +460,35 @@ jobs:
           echo "[onboarding] Bootstrap and onboarding complete"
           EOF
 
+      - name: Configure rclone Dropbox remote on VM
+        working-directory: .
+        env:
+          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$DROPBOX_AUTH_TOKEN" || -z "$DROPBOX_REFRESH_TOKEN" ]]; then
+            echo "::warning::Dropbox secrets missing; skipping rclone setup on the VM"
+            exit 0
+          fi
+          # Send tokens on stdin, followed by this commit's script, so neither
+          # appears in a command line on the runner or the VM.
+          {
+            printf '%s\n' "$DROPBOX_AUTH_TOKEN" | base64 -w0; echo
+            printf '%s\n' "$DROPBOX_REFRESH_TOKEN" | base64 -w0; echo
+            cat scripts/host/configure-rclone.sh
+          } | gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" \
+            --command 'sudo bash -c '"'"'
+              set -euo pipefail
+              read -r token64
+              read -r refresh64
+              DROPBOX_AUTH_TOKEN="$(printf %s "$token64" | base64 -d | tr -d "\n")"
+              DROPBOX_REFRESH_TOKEN="$(printf %s "$refresh64" | base64 -d | tr -d "\n")"
+              export DROPBOX_AUTH_TOKEN DROPBOX_REFRESH_TOKEN
+              unset token64 refresh64
+              exec bash -s
+            '"'"''
+
       - name: Verify onboarding outcomes
         working-directory: .
         run: |
