@@ -13,18 +13,46 @@ cd securityServices/vaultwarden
 ./restore.sh
 ```
 
+For automated setup, `./restore.sh --if-missing` restores only when
+`vaultwarden_filedata` does not exist. It still prompts for the GPG passphrase
+unless `PASSPHRASE` is already set. Use `./restore.sh --force` to skip
+confirmation prompts when intentionally replacing existing data.
+
 What the script does:
 
-- Validates required tools (`docker`, `rclone`, `gpg`, `zstd`)
-- Prompts for GPG passphrase
-- Selects latest `*.tar.zst.gpg` from `dropbox:/Apps/vaultwarden` (or `DROPBOX_PATH` override)
+- Validates required tools (`docker`, `rclone`, `gpg`, `zstd`, `tar`)
+- Prompts for a GPG passphrase, or uses `PASSPHRASE` if already set
+- Selects the latest matching Vaultwarden archive from `dropbox:/Apps/vaultwarden`
+  (or `DROPBOX_REMOTE` / `DROPBOX_PATH` overrides)
+- Downloads and validates the archive before changing the service
 - Prompts before deleting `vaultwarden_filedata`
+- Stops and restarts `filedata-backup` if it was running during the restore
 - Restores archive contents into `vaultwarden_filedata`
 - Starts Vaultwarden and verifies `db.sqlite3` and `rsa_key.pem`
 
 Safety behavior:
 
 - If restore fails after shutdown, service is not auto-resumed.
+
+### GCP workflow
+
+The [GCP Vaultwarden restore workflow](../../.github/workflows/gcp-vaultwarden-restore.yml)
+runs after successful Terraform Apply and NPM restore, alongside FreshRSS and
+Watchtower. Every successful Apply, including a no-op, **forcibly replaces
+Vaultwarden data** with the latest backup. Back up current data and schedule
+downtime before applying. Manual dispatch skips an existing volume unless
+`force` is enabled; it requires an already bootstrapped VM and the workflow on
+the default branch. The `prod` environment may require approval.
+
+Configure `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE`
+as `prod` environment or repository secrets. The workflow sends these secrets
+over SSH stdin and removes its temporary files on exit. The GPG passphrase must
+be a single line. Vaultwarden's service settings come from its Compose file.
+
+Update the GCP workload identity provider to allow the Vaultwarden workflow as
+described in the [GCP guide](../../googleCloud/README.md). GCP filedata restore
+workflows share a VM lock to prevent overlapping restores, but direct script and
+manual fallback runs do not acquire it; coordinate those manually.
 
 ### 2. Verify recovery
 
