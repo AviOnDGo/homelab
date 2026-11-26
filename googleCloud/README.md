@@ -57,7 +57,8 @@ Execution behavior:
 The four GCP restore jobs share a GitHub Actions concurrency group, including
 manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
 jobs are canceled when the queue is full. Scheduling order is not guaranteed.
-Direct script and manual fallback runs are not covered by this group.
+Direct transport helper, service script, and manual fallback runs are not
+covered by this group; coordinate them and older workflow versions manually.
 
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
@@ -205,8 +206,7 @@ Optional Dropbox credentials for rclone on the VM:
 
 The NPM, FreshRSS, and Vaultwarden restore workflows require `DROPBOX_AUTH_TOKEN`,
 `DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE` in `prod` (or repository secrets).
-The VM also needs `flock` (provided by util-linux) for the shared filedata
-restore lock. Each restore's `prod` job
+Each restore's `prod` job
 receives environment secrets independently; repository secrets are explicitly
 passed to the reusable workflow. Missing credentials fail the restore job.
 OIDC trust restrictions must also allow the reusable workflow's
