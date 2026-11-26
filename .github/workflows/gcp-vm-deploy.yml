@@ -90,26 +90,6 @@ jobs:
             exit 1
           fi
 
-      - name: Validate Tailscale onboarding configuration
-        working-directory: .
-        env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
-          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
-        run: |
-          missing=0
-          if [[ -z "$TS_STATIC_AUTH_KEY" ]]; then
-            if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_OAUTH_CLIENT_SECRET" || -z "$TS_TAILNET" ]]; then
-              echo "Provide either TAILSCALE_EPHEMERAL_AUTH_KEY secret or OAuth settings (TAILSCALE_OAUTH_CLIENT_ID, TAILSCALE_OAUTH_CLIENT_SECRET, TAILSCALE_TAILNET)."
-              missing=1
-            fi
-          fi
-
-          if [[ "$missing" -ne 0 ]]; then
-            exit 1
-          fi
-
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
@@ -382,6 +362,12 @@ jobs:
             exit 0
           fi
 
+          if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_OAUTH_CLIENT_SECRET" || -z "$TS_TAILNET" ]]; then
+            echo "::warning::Tailscale credentials are incomplete; onboarding will be skipped."
+            echo "auth_key=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Attempt OAuth flow; warn if it fails but continue (Tailscale setup can be done manually)
           set +e
           oauth_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/oauth/token" \
@@ -501,6 +487,17 @@ jobs:
           else
             echo "[verify] Tailscale is not running (may be configured later manually)"
           fi
+
+  restore-npm:
+    name: Restore NPM
+    needs: apply
+    uses: ./.github/workflows/gcp-npm-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
   teardown:
     name: Terraform Teardown

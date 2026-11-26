@@ -1,0 +1,77 @@
+name: Restore NPM on GCP VM
+
+on:
+  workflow_call:
+    inputs:
+      force:
+        description: "Replace existing NPM data from the latest backup"
+        type: boolean
+        default: false
+    secrets:
+      DROPBOX_AUTH_TOKEN:
+        required: false
+      DROPBOX_REFRESH_TOKEN:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Replace existing NPM data from the latest backup"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-npm-restore
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    name: Restore NPM
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Validate restore credentials
+        env:
+          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set +x
+          set -euo pipefail
+          : "${DROPBOX_AUTH_TOKEN:?Missing DROPBOX_AUTH_TOKEN secret}"
+          : "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
+          : "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
+          if [[ "$GPG_PASSPHRASE" == *$'\n'* ]]; then
+            echo "GPG_PASSPHRASE must be a single line." >&2
+            exit 1
+          fi
+
+      - name: Prepare GCP restore
+        uses: ./.github/actions/gcp-restore
+        with:
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+
+      - name: Restore NPM on VM
+        env:
+          SERVICE: npm
+          FORCE: ${{ inputs.force || false }}
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: ./googleCloud/restore-service.sh

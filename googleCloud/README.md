@@ -24,6 +24,16 @@ Execution behavior:
 	- Exception: for temporary testing only, workflow_dispatch can set `enforce_main_guard=false`.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
+- Before every apply, schedule NPM downtime, back up current NPM data, and verify
+  that the latest Dropbox backup is current and usable for recovery.
+- After successful apply, the reusable NPM restore workflow runs in `prod` and
+  forcibly replaces existing NPM data from the latest backup, even after a
+  no-op apply. It can also be dispatched manually from a permitted branch;
+  manual runs replace existing NPM data only with `force`. GitHub requires
+  the workflow file on the default branch for manual
+  dispatch; the `prod` environment and OIDC trust policy must allow the branch.
+  The separate restore job may require another `prod` approval. See the
+  [NPM restore guide](../securityServices/npm/RESTORE_GUIDE.md).
 
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
@@ -149,7 +159,8 @@ Optional variables:
 - GCP_BILLING_ACCOUNT_ID
 	- Billing account ID used for budget resources.
 
-Tailscale credential options (configure one path):
+Tailscale credential options (configure one path for automatic onboarding;
+otherwise onboarding is skipped with a warning):
 
 - Option A (preferred): `TAILSCALE_OAUTH_CLIENT_ID` + `TAILSCALE_OAUTH_CLIENT_SECRET` with `TAILSCALE_TAILNET`
 	- Workflow mints a short-lived key at runtime.
@@ -161,6 +172,13 @@ Optional Dropbox credentials for rclone on the VM:
 - `DROPBOX_AUTH_TOKEN` + `DROPBOX_REFRESH_TOKEN`
 	- After onboarding, the apply job runs `scripts/host/configure-rclone.sh` on the VM as root. It installs rclone and configures a verified `dropbox` remote in `/root/.config/rclone/rclone.conf`.
 	- Tokens and the script are sent over SSH stdin, not command lines. If either secret is missing, the step warns and skips.
+
+The NPM restore workflow requires `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`,
+and `GPG_PASSPHRASE` in `prod` (or repository secrets). Its own `prod` job
+receives environment secrets independently; repository secrets are explicitly
+passed to the reusable workflow. Missing credentials fail the restore job.
+OIDC trust restrictions must also allow the reusable workflow's
+`job_workflow_ref`, as well as manual runs of that workflow.
 
 ## OIDC Trust Configuration
 
@@ -177,13 +195,26 @@ Configure Workload Identity Provider claim mapping:
 
 Provider condition baseline:
 
-assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER"
+assertion.repository == "OWNER/REPO" &&
+assertion.repository_owner == "OWNER" &&
+assertion.environment == "prod" &&
+assertion.ref == "refs/heads/main" &&
+(assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main")
 
-Binding condition baseline (single service account):
+The reusable NPM restore workflow also uses this service account. In that
+provider configuration, retain the single provider value and include both
+workflow refs in the explicit condition above. Do not rely on repository scope
+alone.
+
+Binding condition baseline (single production service account):
 
 principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/WIF_POOL_ID/attribute.repository/OWNER/REPO
 
-Apply ref restriction is enforced in workflow guard steps (`refs/heads/main` and workflow ref checks), while repository scoping is enforced in WIF/provider and service-account binding.
+The IAM binding scopes impersonation to the repository principalSet. The WIF
+provider attribute condition separately enforces repository, owner,
+environment, ref, and workflow-ref claims. Workflow guard steps provide an
+additional defense for `refs/heads/main` and workflow refs.
 
 ## Least-Privilege IAM Guidance
 
