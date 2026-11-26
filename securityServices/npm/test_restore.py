@@ -79,7 +79,11 @@ class RestoreTests(unittest.TestCase):
             env, log = restore_env(tmp)
             (Path(tmp) / "volume").touch()
             result = subprocess.run(
-                [str(SCRIPT), "--if-missing"], env=env, capture_output=True, text=True
+                [str(SCRIPT), "--if-missing"],
+                env=env,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("skipping automatic restore", result.stdout)
@@ -90,7 +94,11 @@ class RestoreTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             env, log = restore_env(tmp)
             result = subprocess.run(
-                [str(SCRIPT), "--if-missing"], env=env, capture_output=True, text=True
+                [str(SCRIPT), "--if-missing"],
+                env=env,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = log.read_text()
@@ -108,7 +116,11 @@ class RestoreTests(unittest.TestCase):
                 if fail:
                     env["FAIL_GPG"] = "1"
                 result = subprocess.run(
-                    [str(SCRIPT), "--force"], env=env, capture_output=True, text=True
+                    [str(SCRIPT), "--force"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
                 )
                 calls = log.read_text()
                 if fail:
@@ -129,7 +141,11 @@ class RestoreTests(unittest.TestCase):
                     env["FAIL_RUN"] = "1"
                 (Path(tmp) / "volume").touch()
                 result = subprocess.run(
-                    [str(SCRIPT), "--force"], env=env, capture_output=True, text=True
+                    [str(SCRIPT), "--force"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
                 )
                 self.assertEqual(result.returncode == 0, not fail, result.stderr)
                 calls = log.read_text()
@@ -144,7 +160,11 @@ class RestoreTests(unittest.TestCase):
             env, _ = restore_env(tmp)
             env.pop("PASSPHRASE")
             result = subprocess.run(
-                [str(SCRIPT), "--if-missing"], env=env, capture_output=True, text=True
+                [str(SCRIPT), "--if-missing"],
+                env=env,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
             )
             self.assertNotEqual(result.returncode, 0)
 
@@ -154,7 +174,11 @@ class RestoreTests(unittest.TestCase):
                 env, log = restore_env(tmp)
                 (Path(tmp) / "volume").touch()
                 result = subprocess.run(
-                    [str(SCRIPT)], env=env, input=answer, capture_output=True, text=True
+                    [str(SCRIPT)],
+                    env=env,
+                    input=answer,
+                    capture_output=True,
+                    text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("Its contents will be permanently deleted", result.stdout)
