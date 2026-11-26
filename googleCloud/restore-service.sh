@@ -30,7 +30,7 @@ fi
   printf '%s' "$DROPBOX_REFRESH_TOKEN" | base64 -w0; echo
   printf '%s' "$GPG_PASSPHRASE" | base64 -w0; echo
   tar -C "$service_dir" -cf - restore.sh docker-compose.yml
-} | gcloud compute ssh "$VM_NAME" \
+} | gcloud compute ssh --quiet "$VM_NAME" \
   --project "$PROJECT_ID" --zone "$ZONE" \
   --command 'sudo bash -c '"'"'
     set +x
