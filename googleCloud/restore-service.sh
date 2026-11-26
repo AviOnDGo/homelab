@@ -10,6 +10,7 @@ set -euo pipefail
 case "$SERVICE" in
   npm) service_dir=securityServices/npm ;;
   freshrss) service_dir=knowledgeServices/freshrss ;;
+  vaultwarden) service_dir=securityServices/vaultwarden ;;
   watchtower) service_dir=securityServices/watchtower ;;
   *) echo "Unsupported restore service: $SERVICE" >&2; exit 1 ;;
 esac
@@ -93,5 +94,5 @@ fi
       "{access_token:env.token,token_type:\"bearer\",refresh_token:env.refresh,expiry:\"1970-01-01T00:00:00Z\"}")"
     unset token refresh
     export COMPOSE_PROJECT_NAME="$2"
-    bash "$workdir/restore.sh" "$1"
+    flock -x /run/lock/homelab-filedata-restore.lock bash "$workdir/restore.sh" "$1"
   '"'"' _ '"$mode"' '"$SERVICE"
