@@ -128,9 +128,6 @@ Configure these repository or environment variables:
 	- Terraform region input.
 - GCP_ZONE
 	- Terraform zone input.
-- NETDATA_CLAIM_URL
-	- Netdata Cloud claim endpoint used by post-provision onboarding.
-	- Example: https://app.netdata.cloud
 
 Optional variables:
 
@@ -151,10 +148,6 @@ Optional variables:
 
 - GCP_BILLING_ACCOUNT_ID
 	- Billing account ID used for budget resources.
-- NETDATA_CLAIM_TOKEN
-	- Netdata Cloud claim token used during post-provision onboarding.
-- NETDATA_CLAIM_ROOMS
-	- Comma-separated room IDs for node enrollment.
 
 Tailscale credential options (configure one path):
 
@@ -210,7 +203,7 @@ Checks include:
 - Do not pass bootstrap secrets as Terraform variables consumed in metadata_startup_script.
 - Do not print secrets in workflow logs.
 - Keep Terraform debug logging disabled in production runs.
-- Use workflow post-provision stages for secret-bearing onboarding actions (Tailscale, Netdata claim).
+- Use workflow post-provision stages for secret-bearing Tailscale onboarding.
 - If VM startup needs private clone credentials, store only secret *names* in Terraform and retrieve values at runtime via VM service account.
 
 ## First-Time Operator Checklist
@@ -257,14 +250,15 @@ against the same bucket and prefix; do not create an empty replacement backend.
 
 VM bootstrap no longer sets a personal Git author identity. Cloning and fetching
 do not require one. Configure an identity privately on hosts that create commits.
-The Google provider recreates a VM when `metadata_startup_script` changes, so
-this template cleanup can produce a replacement plan for an existing VM. The
-workflow blocks that plan before publishing it for apply unless a manual run
-explicitly enables `allow_vm_replacement`. Back up application data and the boot
-disk and arrange a maintenance window before approving a rebuild. The opt-in
-does not bypass the existing main/ref or protected-environment checks. Local
-Terraform commands do not execute this workflow guard; inspect their plan and
-do not apply an unapproved replacement.
+The Google provider recreates a VM when `metadata_startup_script` changes.
+Removing the Netdata agent from the startup template therefore produces a
+replacement plan for an existing VM. The workflow blocks that plan before
+publishing it for apply unless a manual run explicitly enables
+`allow_vm_replacement`. Back up application data and the boot disk and arrange a
+maintenance window before approving a rebuild. The opt-in does not bypass the
+existing main/ref or protected-environment checks. Local Terraform commands do
+not execute this workflow guard; inspect their plan and do not apply an
+unapproved replacement.
 
 ## State Drift Recovery
 
@@ -304,7 +298,7 @@ terraform plan \
 - Confirm required variables are configured: `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_BUDGET_CURRENCY_CODE`, `GCP_TF_STATE_BUCKET`, `GCP_REGION`, `GCP_ZONE`.
 - Confirm `prod` contains the `GCP_BILLING_ACCOUNT_ID` environment secret.
 - Confirm `GCP_SERVICE_ACCOUNT` uses full email format (`<name>@<project>.iam.gserviceaccount.com`).
-- Confirm Netdata/Tailscale onboarding config is set (`NETDATA_CLAIM_URL`, `NETDATA_CLAIM_TOKEN`, `NETDATA_CLAIM_ROOMS`, and either OAuth or ephemeral auth key path).
+- Confirm Tailscale onboarding config is set (`TAILSCALE_TAILNET` and either OAuth credentials or an ephemeral auth key).
 - Confirm WIF provider condition matches repository and owner values.
 - Confirm service-account policy contains `roles/iam.workloadIdentityUser` binding for repository principalSet.
 - Confirm backend bucket exists and includes `roles/storage.objectAdmin` and `roles/storage.legacyBucketReader` for deploy service account.
@@ -312,7 +306,6 @@ terraform plan \
 - Run workflow_dispatch `action=apply` and verify post-provision checks:
 	- Docker service active on VM
 	- Tailscale backend state is `Running`
-	- Netdata node status shows claimed
 	- Optional startup clone completed or skipped with explicit non-secret log reason
 
 ## Onboarding Rollback
@@ -348,9 +341,6 @@ If post-provision onboarding fails after Terraform apply:
 - Tailscale onboarding fails with OAuth errors
 	- Verify `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_CLIENT_SECRET`, and `TAILSCALE_TAILNET` values.
 	- If OAuth cannot mint key, configure `TAILSCALE_EPHEMERAL_AUTH_KEY` fallback and retry.
-- Netdata claim fails
-	- Verify `NETDATA_CLAIM_TOKEN`, `NETDATA_CLAIM_ROOMS`, and `NETDATA_CLAIM_URL`.
-	- SSH to VM and run `sudo netdatacli status` to inspect claim state before retrying.
 - Startup clone skips or fails
 	- Ensure VM service account can access Secret Manager secret version.
 	- Confirm deploy key secret name and SSH repo URL are configured and valid.

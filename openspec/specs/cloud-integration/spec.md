@@ -196,15 +196,6 @@ Any optional repository clone performed during VM bootstrap SHALL use runtime-re
 - **THEN** credentials SHALL be retrieved at runtime from approved secret sources
 - **AND** temporary credential files SHALL be shredded or removed after clone completion
 
-### REQ-012: Netdata claim automation SHALL remain post-provision and secret-safe
-Netdata claim operations SHALL execute in post-provision onboarding stages and SHALL keep claim credentials out of Terraform state and metadata.
-
-#### Scenario: Netdata claim runs after readiness success
-- **GIVEN** bootstrap readiness verification succeeds
-- **WHEN** workflow onboarding starts
-- **THEN** Netdata claim SHALL be attempted using configured claim inputs
-- **AND** claim credentials SHALL NOT be persisted in Terraform-managed metadata artifacts
-
 ### REQ-013: Cloud recovery workflow SHALL use existing keyless GCP trust boundaries
 FreshRSS recovery workflow execution SHALL authenticate to GCP using repository-approved keyless OIDC federation and SHALL run under protected environment controls.
 
@@ -234,3 +225,12 @@ Restore credentials and passphrases SHALL be handled in workflow/runtime secret 
 - **WHEN** CI logs are inspected
 - **THEN** secret values for Dropbox access and decryption SHALL NOT be printed
 - **AND** diagnostics SHALL remain sufficient to troubleshoot non-secret failures
+
+### REQ-015: GCP VM provisioning SHALL exclude Netdata
+GCP VM bootstrap and post-provision workflow execution SHALL NOT install Netdata, configure Netdata Cloud, or send VM metrics to Netdata services.
+
+#### Scenario: VM provisioning does not enable Netdata reporting
+- **GIVEN** a GCP VM is provisioned through the cloud workflow
+- **WHEN** bootstrap and post-provision onboarding complete
+- **THEN** Netdata SHALL NOT be installed or claimed
+- **AND** Netdata claim credentials SHALL NOT be required or transmitted
