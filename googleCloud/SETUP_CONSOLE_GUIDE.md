@@ -186,7 +186,11 @@ Navigation: GitHub -> repository -> Actions -> Deploy GCP VM Terraform
 - OIDC authentication succeeds.
 - IAM permission checks pass.
 - Terraform plan completes.
-4. Second run (when ready):
+4. Before applying, schedule NPM downtime, back up current NPM data, and verify
+   that the latest Dropbox backup is current and usable for recovery. Every
+   successful apply, including a no-op, forces an NPM restore that overwrites
+   existing data. See the [NPM restore guide](../securityServices/npm/RESTORE_GUIDE.md).
+5. Second run (when ready):
 - action: `apply`
 - environment: `prod`
 - branch/ref: `main`

@@ -24,6 +24,8 @@ Execution behavior:
 	- Exception: for temporary testing only, workflow_dispatch can set `enforce_main_guard=false`.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
+- Before every apply, schedule NPM downtime, back up current NPM data, and verify
+  that the latest Dropbox backup is current and usable for recovery.
 - After successful apply, the reusable NPM restore workflow runs in `prod` and
   forcibly replaces existing NPM data from the latest backup, even after a
   no-op apply. It can also be dispatched manually from a permitted branch;
