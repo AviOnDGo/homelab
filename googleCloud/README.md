@@ -40,6 +40,13 @@ Execution behavior:
   volume unless `force` is enabled. The separate job may require another `prod`
   approval. Before deployment, allow its workflow ref in the WIF provider
   condition below. See the [FreshRSS restore guide](../knowledgeServices/freshrss/RESTORE_GUIDE.md).
+- After successful apply and NPM restore, Watchtower is redeployed and verified
+  in parallel with FreshRSS, including after a no-op apply. No backup or volume
+  restore is involved. It can also be dispatched manually; its separate `prod`
+  job may require approval. Allow its workflow ref in the WIF condition below
+  before running it. Manual restores also require the external
+  `security_network` to exist on the VM. See the
+  [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
 
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
@@ -160,6 +167,13 @@ Optional variables:
 - BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME
 	- Optional secret name exported as `TF_VAR_bootstrap_git_deploy_key_secret_name`.
 
+The Watchtower restore additionally requires `WATCHTOWER_SCHEDULE` as a
+repository or `prod` environment variable (for example `0 0 3 * * *`) and
+`WATCHTOWER_NOTIFICATION_URL` as a repository or `prod` secret in Shoutrrr
+format. Values must be single-line and cannot contain single quotes or
+backslashes. They are sent over SSH stdin and placed in a private temporary
+Compose environment file on the VM, which is removed after the restore.
+
 ## Required GitHub Secrets
 
 - GCP_BILLING_ACCOUNT_ID
@@ -207,11 +221,12 @@ assertion.environment == "prod" &&
 assertion.ref == "refs/heads/main" &&
 (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" ||
- assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main")
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")
 
 The reusable restore workflows also use this service account. Retain the single
-provider value and include all three workflow refs in the explicit condition
-above. Update an existing provider before running FreshRSS restores. Do not rely
+provider value and include all four workflow refs in the explicit condition
+above. Update an existing provider before running Watchtower restores. Do not rely
 on repository scope alone.
 
 Binding condition baseline (single production service account):
