@@ -169,10 +169,10 @@ projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/WIF_POOL_ID/provi
 
 Navigation: GitHub -> repository -> Settings -> Environments -> New environment
 
-1. Create environment `prod`.
-2. Add `GCP_BILLING_ACCOUNT_ID` as an environment secret.
-3. Add required reviewers.
-4. Keep apply approvals gated by this environment.
+1. Create environment `plan` without required reviewers.
+2. Create environment `prod` and add required reviewers.
+3. Add `GCP_BILLING_ACCOUNT_ID` as an environment secret to both environments.
+4. The plan job uses `plan`; apply and destroy jobs use the protected `prod`.
 
 ## 10. Validate with Safe First Run
 
@@ -181,14 +181,12 @@ Navigation: GitHub -> repository -> Actions -> Deploy GCP VM Terraform
 1. Run workflow.
 2. First run:
 - action: `plan`
-- environment: `prod`
 3. Verify:
 - OIDC authentication succeeds.
 - IAM permission checks pass.
 - Terraform plan completes.
 4. Second run (when ready):
 - action: `apply`
-- environment: `prod`
 - branch/ref: `main`
 - optional temporary test override: set `enforce_main_guard=false`
 - Keep `allow_vm_replacement=false` unless a reviewed plan intentionally rebuilds
@@ -202,11 +200,11 @@ Navigation: GitHub -> repository -> Actions -> Deploy GCP VM Terraform
 - Confirm issuer URL is exactly `https://token.actions.githubusercontent.com`.
 - Confirm service account policy includes `roles/iam.workloadIdentityUser` for repository principalSet.
 - Permission check fails:
-- Recheck role assignments in sections 4.1 to 4.3 and ensure required GitHub variables exist in the `prod` environment.
+- Recheck role assignments in sections 4.1 to 4.3 and ensure required GitHub variables exist at repository scope.
 - Terraform init fails with missing bucket:
 - Verify `GCP_TF_STATE_BUCKET` identifies the existing state bucket and reapply
   section 4.3 IAM roles. Create a new bucket only for a new deployment; an empty
   replacement does not recover existing Terraform state.
 - Apply blocked:
-- Ensure workflow runs from `main`, uses the expected workflow file path, and has `prod` approval.
+- Ensure workflow runs from `main`, uses the expected workflow file path, and has `prod` approval for apply or destroy.
 - For temporary non-main testing only, dispatch with `enforce_main_guard=false`.
