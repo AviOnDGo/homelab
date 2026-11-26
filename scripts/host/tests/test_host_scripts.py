@@ -18,6 +18,7 @@ class HostScriptTests(unittest.TestCase):
         self.log = self.work / "commands"
         self.log.touch()
         self.env = {**os.environ, "PATH": str(self.helpers), "LOG": str(self.log)}
+        self.env["HELPERS"] = str(self.helpers)
         (self.helpers / "bash").symlink_to(shutil.which("bash") or "/bin/bash")
         self.stub("sudo", 'printf "%s\\n" "$*" >> "$LOG"')
 
@@ -112,6 +113,25 @@ class HostScriptTests(unittest.TestCase):
         self.assertIn("Set both", result.stderr)
         self.assertFalse(config.parent.exists())
         self.assertEqual(self.log.read_text(), "")
+
+    def test_rclone_install_refreshes_apt_indexes_only_when_needed(self) -> None:
+        self.rclone_env()
+        (self.helpers / "rclone").unlink()
+        (self.helpers / "chmod").symlink_to(shutil.which("chmod") or "/bin/chmod")
+        self.stub("sudo", '"$@"')
+        self.stub(
+            "apt-get",
+            'printf "apt-get %s\\n" "$*" >> "$LOG"; '
+            'if [[ $1 == install ]]; then '
+            'printf \'#!/bin/bash\\necho "rclone $*" >> "$LOG"\\n\' '
+            '> "$HELPERS/rclone"; '
+            'chmod +x "$HELPERS/rclone"; fi',
+        )
+        result = self.invoke(HOST_SCRIPTS / "configure-rclone.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.log.read_text().splitlines()
+        self.assertEqual(calls[:2], ["apt-get update", "apt-get install -y rclone"])
+        self.assertEqual(calls[2:], ["rclone lsd dropbox:"])
 
     def test_nvidia_missing_driver_does_not_change_runtime(self) -> None:
         self.stub("apt-get", 'exit 1')

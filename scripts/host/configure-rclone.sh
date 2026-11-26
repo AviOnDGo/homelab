@@ -20,7 +20,10 @@ if [[ -z $token || -z $refresh ]]; then
 fi
 
 # Skip apt when rclone came from elsewhere, so a newer binary is not replaced.
-command -v rclone >/dev/null || sudo apt-get install -y rclone
+if ! command -v rclone >/dev/null; then
+  sudo apt-get update
+  sudo apt-get install -y rclone
+fi
 
 config=${RCLONE_CONFIG:-$(rclone config file | tail -n 1)}
 mkdir -p -- "$(dirname -- "$config")"
