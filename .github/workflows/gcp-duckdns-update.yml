@@ -66,6 +66,48 @@ jobs:
           TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
         run: |
           set -euo pipefail
+
+          get_tailscale_state() {
+            gcloud compute ssh "$VM_NAME" \
+              --project "$PROJECT_ID" \
+              --zone "$ZONE" \
+              --command "sudo tailscale status --json" \
+              | jq -er '.BackendState'
+          }
+
+          state="$(get_tailscale_state)"
+          for _ in {1..12}; do
+            if [[ "$state" != "NoState" && "$state" != "Starting" ]]; then
+              break
+            fi
+            sleep 5
+            state="$(get_tailscale_state)"
+          done
+
+          if [[ "$state" == "Running" ]]; then
+            echo "Tailscale is already running on the VM"
+            exit 0
+          fi
+
+          if [[ "$state" == "Stopped" ]]; then
+            if ! gcloud compute ssh "$VM_NAME" \
+              --project "$PROJECT_ID" \
+              --zone "$ZONE" \
+              --command "sudo tailscale up --timeout=15s"; then
+              echo "::warning::Tailscale reconnect failed; checking whether login is required"
+            fi
+            state="$(get_tailscale_state)"
+            if [[ "$state" == "Running" ]]; then
+              echo "Tailscale reconnected on the VM"
+              exit 0
+            fi
+          fi
+
+          if [[ "$state" != "NeedsLogin" ]]; then
+            echo "::error::Tailscale is not ready for login (state: $state)"
+            exit 1
+          fi
+
           auth_key="$TS_STATIC_AUTH_KEY"
 
           if [[ -z "$auth_key" ]]; then

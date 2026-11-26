@@ -203,11 +203,12 @@ The DuckDNS update workflow requires `DUCKDNS_TOKEN` in `prod` (or repository
 secrets). It runs after a successful VM apply, independently of service restores,
 and can also be started manually using `gcp-duckdns-update.yml`. The VM must
 exist and be reachable over GCP SSH. The workflow installs Tailscale if missing,
-starts its service, and logs in when needed. It preserves an existing running
-session and reconnects a stopped session without changing its settings.
-If Tailscale credentials are missing, the login step warns and skips; the
-DuckDNS update still requires Tailscale to be running. The workflow fails if
-its configuration, SSH, Tailscale installation/login, or DuckDNS update fails.
+starts its service, skips login when Tailscale is already running, and attempts
+to reconnect a stopped session without credentials. It creates a login key only
+when the backend requires login. If credentials are missing or login fails,
+manually reconnect the VM in Tailscale and rerun the workflow; the DuckDNS update
+requires Tailscale to be running. The workflow fails if its configuration, SSH,
+Tailscale installation/login, or DuckDNS update fails.
 Set the `DUCKDNS_DOMAIN` variable and token before applying. Add the workflow
 to the OIDC provider condition below before its first run. Once the workflow is
 available on the default branch, run it manually with:

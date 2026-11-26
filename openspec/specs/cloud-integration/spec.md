@@ -255,11 +255,24 @@ the script over SSH standard input.
 The deployment SHALL provide a reusable, manually dispatchable workflow to
 install and connect Tailscale on the GCP VM and update its DuckDNS record.
 
-#### Scenario: Login credentials are missing
-- **GIVEN** Tailscale login credentials are incomplete
-- **WHEN** the login step runs
-- **THEN** it SHALL emit a warning and skip login
-- **AND** it SHALL update DuckDNS only if Tailscale is already running
+#### Scenario: Login is required but credentials are missing
+- **GIVEN** the VM's Tailscale backend state is `NeedsLogin` and credentials
+  are incomplete
+- **WHEN** the setup workflow runs
+- **THEN** the login step SHALL emit a warning and skip login
+- **AND** the DuckDNS update SHALL fail because Tailscale is not running
+
+#### Scenario: An existing running session needs no credentials
+- **GIVEN** the VM's Tailscale backend state is `Running`
+- **WHEN** the setup workflow runs
+- **THEN** it SHALL skip auth-key creation and login
+- **AND** it SHALL continue to update DuckDNS with the VM's Tailscale IPv4 address
+
+#### Scenario: A stopped session reconnects without credentials
+- **GIVEN** the VM's Tailscale backend state is `Stopped`
+- **WHEN** the setup workflow runs
+- **THEN** it SHALL attempt `tailscale up` without an auth key
+- **AND** it SHALL request login credentials only if the backend then reports `NeedsLogin`
 
 #### Scenario: A VM requires initial Tailscale login
 - **GIVEN** the VM needs Tailscale installation or login
