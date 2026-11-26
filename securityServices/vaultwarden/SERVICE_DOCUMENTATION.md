@@ -45,7 +45,13 @@ The default deployment leaves `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` unset. The
 
 ## Configuration
 
-New user registrations are disabled by `SIGNUPS_ALLOWED: "false"` in `docker-compose.yml`, but saved settings in `/data/config.json` take precedence. A nonempty `signups_domains_whitelist` permits registration from those domains even when signups are otherwise disabled. Organization invitations can still allow invited users to register.
+New user registrations are disabled by `SIGNUPS_ALLOWED: "false"` in `docker-compose.yml`, but saved settings in the active configuration file take precedence. A nonempty `signups_domains_whitelist` permits registration from those domains even when signups are otherwise disabled. Organization invitations can still allow invited users to register.
+
+### Identifying the saved configuration
+
+Determine the effective paths in the container configuration, including any private overrides. Vaultwarden uses `CONFIG_FILE` if set; otherwise it uses `config.json` under `DATA_FOLDER` if set, or `/data/config.json` by default. These are container paths. The default Compose file mounts `vaultwarden_filedata` at `/data`; ensure the selected configuration file is within that volume and not hidden by another mount.
+
+Before migrating, identify the active path in both the existing and intended configurations. If they differ, ensure the intended file contains the required settings and apply the checks below to it as well. If a custom path is outside the volume, stop and safely migrate the data and configuration to persistent storage before recreating the service; changing `DATA_FOLDER` can also change where Vaultwarden looks for vault data. Back up the data first and verify the volume and mount mapping before proceeding.
 
 ### Migrating an existing deployment
 
@@ -70,7 +76,7 @@ The Compose service no longer passes values from `.env` to the container. Before
    ```
 
    Replace the placeholders and preserve any other settings your deployment requires. Protect the override and credential files with appropriate permissions. Do not copy `ADMIN_TOKEN` or `DISABLE_ADMIN_TOKEN`, or a nonempty `SIGNUPS_DOMAINS_WHITELIST`. If SMTP is unauthenticated, omit the username and password file entries.
-2. Stop Vaultwarden. If `/data/config.json` exists in `vaultwarden_filedata`, use a JSON-aware editor to remove `admin_token`, remove `disable_admin_token` or set it to `false`, set `signups_allowed` to `false` or remove it, and empty or remove `signups_domains_whitelist`. Update or remove a saved `domain` if it differs from the intended `DOMAIN`; also reconcile saved SMTP values because they override the environment. Preserve the remaining settings and protect the file and any backups because they can contain secrets.
+2. Stop Vaultwarden. If the active saved configuration file identified above exists, use a JSON-aware editor to remove `admin_token`, remove `disable_admin_token` or set it to `false`, set `signups_allowed` to `false` or remove it, and empty or remove `signups_domains_whitelist`. Update or remove a saved `domain` if it differs from the intended `DOMAIN`; also reconcile saved SMTP values because they override the environment. Preserve the remaining settings and protect the file and any backups because they can contain secrets.
 3. Recreate the service with the override (use its absolute path on every subsequent Compose operation):
 
    ```bash
@@ -83,7 +89,7 @@ The Compose service no longer passes values from `.env` to the container. Before
 
 On a fresh volume, temporarily enable signups to create the first vault account. Restrict access to trusted clients at the proxy before enabling signups; anyone with access can register during this window.
 
-1. If `/data/config.json` exists, stop Vaultwarden and use a JSON-aware editor to remove any saved `signups_allowed` entry so the Compose setting takes effect. Ensure `signups_domains_whitelist` is empty or absent. Preserve the other settings and protect the file because it can contain secrets.
+1. Identify the active saved configuration file as described above. If it exists, stop Vaultwarden and use a JSON-aware editor to remove any saved `signups_allowed` entry so the Compose setting takes effect. Ensure `signups_domains_whitelist` is empty or absent. Preserve the other settings and protect the file because it can contain secrets.
 2. Set `SIGNUPS_ALLOWED: "true"` in `docker-compose.yml` and run `docker compose up -d` from the service directory. If you use a private Compose override, include it with `-f` as in the migration instructions and ensure it does not override this setting.
 3. Register the first vault user account through the web vault.
 4. Immediately set `SIGNUPS_ALLOWED: "false"` again and run `docker compose up -d` with the same Compose files. Do this even if registration fails. Confirm the saved `signups_allowed` is `false` or absent and the whitelist is empty or absent, then verify uninvited signups are disabled before restoring normal proxy access.
@@ -94,7 +100,7 @@ On a fresh volume, temporarily enable signups to create the first vault account.
 
 - [ ] Log in with a vault user account and enroll at least one MFA method (TOTP, YubiKey, or Duo)
 - [ ] Confirm MFA authenticates successfully before marking deployment complete
-- [ ] If `/data/config.json` exists, confirm `admin_token` is absent, `disable_admin_token` and `signups_allowed` are `false` or absent, and `signups_domains_whitelist` is empty or absent
+- [ ] If the active saved configuration file exists, confirm `admin_token` is absent, `disable_admin_token` and `signups_allowed` are `false` or absent, and `signups_domains_whitelist` is empty or absent
 
 ---
 
