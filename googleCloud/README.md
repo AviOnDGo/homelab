@@ -157,7 +157,8 @@ Optional variables:
 - GCP_BILLING_ACCOUNT_ID
 	- Billing account ID used for budget resources.
 
-Tailscale credential options (configure one path):
+Tailscale credential options (configure one path for automatic onboarding;
+otherwise onboarding is skipped with a warning):
 
 - Option A (preferred): `TAILSCALE_OAUTH_CLIENT_ID` + `TAILSCALE_OAUTH_CLIENT_SECRET` with `TAILSCALE_TAILNET`
 	- Workflow mints a short-lived key at runtime.
