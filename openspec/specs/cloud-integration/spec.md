@@ -250,3 +250,25 @@ the script over SSH standard input.
 - **GIVEN** either Dropbox secret is empty in the `prod` environment
 - **WHEN** the apply job reaches the rclone setup step
 - **THEN** the step SHALL emit a warning and skip rclone setup without failing the deployment
+
+### REQ-017: GCP Tailscale and DuckDNS setup SHALL be independently runnable
+The deployment SHALL provide a reusable, manually dispatchable workflow to
+install and connect Tailscale on the GCP VM and update its DuckDNS record.
+
+#### Scenario: Login credentials are missing
+- **GIVEN** Tailscale login credentials are incomplete
+- **WHEN** the login step runs
+- **THEN** it SHALL emit a warning and skip login
+- **AND** it SHALL update DuckDNS only if Tailscale is already running
+
+#### Scenario: A VM requires initial Tailscale login
+- **GIVEN** the VM needs Tailscale installation or login
+- **WHEN** the setup workflow runs with valid onboarding credentials
+- **THEN** it SHALL install Tailscale if needed and authenticate the VM
+- **AND** it SHALL update DuckDNS only after Tailscale is running
+
+#### Scenario: Tailscale or DNS update fails
+- **GIVEN** Tailscale setup or the DuckDNS update fails
+- **WHEN** the deployment invokes the setup workflow
+- **THEN** the setup workflow SHALL report the failure
+- **AND** service restore jobs SHALL NOT depend on its success
