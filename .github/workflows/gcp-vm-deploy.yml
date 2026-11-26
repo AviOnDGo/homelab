@@ -499,6 +499,17 @@ jobs:
       DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+  restore-freshrss:
+    name: Restore FreshRSS
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-freshrss-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
   teardown:
     name: Terraform Teardown
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' }}
