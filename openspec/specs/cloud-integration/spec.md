@@ -234,3 +234,19 @@ GCP VM bootstrap and post-provision workflow execution SHALL NOT install Netdata
 - **WHEN** bootstrap and post-provision onboarding complete
 - **THEN** Netdata SHALL NOT be installed or claimed
 - **AND** Netdata claim credentials SHALL NOT be required or transmitted
+
+### REQ-016: GCP deployment SHALL configure the rclone Dropbox remote on the VM
+After onboarding, the deployment workflow SHALL run the workflow checkout's
+`scripts/host/configure-rclone.sh` on the VM as root, sending Dropbox tokens and
+the script over SSH standard input.
+
+#### Scenario: Dropbox secrets are configured
+- **GIVEN** `DROPBOX_AUTH_TOKEN` and `DROPBOX_REFRESH_TOKEN` exist in the `prod` environment
+- **WHEN** the apply job reaches the rclone setup step
+- **THEN** the VM SHALL have rclone installed and a verified `dropbox` remote in root's rclone config
+- **AND** the tokens SHALL NOT appear in command lines, Terraform state, or VM metadata
+
+#### Scenario: Dropbox secrets are absent
+- **GIVEN** either Dropbox secret is empty in the `prod` environment
+- **WHEN** the apply job reaches the rclone setup step
+- **THEN** the step SHALL emit a warning and skip rclone setup without failing the deployment
