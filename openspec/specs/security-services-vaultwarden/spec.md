@@ -12,15 +12,6 @@ Vaultwarden SHALL be deployed from `securityServices/vaultwarden/` and SHALL per
 - **THEN** vault data SHALL remain available from `vaultwarden_filedata`
 - **AND** no user vault entries SHALL be lost due to container restart
 
-### REQ-002: Vaultwarden admin MFA is mandatory
-The Vaultwarden admin account SHALL have at least one enrolled MFA method, and MFA SHALL be validated after deployment or reconfiguration.
-
-#### Scenario: Admin MFA is verified
-- **GIVEN** Vaultwarden deployment or configuration has changed
-- **WHEN** an operator performs post-deploy verification
-- **THEN** the admin account SHALL authenticate with MFA
-- **AND** the service SHALL be considered misconfigured if admin MFA is absent
-
 ### REQ-003: Vaultwarden host exposure is proxy-only
 Vaultwarden SHALL NOT expose container port 80 directly on the host and SHALL be externally accessed only through NPM reverse proxying.
 
@@ -47,3 +38,12 @@ Vaultwarden SHALL provide `restore.sh`, and the canonical restore workflow detai
 - **WHEN** they consult the service and restore specifications
 - **THEN** `securityServices/vaultwarden/restore.sh` SHALL exist
 - **AND** the authoritative restore flow SHALL be documented in the security restore scripts spec
+
+### REQ-006: Vaultwarden admin panel is disabled
+The Vaultwarden deployment SHALL leave `ADMIN_TOKEN` unset and SHALL keep the admin panel disabled.
+
+#### Scenario: Admin panel remains disabled
+- **GIVEN** the Vaultwarden service is deployed with its default Compose configuration
+- **WHEN** a user requests the `/admin` route
+- **THEN** the admin panel SHALL be unavailable
+- **AND** the service SHALL NOT receive an `ADMIN_TOKEN` from Compose
