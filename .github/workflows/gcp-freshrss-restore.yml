@@ -3,19 +3,10 @@ name: Restore FreshRSS on GCP VM
 on:
   workflow_dispatch:
     inputs:
-      confirm_restore:
-        description: "Type RESTORE_FRESHRSS to confirm destructive restore"
-        required: true
-        type: string
       dropbox_path:
         description: "Dropbox folder containing FreshRSS backups"
         required: true
         default: "/Apps/freshrss"
-        type: string
-      git_ref:
-        description: "Git ref to sync into /tmp/homelab"
-        required: true
-        default: "main"
         type: string
       vm_name:
         description: "Optional override for target VM name"
@@ -41,60 +32,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate required workflow variables
-        run: |
-          missing=0
-          if [[ -z "${{ vars.GCP_WIF_PROVIDER }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_WIF_PROVIDER"
-            missing=1
-          fi
-          if [[ -z "${{ vars.GCP_SERVICE_ACCOUNT }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_SERVICE_ACCOUNT"
-            missing=1
-          fi
-          if [[ -z "${{ vars.GCP_PROJECT_ID }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_PROJECT_ID"
-            missing=1
-          fi
-          if [[ -z "${{ vars.GCP_ZONE }}" ]]; then
-            echo "Missing required repository/environment variable: GCP_ZONE"
-            missing=1
-          fi
-          if [[ "$missing" -ne 0 ]]; then
-            exit 1
-          fi
-
-      - name: Validate required restore secrets
+      - name: Validate restore inputs
         env:
+          DROPBOX_PATH: ${{ inputs.dropbox_path }}
           DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
+          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
         run: |
-          missing=0
-          if [[ -z "$DROPBOX_AUTH_TOKEN" ]]; then
-            echo "Missing required Actions secret (DROPBOX_AUTH_TOKEN)"
-            missing=1
-          fi
-          if [[ -z "$DROPBOX_REFRESH_TOKEN" ]]; then
-            echo "Missing required Actions secret (DROPBOX_REFRESH_TOKEN)"
-            missing=1
-          fi
-          if [[ -z "$GPG_PASSPHRASE" ]]; then
-            echo "Missing required Actions secret (GPG_PASSPHRASE)"
-            missing=1
-          fi
-          if [[ "$missing" -ne 0 ]]; then
-            exit 1
-          fi
-
-      - name: Guard confirmation input
-        env:
-          CONFIRM_RESTORE: ${{ github.event.inputs.confirm_restore }}
-        run: |
-          if [[ "$CONFIRM_RESTORE" != "RESTORE_FRESHRSS" ]]; then
-            echo "Aborting: confirm_restore must equal RESTORE_FRESHRSS"
-            exit 1
-          fi
+          set -euo pipefail
+          : "${DROPBOX_PATH:?Missing Dropbox path}"
+          : "${DROPBOX_AUTH_TOKEN:?Missing DROPBOX_AUTH_TOKEN secret}"
+          : "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
+          : "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
+          : "${GCP_WIF_PROVIDER:?Missing GCP_WIF_PROVIDER variable}"
+          : "${GCP_SERVICE_ACCOUNT:?Missing GCP_SERVICE_ACCOUNT variable}"
+          : "${PROJECT_ID:?Missing GCP_PROJECT_ID variable}"
+          : "${ZONE:?Missing GCP_ZONE variable}"
 
       - name: Authenticate to GCP via OIDC
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
@@ -105,349 +62,68 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
-      - name: Resolve VM target
+      - name: Run restore on VM
         env:
-          INPUT_VM_NAME: ${{ github.event.inputs.vm_name }}
-        run: |
-          VM_NAME="${INPUT_VM_NAME:-${{ vars.GCP_VM_NAME }}}"
-          if [[ -z "$VM_NAME" ]]; then
-            VM_NAME="gcp-debian-free-tier-vm"
-          fi
-          echo "VM_NAME=$VM_NAME" >> "$GITHUB_ENV"
-          echo "PROJECT_ID=${{ vars.GCP_PROJECT_ID }}" >> "$GITHUB_ENV"
-          echo "ZONE=${{ vars.GCP_ZONE }}" >> "$GITHUB_ENV"
-
-      - name: Show restore target
-        run: |
-          echo "Restore target VM: $VM_NAME"
-          echo "Project: $PROJECT_ID"
-          echo "Zone: $ZONE"
-
-      - name: Mask secret values
-        env:
+          INPUT_VM_NAME: ${{ inputs.vm_name }}
+          DEFAULT_VM_NAME: ${{ vars.GCP_VM_NAME }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          DROPBOX_PATH: ${{ inputs.dropbox_path }}
           DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
-          echo "::add-mask::$DROPBOX_AUTH_TOKEN"
-          echo "::add-mask::$DROPBOX_REFRESH_TOKEN"
-          echo "::add-mask::$GPG_PASSPHRASE"
-          if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
-            echo "::add-mask::$DISCORD_WEBHOOK_URL"
-          fi
-
-      - name: Restore FreshRSS on VM
-        env:
-          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
-          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          DROPBOX_PATH: ${{ github.event.inputs.dropbox_path }}
-          HOMELAB_GIT_REF: ${{ github.event.inputs.git_ref }}
-        run: |
-          cat > /tmp/freshrss-restore.sh <<'EOF'
-          set -Eeuo pipefail
-
-          LOCK_DIR="/tmp/freshrss-restore.lock"
-          WORK_DIR="/tmp/freshrss-restore"
-          DEFAULT_COMPOSE_FILE="/tmp/homelab/knowledgeServices/freshrss/docker-compose.yml"
-          TMP_GPG="$WORK_DIR/latest_freshrss.tar.gz.gpg"
-          SYNC_ARCHIVE="/tmp/homelab-sync.tar.gz"
-          RCLONE_CONF="$WORK_DIR/rclone.conf"
-          BACKUP_LIST_FILE="$WORK_DIR/backup-list.txt"
-          CURRENT_PHASE="init"
-          FAIL_DETAIL=""
-          SELECTED_BACKUP=""
-          BACKUP_CONTAINER="filedata-backup"
-          BACKUP_CONTAINER_WAS_RUNNING="false"
-          FRESHRSS_WAS_RUNNING="false"
-          PREV_STARTED_AT=""
-          COMPOSE_FILE=""
-          COMPOSE_PROJECT_DIR=""
-          BACKUP_COMPOSE_FILE=""
-          BACKUP_PROJECT_DIR=""
-
-          log() {
-            echo "[restore][$CURRENT_PHASE] $1"
-          }
-
-          send_discord_notification() {
-            local status="$1"
-            local detail="$2"
-            local color="$3"
-            local payload
-
-            if [[ -z "${DISCORD_WEBHOOK_URL:-}" ]]; then
-              log "WARNING: DISCORD_WEBHOOK_URL not set; skipping $status notification"
-              return 0
-            fi
-
-            payload="$(jq -n \
-              --arg title "FreshRSS Restore ${status}" \
-              --arg detail "$detail" \
-              --arg phase "$CURRENT_PHASE" \
-              --arg backup "${SELECTED_BACKUP:-not-selected}" \
-              --arg host "$(hostname)" \
-              --arg gitRef "${HOMELAB_GIT_REF:-unknown}" \
-              --arg service "freshrss" \
-              --arg volume "freshrss_filedata" \
-              --argjson color "$color" \
-              '{embeds:[{title:$title,description:$detail,color:$color,fields:[{"name":"Phase","value":$phase,"inline":true},{"name":"VM","value":$host,"inline":true},{"name":"Service","value":$service,"inline":true},{"name":"Volume","value":$volume,"inline":true},{"name":"Backup","value":$backup,"inline":false},{"name":"Git Ref","value":$gitRef,"inline":true}],timestamp:(now | strftime("%Y-%m-%dT%H:%M:%SZ"))}]}' )"
-
-            if ! curl --fail --silent --show-error -X POST "$DISCORD_WEBHOOK_URL" \
-              -H "Content-Type: application/json" \
-              -d "$payload" >/dev/null; then
-              log "WARNING: Discord notification failed for status=$status"
-            fi
-          }
-
-          fail() {
-            FAIL_DETAIL="$1"
-            exit 1
-          }
-
-          on_exit() {
-            local exit_code="$1"
-
-            if [[ "$exit_code" -ne 0 ]]; then
-              local detail="${FAIL_DETAIL:-Restore failed during ${CURRENT_PHASE}}"
-              log "ERROR: $detail"
-              send_discord_notification "FAILED" "$detail" 16711680
-            fi
-
-            rm -f "$TMP_GPG" "$RCLONE_CONF" "$BACKUP_LIST_FILE" "$SYNC_ARCHIVE" /tmp/freshrss-restore-logs.txt
-            rmdir "$LOCK_DIR" >/dev/null 2>&1 || true
-          }
-
-          trap 'on_exit $?' EXIT
-
-          if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-            fail "Another FreshRSS restore is already in progress"
-          fi
-
-          mkdir -p "$WORK_DIR"
-          chmod 700 "$WORK_DIR"
-
-          CURRENT_PHASE="preflight"
-          log "Running on host: $(hostname)"
-          command -v docker >/dev/null || fail "docker is required on VM"
-          command -v gpg >/dev/null || fail "gpg is required on VM"
-          command -v jq >/dev/null || fail "jq is required on VM"
-          command -v curl >/dev/null || fail "curl is required on VM"
-
-          if ! command -v rclone >/dev/null 2>&1; then
-            log "rclone missing, attempting installation"
-            sudo apt-get update
-            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y rclone
-          fi
-
-          [[ -n "${DROPBOX_AUTH_TOKEN:-}" ]] || fail "DROPBOX_AUTH_TOKEN is empty"
-          [[ -n "${DROPBOX_REFRESH_TOKEN:-}" ]] || fail "DROPBOX_REFRESH_TOKEN is empty"
-          [[ -n "${GPG_PASSPHRASE:-}" ]] || fail "GPG_PASSPHRASE is empty"
-          [[ -n "${DROPBOX_PATH:-}" ]] || fail "DROPBOX_PATH is empty"
-          [[ -n "${HOMELAB_GIT_REF:-}" ]] || fail "HOMELAB_GIT_REF is empty"
-
-          [[ -f "$SYNC_ARCHIVE" ]] || fail "Sync archive missing on VM: $SYNC_ARCHIVE"
-
-          CURRENT_PHASE="sync-repo"
-          mkdir -p /tmp/homelab
-          tar -xzf "$SYNC_ARCHIVE" -C /tmp/homelab || fail "Unable to extract synced FreshRSS repo payload"
-
-          if [[ ! -f "$DEFAULT_COMPOSE_FILE" ]]; then
-            fail "Compose file not found after sync: $DEFAULT_COMPOSE_FILE"
-          fi
-
-          COMPOSE_FILE="$DEFAULT_COMPOSE_FILE"
-          COMPOSE_PROJECT_DIR="$(dirname "$DEFAULT_COMPOSE_FILE")"
-
-          cat > "$RCLONE_CONF" <<RCLONE
-          [dropbox]
-          type = dropbox
-          # Force token refresh on first use; access tokens are short-lived.
-          token = {"access_token":"${DROPBOX_AUTH_TOKEN}","token_type":"bearer","refresh_token":"${DROPBOX_REFRESH_TOKEN}","expiry":"1970-01-01T00:00:00Z"}
-          RCLONE
-          chmod 600 "$RCLONE_CONF"
-
-          extract_ts_key() {
-            local name="$1"
-            if [[ "$name" =~ ^backup_freshrss_([0-9]{8})_([0-9]{6})\.tar\.gz\.gpg$ ]]; then
-              echo "${BASH_REMATCH[1]}${BASH_REMATCH[2]}"
-              return 0
-            fi
-            if [[ "$name" =~ ^freshrss_([0-9]{4})-([0-9]{2})-([0-9]{2})_([0-9]{2})-([0-9]{2})-([0-9]{2})\.tar\.gz\.gpg$ ]]; then
-              echo "${BASH_REMATCH[1]}${BASH_REMATCH[2]}${BASH_REMATCH[3]}${BASH_REMATCH[4]}${BASH_REMATCH[5]}${BASH_REMATCH[6]}"
-              return 0
-            fi
-            return 1
-          }
-
-          CURRENT_PHASE="discover-backup"
-          if ! rclone --config "$RCLONE_CONF" lsf "dropbox:${DROPBOX_PATH}" --files-only > "$BACKUP_LIST_FILE"; then
-            fail "Unable to list backups at dropbox:${DROPBOX_PATH}. Check DROPBOX_AUTH_TOKEN / DROPBOX_REFRESH_TOKEN validity."
-          fi
-
-          BEST_FILE=""
-          BEST_KEY=""
-          while IFS= read -r name; do
-            [[ -z "$name" ]] && continue
-            if key="$(extract_ts_key "$name")"; then
-              if [[ -z "$BEST_KEY" || "$key" > "$BEST_KEY" ]]; then
-                BEST_KEY="$key"
-                SELECTED_BACKUP="$name"
+          set -euo pipefail
+          VM_NAME="${INPUT_VM_NAME:-${DEFAULT_VM_NAME:-gcp-debian-free-tier-vm}}"
+          echo "Restore target: $VM_NAME ($PROJECT_ID / $ZONE)"
+          SCRIPT_HASH="$(sha256sum knowledgeServices/freshrss/restore.sh | cut -d ' ' -f 1)"
+          export SCRIPT_HASH
+          python3 -c '
+          import base64, os
+          for name in ("SCRIPT_HASH", "DROPBOX_PATH", "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE"):
+              print(base64.b64encode(os.environ[name].encode()).decode())
+          ' | gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" \
+            --command 'sudo bash -c '"'"'
+              set -euo pipefail
+              read -r hash64
+              read -r path64
+              read -r token64
+              read -r refresh64
+              read -r pass64
+              expected_hash=$(printf %s "$hash64" | base64 -d)
+              export DROPBOX_PATH="$(printf %s "$path64" | base64 -d)"
+              token=$(printf %s "$token64" | base64 -d)
+              refresh=$(printf %s "$refresh64" | base64 -d)
+              export token refresh
+              export PASSPHRASE="$(printf %s "$pass64" | base64 -d)"
+              cd /tmp/homelab/knowledgeServices/freshrss
+              actual_hash=$(sha256sum restore.sh | cut -d " " -f 1)
+              if [[ "$actual_hash" != "$expected_hash" ]]; then
+                echo "VM restore.sh differs from the workflow checkout; update the VM checkout before restoring." >&2
+                exit 1
               fi
-            fi
-          done < "$BACKUP_LIST_FILE"
+              umask 077
+              RCLONE_CONFIG="$(mktemp /tmp/freshrss-rclone.XXXXXXXX)"
+              export RCLONE_CONFIG
+              trap "rm -f \"\$RCLONE_CONFIG\"" EXIT
+              export RCLONE_CONFIG_DROPBOX_TYPE=dropbox
+              export RCLONE_CONFIG_DROPBOX_TOKEN="$(jq -cn \
+                "{access_token:env.token,token_type:\"bearer\",refresh_token:env.refresh,expiry:\"1970-01-01T00:00:00Z\"}")"
+              unset token refresh
+              printf "y\ny\n" | ./restore.sh
+            '"'"''
 
-          [[ -n "$SELECTED_BACKUP" ]] || fail "No compatible FreshRSS backup found in dropbox:${DROPBOX_PATH}"
-          log "Selected backup: $SELECTED_BACKUP"
-
-          CURRENT_PHASE="download-backup"
-          rclone --config "$RCLONE_CONF" copy "dropbox:${DROPBOX_PATH}/${SELECTED_BACKUP}" "$WORK_DIR" || \
-            fail "Unable to download selected backup from dropbox:${DROPBOX_PATH}/${SELECTED_BACKUP}"
-          [[ -s "$WORK_DIR/$SELECTED_BACKUP" ]] || fail "Downloaded backup file is missing or empty"
-          mv "$WORK_DIR/$SELECTED_BACKUP" "$TMP_GPG"
-
-          CURRENT_PHASE="capture-state"
-          if docker inspect "$BACKUP_CONTAINER" >/dev/null 2>&1; then
-            BACKUP_CONTAINER_WAS_RUNNING="$(docker inspect "$BACKUP_CONTAINER" --format '{{.State.Running}}' 2>/dev/null || echo false)"
-            BACKUP_COMPOSE_FILE="$(docker inspect "$BACKUP_CONTAINER" --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' 2>/dev/null || true)"
-            BACKUP_PROJECT_DIR="$(docker inspect "$BACKUP_CONTAINER" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)"
-            log "${BACKUP_CONTAINER} running before restore: $BACKUP_CONTAINER_WAS_RUNNING"
-          else
-            log "${BACKUP_CONTAINER} container not present before restore"
-          fi
-
-          if docker inspect freshrss >/dev/null 2>&1; then
-            FRESHRSS_WAS_RUNNING="$(docker inspect freshrss --format '{{.State.Running}}' 2>/dev/null || echo false)"
-            PREV_STARTED_AT="$(docker inspect freshrss --format '{{.State.StartedAt}}')"
-            existing_compose_file="$(docker inspect freshrss --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' 2>/dev/null || true)"
-            existing_project_dir="$(docker inspect freshrss --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)"
-            if [[ -n "$existing_compose_file" ]]; then
-              COMPOSE_FILE="$existing_compose_file"
-            fi
-            if [[ -n "$existing_project_dir" ]]; then
-              COMPOSE_PROJECT_DIR="$existing_project_dir"
-            fi
-            log "FreshRSS running before restore: $FRESHRSS_WAS_RUNNING"
-          else
-            log "FreshRSS container not present before restore"
-          fi
-
-          if [[ -n "$BACKUP_COMPOSE_FILE" && -n "$BACKUP_PROJECT_DIR" ]]; then
-            log "Using existing backup compose file: $BACKUP_COMPOSE_FILE"
-          fi
-          log "Using FreshRSS compose file: $COMPOSE_FILE"
-
-          CURRENT_PHASE="stop-backup-service"
-          if [[ "$BACKUP_CONTAINER_WAS_RUNNING" == "true" ]]; then
-            if [[ -n "$BACKUP_COMPOSE_FILE" && -n "$BACKUP_PROJECT_DIR" ]]; then
-              docker compose -f "$BACKUP_COMPOSE_FILE" --project-directory "$BACKUP_PROJECT_DIR" down || \
-                fail "Unable to bring down backup stack before restore"
-            else
-              docker stop "$BACKUP_CONTAINER" >/dev/null || fail "Unable to stop ${BACKUP_CONTAINER} before restore"
-            fi
-          else
-            log "${BACKUP_CONTAINER} already stopped"
-          fi
-
-          CURRENT_PHASE="stop-service"
-          if [[ "$FRESHRSS_WAS_RUNNING" == "true" ]]; then
-            docker compose -f "$COMPOSE_FILE" --project-directory "$COMPOSE_PROJECT_DIR" down || fail "Unable to stop FreshRSS before restore"
-          else
-            log "FreshRSS already stopped"
-          fi
-
-          CURRENT_PHASE="reset-volume"
-          if docker volume inspect freshrss_filedata >/dev/null 2>&1; then
-            if ! docker volume rm -f freshrss_filedata >/dev/null 2>&1; then
-              log "Volume removal blocked by retained container reference; wiping freshrss_filedata contents in place"
-              docker run --rm -v freshrss_filedata:/data alpine \
-                sh -c 'find /data -mindepth 1 -maxdepth 1 -exec rm -rf {} +' || \
-                fail "Unable to clear existing freshrss_filedata contents"
-            fi
-          fi
-          docker volume create freshrss_filedata >/dev/null || fail "Unable to create freshrss_filedata"
-
-          CURRENT_PHASE="restore-volume"
-          printf '%s' "$GPG_PASSPHRASE" | gpg --batch --yes --passphrase-fd 0 --decrypt "$TMP_GPG" | \
-            docker run --rm -i -v freshrss_filedata:/restore alpine \
-              sh -c 'cd /restore && tar -xzf -' || fail "Unable to decrypt and extract selected backup into freshrss_filedata"
-
-          CURRENT_PHASE="start-service"
-          docker compose -f "$COMPOSE_FILE" --project-directory "$COMPOSE_PROJECT_DIR" up -d || fail "Unable to start FreshRSS after restore"
-
-          CURRENT_PHASE="verify"
-          docker compose -f "$COMPOSE_FILE" --project-directory "$COMPOSE_PROJECT_DIR" ps freshrss | grep -q "Up" || fail "FreshRSS container is not running"
-          docker inspect freshrss --format '{{json .NetworkSettings.Networks}}' | jq -e 'has("knowledge_network")' >/dev/null || fail "FreshRSS is not attached to knowledge_network"
-          NEW_STARTED_AT="$(docker inspect freshrss --format '{{.State.StartedAt}}')"
-          log "FreshRSS startedAt after restore: $NEW_STARTED_AT"
-          if [[ -n "$PREV_STARTED_AT" && "$PREV_STARTED_AT" == "$NEW_STARTED_AT" ]]; then
-            fail "FreshRSS startedAt is unchanged; container restart was not observed"
-          fi
-          docker compose -f "$COMPOSE_FILE" --project-directory "$COMPOSE_PROJECT_DIR" logs --tail 50 freshrss >/tmp/freshrss-restore-logs.txt || fail "Unable to read FreshRSS logs"
-          docker run --rm -v freshrss_filedata:/data alpine sh -c 'test -n "$(ls -A /data 2>/dev/null)"' || fail "Restored volume appears empty"
-
-          CURRENT_PHASE="restart-backup-service"
-          if [[ "$BACKUP_CONTAINER_WAS_RUNNING" == "true" ]]; then
-            if [[ -n "$BACKUP_COMPOSE_FILE" && -n "$BACKUP_PROJECT_DIR" ]]; then
-              docker compose -f "$BACKUP_COMPOSE_FILE" --project-directory "$BACKUP_PROJECT_DIR" up -d filedata-backup || \
-                fail "Unable to restart backup stack after restore"
-            else
-              docker start "$BACKUP_CONTAINER" >/dev/null 2>&1 || fail "Unable to restart ${BACKUP_CONTAINER} after restore"
-            fi
-          else
-            log "${BACKUP_CONTAINER} was not running before restore; leaving it stopped"
-          fi
-
-          CURRENT_PHASE="notify-success"
-          send_discord_notification "SUCCEEDED" "FreshRSS restore completed successfully" 65280
-
-          CURRENT_PHASE="complete"
-          log "Restore completed successfully"
-          echo "Recent FreshRSS logs:"
-          tail -n 20 /tmp/freshrss-restore-logs.txt || true
-          EOF
-
-          git fetch --depth 1 origin "$HOMELAB_GIT_REF"
-          git archive --format=tar.gz --output=/tmp/homelab-sync.tar.gz FETCH_HEAD knowledgeServices/freshrss backupServices/filedata/docker-compose.remote.yml
-
-          chmod 700 /tmp/freshrss-restore.sh
-
-          cat > /tmp/freshrss-restore.env <<EOF
-          DROPBOX_AUTH_TOKEN=${DROPBOX_AUTH_TOKEN}
-          DROPBOX_REFRESH_TOKEN=${DROPBOX_REFRESH_TOKEN}
-          GPG_PASSPHRASE=${GPG_PASSPHRASE}
-          DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
-          DROPBOX_PATH=${DROPBOX_PATH}
-          HOMELAB_GIT_REF=${HOMELAB_GIT_REF}
-          GITHUB_REPOSITORY=${{ github.repository }}
-          EOF
-          chmod 600 /tmp/freshrss-restore.env
-
-          gcloud compute scp /tmp/freshrss-restore.sh "$VM_NAME:/tmp/freshrss-restore.sh" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE"
-
-          gcloud compute scp /tmp/freshrss-restore.env "$VM_NAME:/tmp/freshrss-restore.env" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE"
-
-          gcloud compute scp /tmp/homelab-sync.tar.gz "$VM_NAME:/tmp/homelab-sync.tar.gz" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE"
-
-          gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo bash -lc 'set -a; source /tmp/freshrss-restore.env; set +a; bash /tmp/freshrss-restore.sh'"
-
-          rm -f /tmp/freshrss-restore.env /tmp/freshrss-restore.sh /tmp/homelab-sync.tar.gz
-
-      - name: Verify repository has no restore secrets in cloud IaC
+      - name: Notify Discord
+        if: ${{ always() }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          if grep -R --line-number --exclude-dir=.git -E "DROPBOX_AUTH_TOKEN|DROPBOX_REFRESH_TOKEN|GPG_PASSPHRASE" googleCloud; then
-            echo "Detected restore secret references under googleCloud; aborting"
-            exit 1
+          if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
+            payload="$(jq -n --arg status "$JOB_STATUS" \
+              '{content: ("FreshRSS GCP restore: " + $status)}')"
+            if ! curl --fail --silent --show-error -H "Content-Type: application/json" \
+              -d "$payload" "$DISCORD_WEBHOOK_URL" >/dev/null; then
+              echo "::warning::Discord notification failed"
+            fi
           fi
-          echo "Secret scan check passed for googleCloud"

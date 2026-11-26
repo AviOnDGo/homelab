@@ -235,6 +235,14 @@ Optional host setup:
   `/swapfile` on ext4 or XFS, or enables an existing matching one. It
   leaves other swap devices alone and refuses to resize or format an
   unexpected existing file.
+- **rclone + Dropbox:** `./scripts/host/configure-rclone.sh` installs rclone
+  with `apt-get` if it is missing, then writes a config containing only the
+  `dropbox` remote. Export `DROPBOX_AUTH_TOKEN` and `DROPBOX_REFRESH_TOKEN`
+  first; the script exits if either is missing. An existing config is renamed
+  to `rclone.conf.bak` before it is overwritten. Pass `--no-verify` to skip the
+  connectivity check. The GCP deploy workflow runs the same script on the VM
+  only when both `DROPBOX_AUTH_TOKEN` and `DROPBOX_REFRESH_TOKEN` are configured;
+  otherwise, it warns and skips Dropbox setup.
 
 ### 2. Configure networking
 

@@ -1,11 +1,11 @@
 ## Requirements
 
 ### REQ-001: Preflight validation
-The restore script SHALL verify that all required tools (`docker`, `rclone`, `gpg`, `zstd`) are present and that the Docker daemon and Dropbox rclone remote are reachable before performing any destructive operation.
+The restore script SHALL verify that all required tools (`docker`, `rclone`, `gpg`, `zstd`, `flock`) are present and that the Docker daemon and Dropbox rclone remote are reachable before performing any destructive operation.
 
 #### Scenario: Missing required tool
 - **GIVEN** the restore script is invoked
-- **WHEN** any of `docker`, `rclone`, `gpg`, or `zstd` is not found on `PATH`
+- **WHEN** any of `docker`, `rclone`, `gpg`, `zstd`, or `flock` is not found on `PATH`
 - **THEN** the script SHALL exit with a non-zero status and print an actionable error identifying the missing tool
 
 #### Scenario: Docker daemon unreachable
@@ -45,12 +45,12 @@ The restore script SHALL identify the most recent backup archive at the configur
 - **THEN** it SHALL select the lexicographically last filename as the restore target
 
 #### Scenario: No backups found
-- **GIVEN** no files exist at `dropbox:/Apps/freshrss`
+- **GIVEN** no matching backup files exist at `dropbox:/Apps/freshrss`
 - **WHEN** the script attempts to list backups
 - **THEN** it SHALL exit with a non-zero status and print the Dropbox path along with instructions to verify it
 
 ### REQ-004: Destructive operation confirmation
-The restore script SHALL require explicit operator confirmation before stopping a running container and before wiping an existing volume.
+The restore script SHALL require confirmation before stopping a running container and before wiping an existing volume.
 
 #### Scenario: Service running at restore time
 - **GIVEN** the `freshrss` container is running
@@ -62,10 +62,26 @@ The restore script SHALL require explicit operator confirmation before stopping 
 - **WHEN** the operator enters anything other than `y` or `Y`
 - **THEN** the script SHALL exit cleanly with a message indicating the restore was aborted
 
+#### Scenario: Confirmation input is unavailable
+- **GIVEN** a confirmation prompt is required
+- **WHEN** no confirmation input is available
+- **THEN** the script SHALL exit with a non-zero status and report that the restore was aborted
+
 #### Scenario: Volume exists at restore time
 - **GIVEN** the `freshrss_filedata` volume already exists
 - **WHEN** the script reaches the volume preparation step
-- **THEN** it SHALL print a warning and prompt for `[y/N]` confirmation before removing and recreating the volume
+- **THEN** it SHALL print a warning and prompt for `[y/N]` confirmation before clearing the volume
+
+#### Scenario: Backup container uses the volume
+- **GIVEN** `filedata-backup` is running and a backup has been downloaded
+- **WHEN** the script restores FreshRSS
+- **THEN** it SHALL stop `filedata-backup` before clearing the volume
+- **AND** it SHALL attempt to restart `filedata-backup` on success or failure
+
+#### Scenario: Another restore holds the lock
+- **GIVEN** another FreshRSS restore holds the restore lock
+- **WHEN** the script fails to acquire the lock
+- **THEN** it SHALL exit without restarting `filedata-backup` or removing the other restore's state marker
 
 ### REQ-005: Archive extraction
 The restore script SHALL decrypt and extract the backup archive into the `freshrss_filedata` volume using a streaming pipeline that avoids writing intermediate plaintext to disk.
@@ -73,7 +89,7 @@ The restore script SHALL decrypt and extract the backup archive into the `freshr
 #### Scenario: Successful extraction
 - **GIVEN** the operator has confirmed all prompts and the encrypted archive is present in the temp directory
 - **WHEN** the extraction pipeline runs
-- **THEN** `gpg --batch --yes --passphrase` SHALL decrypt the archive, `zstd -d` SHALL decompress it, and `tar -xf -` SHALL extract it into the root of the `freshrss_filedata` volume via a temporary Alpine container
+- **THEN** GPG SHALL decrypt the archive using a passphrase file descriptor, `zstd -d` SHALL decompress it, and `tar -xf -` SHALL extract it into the root of the `freshrss_filedata` volume via a temporary Alpine container
 
 ### REQ-006: Post-restore health verification
 The restore script SHALL verify that FreshRSS is healthy after restart using the FreshRSS CLI, retrying for up to 300 seconds before declaring failure.

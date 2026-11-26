@@ -18,6 +18,7 @@ class HostScriptTests(unittest.TestCase):
         self.log = self.work / "commands"
         self.log.touch()
         self.env = {**os.environ, "PATH": str(self.helpers), "LOG": str(self.log)}
+        self.env["HELPERS"] = str(self.helpers)
         (self.helpers / "bash").symlink_to(shutil.which("bash") or "/bin/bash")
         self.stub("sudo", 'printf "%s\\n" "$*" >> "$LOG"')
 
@@ -77,6 +78,60 @@ class HostScriptTests(unittest.TestCase):
         result = self.invoke(HOST_SCRIPTS / "configure-tailscale.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.log.read_text(), "tailscale version\n")
+
+    def rclone_env(self) -> Path:
+        for tool in ("dirname", "mkdir", "mv"):
+            (self.helpers / tool).symlink_to(shutil.which(tool) or f"/bin/{tool}")
+        self.stub("rclone", 'printf "rclone %s\\n" "$*" >> "$LOG"')
+        config = self.work / "rclone" / "rclone.conf"
+        self.env.update(RCLONE_CONFIG=str(config), DROPBOX_AUTH_TOKEN="access")
+        self.env["DROPBOX_REFRESH_TOKEN"] = "refresh"
+        return config
+
+    def test_rclone_backs_up_and_overwrites_config(self) -> None:
+        config = self.rclone_env()
+        first = self.invoke(HOST_SCRIPTS / "configure-rclone.sh")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertFalse(config.with_suffix(".conf.bak").exists())
+        config.write_text("[other]\ntype = local\n")
+        second = self.invoke(HOST_SCRIPTS / "configure-rclone.sh")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        backup = config.with_suffix(".conf.bak")
+        self.assertEqual(backup.read_text(), "[other]\ntype = local\n")
+        text = config.read_text()
+        self.assertTrue(text.startswith("[dropbox]\ntype = dropbox\n"))
+        self.assertIn('"refresh_token":"refresh"', text)
+        self.assertNotIn("other", text)
+        self.assertEqual(config.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.log.read_text(), "rclone lsd dropbox:\n" * 2)
+
+    def test_rclone_without_both_tokens_fails(self) -> None:
+        config = self.rclone_env()
+        del self.env["DROPBOX_REFRESH_TOKEN"]
+        result = self.invoke(HOST_SCRIPTS / "configure-rclone.sh")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Set both", result.stderr)
+        self.assertFalse(config.parent.exists())
+        self.assertEqual(self.log.read_text(), "")
+
+    def test_rclone_install_refreshes_apt_indexes_only_when_needed(self) -> None:
+        self.rclone_env()
+        (self.helpers / "rclone").unlink()
+        (self.helpers / "chmod").symlink_to(shutil.which("chmod") or "/bin/chmod")
+        self.stub("sudo", '"$@"')
+        self.stub(
+            "apt-get",
+            'printf "apt-get %s\\n" "$*" >> "$LOG"; '
+            'if [[ $1 == install ]]; then '
+            'printf \'#!/bin/bash\\necho "rclone $*" >> "$LOG"\\n\' '
+            '> "$HELPERS/rclone"; '
+            'chmod +x "$HELPERS/rclone"; fi',
+        )
+        result = self.invoke(HOST_SCRIPTS / "configure-rclone.sh")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.log.read_text().splitlines()
+        self.assertEqual(calls[:2], ["apt-get update", "apt-get install -y rclone"])
+        self.assertEqual(calls[2:], ["rclone lsd dropbox:"])
 
     def test_nvidia_missing_driver_does_not_change_runtime(self) -> None:
         self.stub("apt-get", 'exit 1')
