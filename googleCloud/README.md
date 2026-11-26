@@ -168,11 +168,10 @@ Optional variables:
 	- Optional secret name exported as `TF_VAR_bootstrap_git_deploy_key_secret_name`.
 
 The Watchtower restore additionally requires `WATCHTOWER_SCHEDULE` as a
-repository or `prod` environment variable (for example `0 0 3 * * *`) and
-`WATCHTOWER_NOTIFICATION_URL` as a repository or `prod` secret in Shoutrrr
-format. Values must be single-line and cannot contain single quotes or
-backslashes. They are sent over SSH stdin and placed in a private temporary
-Compose environment file on the VM, which is removed after the restore.
+repository or `prod` environment variable (for example `0 0 3 * * *`).
+The value must be single-line and cannot contain single quotes or backslashes.
+It is sent over SSH stdin and placed in a temporary Compose environment file
+on the VM, which is removed after the restore.
 
 ## Required GitHub Secrets
 
