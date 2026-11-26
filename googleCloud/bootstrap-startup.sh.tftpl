@@ -110,11 +110,6 @@ fi
 systemctl restart docker
 mark_phase_done
 
-## Install Tailscale package only; onboarding is workflow-driven to avoid metadata secrets.
-mark_phase_start tailscale
-curl -fsSL https://tailscale.com/install.sh | sh
-mark_phase_done
-
 metadata_get() {
   local key="$1"
   curl -fsS -H "Metadata-Flavor: Google" \
