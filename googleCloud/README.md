@@ -367,8 +367,26 @@ Use local CLI only for development diagnostics. CI remains the source of truth.
 
 From repository root:
 
-- cd googleCloud
-- terraform fmt -check -recursive
-- terraform init
-- terraform validate
-- terraform plan -var="project_id=<project>" -var="billing_account_id=<billing>" -var="budget_currency_code=<billing-account-currency-code>" -var="region=<region>" -var="zone=<zone>"
+```bash
+cd googleCloud
+cp -n terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project and billing values.
+cp -n backend.hcl.example backend.hcl
+# Edit backend.hcl with the existing state bucket.
+terraform fmt -check -recursive
+terraform init -reconfigure -backend-config=backend.hcl
+terraform validate
+export USER_PROJECT_OVERRIDE=true
+export GOOGLE_BILLING_PROJECT="<gcp-project-id>"
+terraform plan
+```
+
+Local plan requires Google Application Default Credentials with access to the
+project, billing account, and state bucket. Set `GOOGLE_BILLING_PROJECT` to a
+quota project ID, not a billing account ID, and use `USER_PROJECT_OVERRIDE` to
+send it with provider API requests. These exports apply only to the current
+shell and do not configure the GitHub workflow.
+
+The copied variable and backend files are ignored by Git; do not put credentials
+or private keys in them. A plan does not apply changes; review it carefully
+before any apply.
