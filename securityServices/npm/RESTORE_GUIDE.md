@@ -60,9 +60,9 @@ restore independently, run it manually from the desired branch. Manual runs
 skip an existing volume unless `force` is enabled. A forced restore removes
 the NPM container and clears the volume. A running `filedata-backup` container
 is stopped during the restore and restarted afterward.
-GCP filedata restore workflows share a VM lock, but direct script and manual
-fallback commands do not acquire it; do not run those while a workflow restore
-is in progress.
+GCP service restore jobs share a GitHub Actions concurrency group. Direct
+transport helper, script, and manual fallback runs are not covered; do not run
+those while a workflow restore is in progress.
 The workflow uses the protected `prod` environment and may require approval.
 Its branch restrictions and GCP OIDC trust policy must allow the selected branch.
 Manual dispatch requires the workflow file to exist on the default branch.

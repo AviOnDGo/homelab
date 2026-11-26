@@ -51,9 +51,9 @@ over SSH stdin and removes its temporary files on exit. The GPG passphrase must
 be a single line. Vaultwarden's service settings come from its Compose file.
 
 Update the GCP workload identity provider to allow the Vaultwarden workflow as
-described in the [GCP guide](../../googleCloud/README.md). GCP filedata restore
-workflows share a VM lock to prevent overlapping restores, but direct script and
-manual fallback runs do not acquire it; coordinate those manually.
+described in the [GCP guide](../../googleCloud/README.md). Direct transport
+helper, script, and manual fallback runs are not covered by the workflow
+concurrency group; coordinate those manually.
 
 ### 2. Verify recovery
 
