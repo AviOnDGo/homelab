@@ -50,3 +50,10 @@ Watchtower SHALL provide `restore.sh`, and its canonical stateless restore behav
 - **WHEN** they consult security service specifications
 - **THEN** `securityServices/watchtower/restore.sh` SHALL exist
 - **AND** the authoritative restore flow SHALL be documented in the security restore scripts spec
+
+#### Scenario: GCP deployment restores Watchtower
+- **GIVEN** the GCP apply and NPM restore both succeed
+- **WHEN** the deployment workflow invokes the Watchtower restore
+- **THEN** the Watchtower restore SHALL run independently of the FreshRSS restore
+- **AND** it SHALL invoke the selected checkout's Watchtower restore script on the VM
+- **AND** it SHALL NOT require backup credentials or restore volume data
