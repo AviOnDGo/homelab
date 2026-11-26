@@ -514,8 +514,6 @@ jobs:
     name: Restore Watchtower
     needs: [apply, restore-npm]
     uses: ./.github/workflows/gcp-watchtower-restore.yml
-    secrets:
-      WATCHTOWER_NOTIFICATION_URL: ${{ secrets.WATCHTOWER_NOTIFICATION_URL }}
 
   teardown:
     name: Terraform Teardown

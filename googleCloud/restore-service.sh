@@ -16,19 +16,15 @@ esac
 
 if [[ "$SERVICE" == watchtower ]]; then
   : "${WATCHTOWER_SCHEDULE:?Missing WATCHTOWER_SCHEDULE variable}"
-  : "${WATCHTOWER_NOTIFICATION_URL:?Missing WATCHTOWER_NOTIFICATION_URL secret}"
 
-  for value in "$WATCHTOWER_SCHEDULE" "$WATCHTOWER_NOTIFICATION_URL"; do
-    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ||
-          "$value" == *"'"* || "$value" == *\\* ]]; then
-      echo "Watchtower configuration values cannot contain newlines, single quotes, or backslashes." >&2
-      exit 1
-    fi
-  done
+  if [[ "$WATCHTOWER_SCHEDULE" == *$'\n'* || "$WATCHTOWER_SCHEDULE" == *$'\r'* ||
+        "$WATCHTOWER_SCHEDULE" == *"'"* || "$WATCHTOWER_SCHEDULE" == *\\* ]]; then
+    echo "WATCHTOWER_SCHEDULE cannot contain newlines, single quotes, or backslashes." >&2
+    exit 1
+  fi
 
   {
     printf '%s' "$WATCHTOWER_SCHEDULE" | base64 -w0; echo
-    printf '%s' "$WATCHTOWER_NOTIFICATION_URL" | base64 -w0; echo
     tar -C "$service_dir" -cf - restore.sh docker-compose.yml
   } | gcloud compute ssh --quiet "$VM_NAME" \
     --project "$PROJECT_ID" --zone "$ZONE" \
@@ -37,16 +33,13 @@ if [[ "$SERVICE" == watchtower ]]; then
       set -euo pipefail
       umask 077
       read -r schedule64
-      read -r notification64
       workdir=$(mktemp -d /tmp/watchtower-restore-workflow.XXXXXXXX)
       trap "rm -rf -- \"\$workdir\"" EXIT
       tar -xf - -C "$workdir"
       schedule=$(printf %s "$schedule64" | base64 -d)
-      notification=$(printf %s "$notification64" | base64 -d)
-      unset schedule64 notification64
-      printf "WATCHTOWER_SCHEDULE='\''%s'\''\nWATCHTOWER_NOTIFICATION_URL='\''%s'\''\n" \
-        "$schedule" "$notification" > "$workdir/.env"
-      unset schedule notification
+      unset schedule64
+      printf "WATCHTOWER_SCHEDULE=\047%s\047\n" "$schedule" > "$workdir/.env"
+      unset schedule
       cd "$workdir"
       export COMPOSE_PROJECT_NAME=watchtower
       printf "y\n" | bash ./restore.sh

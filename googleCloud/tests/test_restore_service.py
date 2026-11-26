@@ -1,7 +1,9 @@
 import base64
 import io
 import itertools
+import json
 import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
@@ -206,13 +208,13 @@ class RestoreWatchtowerTests(unittest.TestCase):
             "PROJECT_ID": "test-project",
             "ZONE": "test-zone",
             "WATCHTOWER_SCHEDULE": "0 0 3 * * *",
-            "WATCHTOWER_NOTIFICATION_URL": "discord://test-token@test-channel",
         }
         for secret in (
             "FORCE",
             "DROPBOX_AUTH_TOKEN",
             "DROPBOX_REFRESH_TOKEN",
             "GPG_PASSPHRASE",
+            "WATCHTOWER_NOTIFICATION_URL",
         ):
             self.env.pop(secret, None)
 
@@ -233,21 +235,18 @@ class RestoreWatchtowerTests(unittest.TestCase):
         )
 
     def test_transport_excludes_backup_credentials(self) -> None:
+        self.env["WATCHTOWER_NOTIFICATION_URL"] = "discord://synthetic@channel"
         self.executable(
             "gcloud", 'printf "%s\\n" "$@" > "$ARGUMENTS"\ncat > "$STREAM"'
         )
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn(
-            self.env["WATCHTOWER_NOTIFICATION_URL"],
-            self.arguments.read_text(encoding="utf-8"),
+            self.env["WATCHTOWER_NOTIFICATION_URL"].encode(), self.stream.read_bytes()
         )
-        lines = self.stream.read_bytes().split(b"\n", 2)
-        self.assertEqual(
-            [base64.b64decode(value).decode() for value in lines[:2]],
-            [self.env["WATCHTOWER_SCHEDULE"], self.env["WATCHTOWER_NOTIFICATION_URL"]],
-        )
-        with tarfile.open(fileobj=io.BytesIO(lines[2])) as archive:
+        lines = self.stream.read_bytes().split(b"\n", 1)
+        self.assertEqual(base64.b64decode(lines[0]).decode(), self.env["WATCHTOWER_SCHEDULE"])
+        with tarfile.open(fileobj=io.BytesIO(lines[1])) as archive:
             self.assertEqual(set(archive.getnames()), {"restore.sh", "docker-compose.yml"})
             for name in archive.getnames():
                 self.assertEqual(
@@ -280,7 +279,6 @@ esac
         calls = self.arguments.read_text(encoding="utf-8")
         self.assertIn("watchtower compose", calls)
         self.assertIn(" up -d", calls)
-        self.assertNotIn(self.env["WATCHTOWER_NOTIFICATION_URL"], calls + result.stdout)
         compose_path = next(
             line.split(" -f ", 1)[1].split(" ", 1)[0]
             for line in calls.splitlines()
@@ -288,13 +286,42 @@ esac
         )
         self.assertFalse(Path(compose_path).parent.exists())
 
+    def test_remote_configuration_preserves_literal_dollar_signs(self) -> None:
+        self.env["WATCHTOWER_SCHEDULE"] = "0 $TOKEN 3 * * *"
+        self.executable(
+            "gcloud",
+            'for arg in "$@"; do command="$arg"; done\n'
+            'command="${command//\\/.env/\\/fixture-input}"\n'
+            'exec bash -c "$command"',
+        )
+        self.executable("sudo", 'exec "$@"')
+        self.executable(
+            "docker",
+            """
+case "$*" in
+  info) ;;
+  *" down") cp "$(dirname "$3")/fixture-input" "$STREAM" ;;
+  *" up -d") ;;
+  *" ps --status running watchtower") echo watchtower ;;
+  *" ps --status running watchtower-socket-proxy") echo watchtower-socket-proxy ;;
+  *" logs --no-color --tail=80 watchtower") echo "Scheduling first run" ;;
+  *) echo "Unexpected docker command: $*" >&2; exit 1 ;;
+esac
+""",
+        )
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            self.stream.read_text(encoding="utf-8"),
+            "WATCHTOWER_SCHEDULE='0 $TOKEN 3 * * *'\n",
+        )
+
     def test_invalid_inputs_fail_before_connecting(self) -> None:
         for variable, value in (
             ("WATCHTOWER_SCHEDULE", ""),
-            ("WATCHTOWER_NOTIFICATION_URL", ""),
-            ("WATCHTOWER_NOTIFICATION_URL", "first\nsecond"),
-            ("WATCHTOWER_NOTIFICATION_URL", "single'quote"),
-            ("WATCHTOWER_NOTIFICATION_URL", "back\\slash"),
+            ("WATCHTOWER_SCHEDULE", "first\nsecond"),
+            ("WATCHTOWER_SCHEDULE", "single'quote"),
+            ("WATCHTOWER_SCHEDULE", "back\\slash"),
         ):
             with self.subTest(variable=variable, value=value):
                 original = self.env[variable]
@@ -304,6 +331,49 @@ esac
                 self.assertTrue(result.stderr)
                 self.assertFalse(self.arguments.exists())
                 self.env[variable] = original
+
+    def test_existing_notification_configuration_is_not_passed_to_container(self) -> None:
+        docker = shutil.which("docker")
+        if docker is None:
+            self.skipTest("Docker Compose is not available")
+        version = subprocess.run(
+            [docker, "compose", "version"], capture_output=True, check=False
+        )
+        if version.returncode:
+            self.skipTest("Docker Compose is not available")
+        fixture = self.work / "compose-input"
+        fixture.write_text(
+            "WATCHTOWER_SCHEDULE=0 0 3 * * *\n"
+            "WATCHTOWER_NOTIFICATION_URL=discord://synthetic@channel\n"
+            "WATCHTOWER_NOTIFICATIONS=shoutrrr\n",
+            encoding="utf-8",
+        )
+        env = os.environ.copy()
+        env.pop("WATCHTOWER_SCHEDULE", None)
+        result = subprocess.run(
+            [
+                docker,
+                "compose",
+                "--env-file",
+                str(fixture),
+                "-f",
+                str(ROOT / "securityServices" / "watchtower" / "docker-compose.yml"),
+                "config",
+                "--format",
+                "json",
+            ],
+            cwd=self.work,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = json.loads(result.stdout)["services"]["watchtower"]["environment"]
+        self.assertEqual(environment["WATCHTOWER_SCHEDULE"], "0 0 3 * * *")
+        self.assertNotIn("WATCHTOWER_NOTIFICATION_URL", environment)
+        self.assertNotIn("WATCHTOWER_NOTIFICATIONS", environment)
 
     def test_remote_restore_failure_is_reported_and_cleans_up(self) -> None:
         self.executable(

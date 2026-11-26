@@ -2,9 +2,6 @@ name: Restore Watchtower on GCP VM
 
 on:
   workflow_call:
-    secrets:
-      WATCHTOWER_NOTIFICATION_URL:
-        required: false
   workflow_dispatch:
 
 permissions:
@@ -41,5 +38,4 @@ jobs:
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           ZONE: ${{ vars.GCP_ZONE }}
           WATCHTOWER_SCHEDULE: ${{ vars.WATCHTOWER_SCHEDULE }}
-          WATCHTOWER_NOTIFICATION_URL: ${{ secrets.WATCHTOWER_NOTIFICATION_URL }}
         run: ./googleCloud/restore-service.sh
