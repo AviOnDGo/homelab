@@ -84,6 +84,51 @@ esac
 
 
 class RestoreTests(unittest.TestCase):
+    def test_invalid_backup_state_is_not_consumed_by_cleanup(self):
+        for marker_type in ("empty", "wrong", "symlink", "dangling", "directory"):
+            for fail_early in (False, True):
+                with self.subTest(marker=marker_type, fail_early=fail_early), \
+                        tempfile.TemporaryDirectory() as tmp:
+                    env, log = restore_env(tmp)
+                    marker = Path(tmp) / "freshrss-restore-backup-state"
+                    if marker_type == "directory":
+                        marker.mkdir()
+                    elif marker_type in ("symlink", "dangling"):
+                        target = Path(tmp) / "target"
+                        if marker_type == "symlink":
+                            target.write_text("running\n")
+                        marker.symlink_to(target)
+                    else:
+                        marker.write_text("" if marker_type == "empty" else "stopped\n")
+                    (Path(tmp) / "backup-stopped").touch()
+                    if fail_early:
+                        env["FAIL_LIST"] = "1"
+                    result = subprocess.run(
+                        [str(SCRIPT)], env=env, input="y\ny\n",
+                        capture_output=True, text=True,
+                    )
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("Invalid backup-state marker", result.stderr)
+                    self.assertTrue(marker.exists() or marker.is_symlink())
+                    self.assertTrue((Path(tmp) / "backup-stopped").exists())
+                    self.assertNotIn("docker start filedata-backup", log.read_text())
+                    self.assertNotIn("docker stop filedata-backup", log.read_text())
+
+    def test_valid_backup_state_is_recovered_after_early_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = restore_env(tmp)
+            marker = Path(tmp) / "freshrss-restore-backup-state"
+            marker.write_text("running\n")
+            (Path(tmp) / "backup-stopped").touch()
+            env["FAIL_LIST"] = "1"
+            result = subprocess.run(
+                [str(SCRIPT)], env=env, input="", capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("docker start filedata-backup", log.read_text())
+            self.assertFalse(marker.exists())
+            self.assertFalse((Path(tmp) / "backup-stopped").exists())
+
     def test_lock_failure_does_not_restore_another_runs_backup_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             env, log = restore_env(tmp)

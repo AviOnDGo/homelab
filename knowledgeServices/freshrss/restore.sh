@@ -16,8 +16,18 @@ BACKUP_WAS_RUNNING=false
 # --------------------------------------------------------------------------- #
 # Cleanup trap — runs on any exit (success or failure)
 # --------------------------------------------------------------------------- #
+validate_backup_state() {
+  local saved_backup_state
+  if [[ -L "$BACKUP_STATE_FILE" || ! -f "$BACKUP_STATE_FILE" ]] \
+    || ! IFS= read -r saved_backup_state <"$BACKUP_STATE_FILE" \
+    || [[ "$saved_backup_state" != "running" ]]; then
+    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
+    return 1
+  fi
+}
+
 restore_backup_state() {
-  [[ -f "$BACKUP_STATE_FILE" ]] || return 0
+  validate_backup_state || return 1
 
   local backup_running
   backup_running=$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)
@@ -40,7 +50,8 @@ cleanup() {
     error "Could not remove temporary restore files: $TMP_DIR"
     exit_status=1
   fi
-  if [[ -f "$BACKUP_STATE_FILE" ]] && ! restore_backup_state; then
+  if [[ -e "$BACKUP_STATE_FILE" || -L "$BACKUP_STATE_FILE" ]] \
+    && ! restore_backup_state; then
     exit_status=1
   fi
   unset PASSPHRASE
@@ -181,13 +192,7 @@ if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
 fi
 
 if [[ -e "$BACKUP_STATE_FILE" || -L "$BACKUP_STATE_FILE" ]]; then
-  if [[ -L "$BACKUP_STATE_FILE" || ! -f "$BACKUP_STATE_FILE" ]]; then
-    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
-    exit 1
-  fi
-  if ! IFS= read -r saved_backup_state <"$BACKUP_STATE_FILE" \
-    || [[ "$saved_backup_state" != "running" ]]; then
-    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
+  if ! validate_backup_state; then
     exit 1
   fi
   BACKUP_WAS_RUNNING=true
