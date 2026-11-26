@@ -10,14 +10,41 @@ CONTAINER_NAME="freshrss"
 DROPBOX_REMOTE="dropbox"
 DROPBOX_PATH="${DROPBOX_PATH:-/Apps/freshrss}"
 TMP_DIR="/tmp/freshrss-restore-$$"
+BACKUP_STATE_FILE="${TMPDIR:-/tmp}/freshrss-restore-backup-state"
 BACKUP_WAS_RUNNING=false
 
 # --------------------------------------------------------------------------- #
 # Cleanup trap — runs on any exit (success or failure)
 # --------------------------------------------------------------------------- #
+restore_backup_state() {
+  [[ -f "$BACKUP_STATE_FILE" ]] || return 0
+
+  local backup_running
+  backup_running=$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)
+  if [[ "$backup_running" != "true" ]]; then
+    if ! docker start filedata-backup >/dev/null; then
+      error "Could not restart filedata-backup; saved state retained for the next run."
+      return 1
+    fi
+    info "Restarted filedata-backup to restore its prior running state."
+  fi
+
+  rm -f -- "$BACKUP_STATE_FILE"
+}
+
 cleanup() {
-  rm -rf "$TMP_DIR"
+  local exit_status=$?
+  trap - EXIT
+
+  if ! rm -rf "$TMP_DIR"; then
+    error "Could not remove temporary restore files: $TMP_DIR"
+    exit_status=1
+  fi
+  if [[ -f "$BACKUP_STATE_FILE" ]] && ! restore_backup_state; then
+    exit_status=1
+  fi
   unset PASSPHRASE
+  exit "$exit_status"
 }
 trap cleanup EXIT
 
@@ -43,7 +70,7 @@ confirm() {
 # --------------------------------------------------------------------------- #
 info "Running preflight checks..."
 
-for cmd in docker rclone gpg zstd flock; do
+for cmd in docker rclone gpg zstd tar flock; do
   if ! command -v "$cmd" &>/dev/null; then
     error "Required tool not found: $cmd"
     error "Install $cmd and re-run this script."
@@ -122,6 +149,13 @@ if [[ ! -s "$LOCAL_BACKUP" ]]; then
   exit 1
 fi
 
+# Validate decryption, compression, and archive structure before touching services
+# or existing volume data.
+info "Validating backup archive..."
+gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 3<<<"$PASSPHRASE" \
+  | zstd -d \
+  | tar -tf - >/dev/null
+
 # --------------------------------------------------------------------------- #
 # 5. Stop the service if running
 # --------------------------------------------------------------------------- #
@@ -146,8 +180,26 @@ if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
   fi
 fi
 
-if [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
+if [[ -e "$BACKUP_STATE_FILE" || -L "$BACKUP_STATE_FILE" ]]; then
+  if [[ -L "$BACKUP_STATE_FILE" || ! -f "$BACKUP_STATE_FILE" ]]; then
+    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
+    exit 1
+  fi
+  if ! IFS= read -r saved_backup_state <"$BACKUP_STATE_FILE" \
+    || [[ "$saved_backup_state" != "running" ]]; then
+    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
+    exit 1
+  fi
   BACKUP_WAS_RUNNING=true
+elif [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
+  BACKUP_WAS_RUNNING=true
+  if ! (umask 077; set -o noclobber; printf 'running\n' >"$BACKUP_STATE_FILE"); then
+    error "Cannot save filedata-backup state; refusing to stop the container."
+    exit 1
+  fi
+fi
+
+if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
   info "Stopping filedata-backup..."
   docker stop filedata-backup >/dev/null
 fi
@@ -209,12 +261,17 @@ done
 
 if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
   info "Restarting filedata-backup..."
-  docker start filedata-backup >/dev/null
+  restore_backup_state
 fi
 
 echo ""
 echo "=========================================="
 echo "  FreshRSS restore completed successfully!"
 echo "  FreshRSS health check passed."
+if [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
+  echo "  filedata-backup is running."
+else
+  echo "  filedata-backup is not running."
+fi
 echo "  Access FreshRSS via your NPM proxy URL."
 echo "=========================================="
