@@ -6,16 +6,31 @@ validation behavior.
 
 ## Requirements
 
-### REQ-001: Manual pipeline SHALL orchestrate end-to-end FreshRSS restore on GCP
-The system SHALL provide a manually triggered GitHub Actions workflow that performs a complete FreshRSS recovery run on the target GCP VM.
+### REQ-001: Pipeline SHALL orchestrate FreshRSS restore on GCP
+The system SHALL provide a reusable and manually triggered GitHub Actions workflow that performs FreshRSS recovery on the target GCP VM.
 
 #### Scenario: Successful restore run follows required order
-- **GIVEN** the operator has approved and manually dispatched the FreshRSS restore workflow
+- **GIVEN** the operator has approved a FreshRSS restore with force enabled
 - **WHEN** the workflow executes the remote restore sequence
 - **THEN** it SHALL resolve and download the selected FreshRSS backup before stopping containers or clearing `freshrss_filedata`
 - **AND** it SHALL stop `filedata-backup` if that container is running and stop the FreshRSS service if it is running
 - **AND** it SHALL clear `freshrss_filedata` in place, restore the selected backup into the volume, start FreshRSS, and restart `filedata-backup` only if it was previously running
 - **AND** the workflow SHALL fail if any step in the sequence fails
+
+#### Scenario: Manual restore without force
+- **GIVEN** the FreshRSS volume already exists
+- **WHEN** the operator dispatches the workflow without force
+- **THEN** the workflow SHALL skip the restore without clearing the volume
+
+#### Scenario: Restore following successful NPM restore
+- **GIVEN** Terraform Apply succeeds
+- **WHEN** the NPM restore succeeds
+- **THEN** the deployment workflow SHALL invoke the FreshRSS restore with force enabled
+
+#### Scenario: NPM restore fails or is skipped
+- **GIVEN** the NPM restore does not succeed
+- **WHEN** the deployment workflow evaluates the FreshRSS restore job
+- **THEN** it SHALL skip the FreshRSS restore
 
 #### Scenario: Service resumes from restored volume
 - **GIVEN** the latest backup archive has been restored into `freshrss_filedata`
@@ -58,25 +73,12 @@ The restore job SHALL use the GitHub `prod` environment with required reviewers 
 - **WHEN** another run of the workflow is dispatched
 - **THEN** the workflow concurrency group SHALL prevent both runs from executing simultaneously
 
-### REQ-004: Restore workflow SHALL emit best-effort Discord notifications
-The workflow SHALL attempt to send Discord notifications for both restore success and restore failure when `DISCORD_WEBHOOK_URL` is configured, but notification delivery failures SHALL NOT change the restore result.
-
-#### Scenario: Success notification is attempted after verified restore
-- **GIVEN** the restore workflow has completed successfully and `DISCORD_WEBHOOK_URL` is configured
-- **WHEN** the workflow emits its completion notification
-- **THEN** it SHALL attempt to send a success notification that identifies the FreshRSS restore outcome
-- **AND** a notification delivery failure SHALL be logged as a warning without changing the successful workflow result
-
-#### Scenario: Failure notification is attempted after restore error
-- **GIVEN** the restore workflow fails and `DISCORD_WEBHOOK_URL` is configured
-- **WHEN** the workflow emits its failure notification
-- **THEN** it SHALL attempt to send a failure notification identifying the FreshRSS restore outcome
-- **AND** a notification delivery failure SHALL be logged as a warning without replacing the original restore failure
-
-### REQ-005: Workflow SHALL invoke the VM's FreshRSS restore script
-The workflow SHALL run `/tmp/homelab/knowledgeServices/freshrss/restore.sh` on the existing VM without updating its checkout.
+### REQ-005: Workflow SHALL invoke the selected checkout's FreshRSS restore script
+The workflow SHALL transfer the selected checkout's restore script and Compose file to the VM and invoke the script from a temporary directory.
 
 #### Scenario: VM checkout differs from the workflow checkout
-- **GIVEN** the VM's restore script differs from the script in the workflow checkout
-- **WHEN** the workflow checks the script before invoking it
-- **THEN** the workflow SHALL fail before performing a restore and report that the VM checkout needs updating
+- **GIVEN** the VM checkout is absent or differs from the workflow checkout
+- **WHEN** the workflow performs a restore
+- **THEN** it SHALL use the workflow checkout's script and Compose file without updating the VM checkout
+- **AND** it SHALL use `freshrss` as the Compose project name
+- **AND** it SHALL remove the temporary directory on exit

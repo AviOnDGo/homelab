@@ -13,6 +13,7 @@ set -euo pipefail
 
 case "$SERVICE" in
   npm) service_dir=securityServices/npm ;;
+  freshrss) service_dir=knowledgeServices/freshrss ;;
   *) echo "Unsupported restore service: $SERVICE" >&2; exit 1 ;;
 esac
 case "$FORCE" in
@@ -55,6 +56,6 @@ fi
     export RCLONE_CONFIG_DROPBOX_TOKEN="$(jq -cn \
       "{access_token:env.token,token_type:\"bearer\",refresh_token:env.refresh,expiry:\"1970-01-01T00:00:00Z\"}")"
     unset token refresh
-    export COMPOSE_PROJECT_NAME=npm
+    export COMPOSE_PROJECT_NAME="$2"
     bash "$workdir/restore.sh" "$1"
-  '"'"' _ '"$mode"
+  '"'"' _ '"$mode"' '"$SERVICE"

@@ -1,5 +1,6 @@
 import base64
 import io
+import itertools
 import os
 import subprocess
 import tarfile
@@ -51,14 +52,21 @@ class RestoreServiceTests(unittest.TestCase):
             check=False,
         )
 
-    def test_allowed_npm_restore_transports_secrets_and_files(self) -> None:
-        for force, mode in (("false", "--if-missing"), ("true", "--force")):
-            with self.subTest(force=force):
+    def test_allowed_restores_transport_secrets_and_service_files(self) -> None:
+        for (service, directory), (force, mode) in itertools.product(
+            (
+                ("npm", ROOT / "securityServices" / "npm"),
+                ("freshrss", ROOT / "knowledgeServices" / "freshrss"),
+            ),
+            (("false", "--if-missing"), ("true", "--force")),
+        ):
+            with self.subTest(service=service, force=force):
+                self.env["SERVICE"] = service
                 self.env["FORCE"] = force
                 result = self.invoke()
                 self.assertEqual(result.returncode, 0, result.stderr)
                 arguments = self.arguments.read_text(encoding="utf-8")
-                self.assertIn(f" _ {mode}", arguments)
+                self.assertIn(f" _ {mode} {service}", arguments)
                 self.assertIn("test-vm", arguments)
                 for secret in ("DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE"):
                     self.assertNotIn(self.env[secret], arguments)
@@ -78,7 +86,7 @@ class RestoreServiceTests(unittest.TestCase):
                     for name in archive.getnames():
                         self.assertEqual(
                             archive.extractfile(name).read(),
-                            (ROOT / "securityServices" / "npm" / name).read_bytes(),
+                            (directory / name).read_bytes(),
                         )
 
     def test_invalid_inputs_fail_before_connecting(self) -> None:
@@ -101,6 +109,17 @@ class RestoreServiceTests(unittest.TestCase):
         self.env["GCLOUD_EXIT"] = "1"
         self.assertNotEqual(self.invoke().returncode, 0)
 
+    def test_deployment_requires_successful_npm_restore(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        job = workflow.split("\n  restore-freshrss:\n", 1)[1].split(
+            "\n  teardown:", 1
+        )[0]
+        self.assertIn("    needs: [apply, restore-npm]\n", job)
+        self.assertNotIn("\n    if:", job)
+        self.assertIn("    uses: ./.github/workflows/gcp-freshrss-restore.yml\n", job)
+
     def test_remote_command_runs_npm_skip_path(self) -> None:
         for name, body in {
             "gcloud": 'for arg in "$@"; do command="$arg"; done\nexec bash -c "$command"',
@@ -118,6 +137,56 @@ class RestoreServiceTests(unittest.TestCase):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("already exists; skipping automatic restore", result.stdout)
+
+    def test_freshrss_remote_restore_uses_expected_mode_and_project(self) -> None:
+        archive_file = self.work / "content"
+        archive_file.write_text("test data", encoding="utf-8")
+        archive_path = self.work / "backup.tar"
+        with tarfile.open(archive_path, "w") as archive:
+            archive.add(archive_file, arcname="content")
+        self.env.update(SERVICE="freshrss", ARCHIVE=str(archive_path))
+        for name, body in {
+            "gcloud": 'for arg in "$@"; do command="$arg"; done\nexec bash -c "$command"',
+            "sudo": 'exec "$@"',
+            "docker": """
+echo "$COMPOSE_PROJECT_NAME $*" >> "$ARGUMENTS"
+case "$1" in
+  info|compose|exec) ;;
+  volume)
+    if [[ "$2" == inspect ]]; then [[ "$FORCE" == false ]]; fi ;;
+  ps) ;;
+  inspect) echo false ;;
+  run) cat >/dev/null ;;
+  *) echo "Unexpected docker command: $*" >&2; exit 1 ;;
+esac""",
+            "rclone": """
+case "$1" in
+  lsd) ;;
+  lsf) echo freshrss_2025-01-01_00-00-00.tar.zst.gpg ;;
+  copy) printf encrypted > "$3/${2##*/}" ;;
+  *) exit 1 ;;
+esac""",
+            "zstd": "cat",
+            "gpg": 'cat "$ARCHIVE"',
+            "jq": 'echo "{}"',
+            "sleep": "exit 0",
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        for force in ("false", "true"):
+            with self.subTest(force=force):
+                self.arguments.unlink(missing_ok=True)
+                self.env["FORCE"] = force
+                result = self.invoke()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = self.arguments.read_text(encoding="utf-8")
+                if force == "false":
+                    self.assertIn("skipping automatic restore", result.stdout)
+                    self.assertNotIn(" compose ", calls)
+                else:
+                    self.assertIn("freshrss compose ", calls)
+                    self.assertIn("freshrss exec freshrss php ", calls)
 
 
 if __name__ == "__main__":

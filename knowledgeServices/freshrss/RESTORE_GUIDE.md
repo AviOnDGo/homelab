@@ -6,14 +6,11 @@
 - `flock` is also needed for the manual fallback.
 - The external `knowledge_network` network and access to a Dropbox rclone remote.
 - The GPG passphrase used for the filedata backup.
-- For GCP: an existing checkout at `/tmp/homelab`, SSH access through GCP, the
-  workflow's GCP OIDC variables and the Actions secrets `DROPBOX_AUTH_TOKEN`,
+- For GCP: SSH access through GCP, the workflow's GCP OIDC variables and the
+  Actions secrets `DROPBOX_AUTH_TOKEN`,
   `DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE`.
-
-The GCP bootstrap clone is optional and is not automatically refreshed. Install
-`rclone` and `zstd` on the VM if needed, and update the checkout separately before
-running the workflow. Its `restore.sh` must match the workflow's checkout; the
-workflow checks the script hash and fails before restoring if it differs.
+  The GCP OIDC trust policy must allow the FreshRSS restore workflow as
+  described in the [GCP guide](../../googleCloud/README.md).
 
 ## Restore Steps
 
@@ -48,16 +45,24 @@ fallback while another restore is in progress. If an older version left a
 `freshrss-restore-backup-state` marker in `${TMPDIR:-/tmp}`, check and restore
 the backup container's state manually, then remove the marker.
 
-For GCP, dispatch `.github/workflows/gcp-freshrss-restore.yml` and approve the
-pending deployment in GitHub Actions. The `prod` environment must have required
-reviewers configured; its approval rule also applies to GCP deployment jobs.
-The optional `vm_name` overrides
-`GCP_VM_NAME` (default `gcp-debian-free-tier-vm`); `dropbox_path` defaults to
-`/Apps/freshrss`. The workflow connects to the live VM and invokes its script
-non-interactively with the Actions secrets, supplies confirmation to the script
-after GitHub approval, and uses a temporary, private rclone
-configuration that is removed on exit. It does not update the VM checkout. An optional
-`DISCORD_WEBHOOK_URL` secret enables best-effort outcome notifications.
+The [GCP restore workflow](../../.github/workflows/gcp-freshrss-restore.yml)
+runs after successful Terraform Apply, including no-op applies, and **forcibly
+replaces FreshRSS data** with the latest `/Apps/freshrss` backup. Back up
+current data and schedule downtime before applying. It runs only after the NPM
+restore succeeds; if NPM fails or is skipped, FreshRSS is skipped too.
+Manual dispatch skips an existing volume unless `force` is enabled. GitHub
+requires the workflow on the default branch for manual dispatch; the `prod`
+environment and OIDC trust policy must allow the selected branch. The separate
+restore job may require `prod` approval. Manual runs require a bootstrapped VM.
+
+The workflow uses `GCP_VM_NAME` (default `gcp-debian-free-tier-vm`), transfers
+the selected checkout's restore script and Compose file to a temporary VM
+directory, and installs `rclone` and `zstd` if needed. Credentials travel over
+SSH standard input; temporary files are removed on exit. The passphrase must be
+a single line. Avoid shell tracing. The workflow no longer accepts `vm_name`
+or `dropbox_path` inputs or sends Discord notifications. Use the script directly
+for an alternative Dropbox path. Workflow concurrency does not coordinate
+manual script runs or the NPM restore workflow; never run restores concurrently.
 
 ### 3. Clear sensitive shell state
 

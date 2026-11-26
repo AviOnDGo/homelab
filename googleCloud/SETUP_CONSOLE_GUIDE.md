@@ -122,7 +122,7 @@ Navigation: IAM & Admin -> Workload Identity Federation
 - `attribute.actor=assertion.actor`
 - `attribute.environment=assertion.environment`
 9. Add provider condition:
-- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main")`
+- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main")`
 10. Create provider.
 
 ## 7. Add Conditional Impersonation Binding

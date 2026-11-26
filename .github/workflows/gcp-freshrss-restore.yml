@@ -1,18 +1,25 @@
 name: Restore FreshRSS on GCP VM
 
 on:
+  workflow_call:
+    inputs:
+      force:
+        description: "Replace existing FreshRSS data from the latest backup"
+        type: boolean
+        default: false
+    secrets:
+      DROPBOX_AUTH_TOKEN:
+        required: false
+      DROPBOX_REFRESH_TOKEN:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
   workflow_dispatch:
     inputs:
-      dropbox_path:
-        description: "Dropbox folder containing FreshRSS backups"
-        required: true
-        default: "/Apps/freshrss"
-        type: string
-      vm_name:
-        description: "Optional override for target VM name"
-        required: false
-        default: ""
-        type: string
+      force:
+        description: "Replace existing FreshRSS data from the latest backup"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,98 +39,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate restore inputs
+      - name: Validate restore credentials
         env:
-          DROPBOX_PATH: ${{ inputs.dropbox_path }}
           DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
-          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          ZONE: ${{ vars.GCP_ZONE }}
         run: |
+          set +x
           set -euo pipefail
-          : "${DROPBOX_PATH:?Missing Dropbox path}"
           : "${DROPBOX_AUTH_TOKEN:?Missing DROPBOX_AUTH_TOKEN secret}"
           : "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
           : "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
-          : "${GCP_WIF_PROVIDER:?Missing GCP_WIF_PROVIDER variable}"
-          : "${GCP_SERVICE_ACCOUNT:?Missing GCP_SERVICE_ACCOUNT variable}"
-          : "${PROJECT_ID:?Missing GCP_PROJECT_ID variable}"
-          : "${ZONE:?Missing GCP_ZONE variable}"
+          if [[ "$GPG_PASSPHRASE" == *$'\n'* ]]; then
+            echo "GPG_PASSPHRASE must be a single line." >&2
+            exit 1
+          fi
 
-      - name: Authenticate to GCP via OIDC
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      - name: Prepare GCP restore
+        uses: ./.github/actions/gcp-restore
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
 
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
-
-      - name: Run restore on VM
+      - name: Restore FreshRSS on VM
         env:
-          INPUT_VM_NAME: ${{ inputs.vm_name }}
-          DEFAULT_VM_NAME: ${{ vars.GCP_VM_NAME }}
+          SERVICE: freshrss
+          FORCE: ${{ inputs.force || false }}
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           ZONE: ${{ vars.GCP_ZONE }}
-          DROPBOX_PATH: ${{ inputs.dropbox_path }}
           DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          set -euo pipefail
-          VM_NAME="${INPUT_VM_NAME:-${DEFAULT_VM_NAME:-gcp-debian-free-tier-vm}}"
-          echo "Restore target: $VM_NAME ($PROJECT_ID / $ZONE)"
-          SCRIPT_HASH="$(sha256sum knowledgeServices/freshrss/restore.sh | cut -d ' ' -f 1)"
-          export SCRIPT_HASH
-          python3 -c '
-          import base64, os
-          for name in ("SCRIPT_HASH", "DROPBOX_PATH", "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE"):
-              print(base64.b64encode(os.environ[name].encode()).decode())
-          ' | gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" \
-            --command 'sudo bash -c '"'"'
-              set -euo pipefail
-              read -r hash64
-              read -r path64
-              read -r token64
-              read -r refresh64
-              read -r pass64
-              expected_hash=$(printf %s "$hash64" | base64 -d)
-              export DROPBOX_PATH="$(printf %s "$path64" | base64 -d)"
-              token=$(printf %s "$token64" | base64 -d)
-              refresh=$(printf %s "$refresh64" | base64 -d)
-              export token refresh
-              export PASSPHRASE="$(printf %s "$pass64" | base64 -d)"
-              cd /tmp/homelab/knowledgeServices/freshrss
-              actual_hash=$(sha256sum restore.sh | cut -d " " -f 1)
-              if [[ "$actual_hash" != "$expected_hash" ]]; then
-                echo "VM restore.sh differs from the workflow checkout; update the VM checkout before restoring." >&2
-                exit 1
-              fi
-              umask 077
-              RCLONE_CONFIG="$(mktemp /tmp/freshrss-rclone.XXXXXXXX)"
-              export RCLONE_CONFIG
-              trap "rm -f \"\$RCLONE_CONFIG\"" EXIT
-              export RCLONE_CONFIG_DROPBOX_TYPE=dropbox
-              export RCLONE_CONFIG_DROPBOX_TOKEN="$(jq -cn \
-                "{access_token:env.token,token_type:\"bearer\",refresh_token:env.refresh,expiry:\"1970-01-01T00:00:00Z\"}")"
-              unset token refresh
-              printf "y\ny\n" | ./restore.sh
-            '"'"''
-
-      - name: Notify Discord
-        if: ${{ always() }}
-        env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          JOB_STATUS: ${{ job.status }}
-        run: |
-          if [[ -n "$DISCORD_WEBHOOK_URL" ]]; then
-            payload="$(jq -n --arg status "$JOB_STATUS" \
-              '{content: ("FreshRSS GCP restore: " + $status)}')"
-            if ! curl --fail --silent --show-error -H "Content-Type: application/json" \
-              -d "$payload" "$DISCORD_WEBHOOK_URL" >/dev/null; then
-              echo "::warning::Discord notification failed"
-            fi
-          fi
+        run: ./googleCloud/restore-service.sh
