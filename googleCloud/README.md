@@ -24,8 +24,9 @@ Execution behavior:
 	- Exception: for temporary testing only, workflow_dispatch can set `enforce_main_guard=false`.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
-- Before every apply, schedule NPM and FreshRSS downtime, back up their current
-  data, and verify that both latest Dropbox backups are current and usable.
+- Before every apply, schedule NPM, FreshRSS, and Vaultwarden downtime, back up
+  their current data, and verify that their latest Dropbox backups are current
+  and usable.
 - After successful apply, the reusable NPM restore workflow runs in `prod` and
   forcibly replaces existing NPM data from the latest backup, even after a
   no-op apply. It can also be dispatched manually from a permitted branch;
@@ -40,6 +41,11 @@ Execution behavior:
   volume unless `force` is enabled. The separate job may require another `prod`
   approval. Before deployment, allow its workflow ref in the WIF provider
   condition below. See the [FreshRSS restore guide](../knowledgeServices/freshrss/RESTORE_GUIDE.md).
+- After successful apply and NPM restore, Vaultwarden is forcibly restored from
+  its latest backup, including after a no-op apply. It is skipped if NPM fails
+  or is skipped. Manual runs skip an existing volume unless `force` is enabled.
+  Configure its secret and allow its workflow ref in the WIF condition below
+  before running it. See the [Vaultwarden restore guide](../securityServices/vaultwarden/RESTORE_GUIDE.md).
 - After successful apply and NPM restore, Watchtower is redeployed and verified
   in parallel with FreshRSS, including after a no-op apply. No backup or volume
   restore is involved. It can also be dispatched manually; its separate `prod`
@@ -192,8 +198,10 @@ Optional Dropbox credentials for rclone on the VM:
 	- After onboarding, the apply job runs `scripts/host/configure-rclone.sh` on the VM as root. It installs rclone and configures a verified `dropbox` remote in `/root/.config/rclone/rclone.conf`.
 	- Tokens and the script are sent over SSH stdin, not command lines. If either secret is missing, the step warns and skips.
 
-The NPM and FreshRSS restore workflows require `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`,
-and `GPG_PASSPHRASE` in `prod` (or repository secrets). Its own `prod` job
+The NPM, FreshRSS, and Vaultwarden restore workflows require `DROPBOX_AUTH_TOKEN`,
+`DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE` in `prod` (or repository secrets).
+The VM also needs `flock` (provided by util-linux) for the shared filedata
+restore lock. Each restore's `prod` job
 receives environment secrets independently; repository secrets are explicitly
 passed to the reusable workflow. Missing credentials fail the restore job.
 OIDC trust restrictions must also allow the reusable workflow's
@@ -221,11 +229,12 @@ assertion.ref == "refs/heads/main" &&
 (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")
 
 The reusable restore workflows also use this service account. Retain the single
-provider value and include all four workflow refs in the explicit condition
-above. Update an existing provider before running Watchtower restores. Do not rely
+provider value and include all five workflow refs in the explicit condition
+above. Update an existing provider before running Vaultwarden restores. Do not rely
 on repository scope alone.
 
 Binding condition baseline (single production service account):
