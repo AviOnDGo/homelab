@@ -417,6 +417,17 @@ jobs:
       DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
+  restore-vaultwarden:
+    name: Restore Vaultwarden
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-vaultwarden-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
   restore-watchtower:
     name: Restore Watchtower
     needs: [apply, restore-npm]

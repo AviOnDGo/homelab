@@ -287,6 +287,7 @@ do not require a repository-level host crontab.
 | `tailscale-deploy.yml` | Relevant pushes or manual dispatch | Validates and applies Tailscale Terraform configuration |
 | `gcp-vm-deploy.yml` | GCP Terraform changes or manual dispatch | Plans and, with explicit action/guarding, applies or destroys the GCP VM |
 | `gcp-freshrss-restore.yml` | Manual dispatch with confirmation | Restores FreshRSS backups on the GCP VM |
+| `gcp-vaultwarden-restore.yml` | After successful GCP Apply or manual dispatch | Restores Vaultwarden backups on the GCP VM |
 | `cleanup-workflow-runs.yml` | 1st of each month, 02:00 UTC | Deletes workflow run records older than 60 days (keeps ≥ 3 per workflow) |
 | `pr-title.yml` | PR updates targeting `main` | Required check for the title that will become the squash commit subject |
 | `release.yml` | Push to `main`, or manual dispatch on `main` | Validates and previews or publishes a source release; publishing is opt-in |
