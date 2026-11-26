@@ -47,12 +47,17 @@ Execution behavior:
   Configure its secret and allow its workflow ref in the WIF condition below
   before running it. See the [Vaultwarden restore guide](../securityServices/vaultwarden/RESTORE_GUIDE.md).
 - After successful apply and NPM restore, Watchtower is redeployed and verified
-  in parallel with FreshRSS, including after a no-op apply. No backup or volume
-  restore is involved. It can also be dispatched manually; its separate `prod`
+  along with FreshRSS and Vaultwarden, including after a no-op apply. No backup
+  or volume restore is involved. It can also be dispatched manually; its separate `prod`
   job may require approval. Allow its workflow ref in the WIF condition below
   before running it. Manual restores also require the external
   `security_network` to exist on the VM. See the
   [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
+
+The four GCP restore jobs share a GitHub Actions concurrency group, including
+manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
+jobs are canceled when the queue is full. Scheduling order is not guaranteed.
+Direct script and manual fallback runs are not covered by this group.
 
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
