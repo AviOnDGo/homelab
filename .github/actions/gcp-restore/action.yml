@@ -1,0 +1,49 @@
+name: Prepare GCP service restore
+description: Authenticate to GCP and set up gcloud
+
+inputs:
+  workload-identity-provider:
+    description: GCP workload identity provider
+    required: true
+  service-account:
+    description: GCP service account
+    required: true
+  project-id:
+    description: GCP project ID
+    required: true
+  zone:
+    description: GCP VM zone
+    required: true
+  vm-name:
+    description: GCP VM name
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate restore configuration
+      shell: bash
+      env:
+        GCP_WIF_PROVIDER: ${{ inputs.workload-identity-provider }}
+        GCP_SERVICE_ACCOUNT: ${{ inputs.service-account }}
+        PROJECT_ID: ${{ inputs.project-id }}
+        ZONE: ${{ inputs.zone }}
+        VM_NAME: ${{ inputs.vm-name }}
+      run: |
+        set +x
+        set -euo pipefail
+        : "${GCP_WIF_PROVIDER:?Missing GCP_WIF_PROVIDER variable}"
+        : "${GCP_SERVICE_ACCOUNT:?Missing GCP_SERVICE_ACCOUNT variable}"
+        : "${PROJECT_ID:?Missing GCP_PROJECT_ID variable}"
+        : "${ZONE:?Missing GCP_ZONE variable}"
+        : "${VM_NAME:?Missing VM name}"
+
+    - name: Authenticate to GCP via OIDC
+      uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      with:
+        workload_identity_provider: ${{ inputs.workload-identity-provider }}
+        service_account: ${{ inputs.service-account }}
+
+    - name: Setup gcloud
+      uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
+

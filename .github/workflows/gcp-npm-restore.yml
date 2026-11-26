@@ -39,92 +39,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Validate restore configuration
+      - name: Validate restore credentials
         env:
           DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-          GCP_WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
-          GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          ZONE: ${{ vars.GCP_ZONE }}
         run: |
           set +x
           set -euo pipefail
           : "${DROPBOX_AUTH_TOKEN:?Missing DROPBOX_AUTH_TOKEN secret}"
           : "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
           : "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
-          : "${GCP_WIF_PROVIDER:?Missing GCP_WIF_PROVIDER variable}"
-          : "${GCP_SERVICE_ACCOUNT:?Missing GCP_SERVICE_ACCOUNT variable}"
-          : "${PROJECT_ID:?Missing GCP_PROJECT_ID variable}"
-          : "${ZONE:?Missing GCP_ZONE variable}"
           if [[ "$GPG_PASSPHRASE" == *$'\n'* ]]; then
             echo "GPG_PASSPHRASE must be a single line." >&2
             exit 1
           fi
 
-      - name: Authenticate to GCP via OIDC
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+      - name: Prepare GCP restore
+        uses: ./.github/actions/gcp-restore
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
-
-      - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
-
-      - name: Verify bootstrap completion
-        env:
-          VM_NAME: ${{ vars.GCP_VM_NAME }}
-          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
-          ZONE: ${{ vars.GCP_ZONE }}
-        run: ./googleCloud/bootstrap-readiness.sh "${VM_NAME:-gcp-debian-free-tier-vm}" "$PROJECT_ID" "$ZONE"
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
 
       - name: Restore NPM on VM
         env:
-          VM_NAME: ${{ vars.GCP_VM_NAME }}
+          SERVICE: npm
+          FORCE: ${{ inputs.force || false }}
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
           PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
           ZONE: ${{ vars.GCP_ZONE }}
-          FORCE: ${{ inputs.force || false }}
           DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-        run: |
-          set +x
-          set -euo pipefail
-          mode=--if-missing
-          if [[ "$FORCE" == "true" ]]; then
-            mode=--force
-          fi
-          {
-            printf '%s' "$DROPBOX_AUTH_TOKEN" | base64 -w0; echo
-            printf '%s' "$DROPBOX_REFRESH_TOKEN" | base64 -w0; echo
-            printf '%s' "$GPG_PASSPHRASE" | base64 -w0; echo
-            tar -C securityServices/npm -cf - restore.sh docker-compose.yml
-          } | gcloud compute ssh "${VM_NAME:-gcp-debian-free-tier-vm}" \
-            --project "$PROJECT_ID" --zone "$ZONE" \
-            --command 'sudo bash -c '"'"'
-              set +x
-              set -euo pipefail
-              umask 077
-              read -r token64
-              read -r refresh64
-              read -r pass64
-              workdir=$(mktemp -d /tmp/npm-restore-workflow.XXXXXXXX)
-              trap "rm -rf -- \"\$workdir\"" EXIT
-              tar -xf - -C "$workdir"
-              if ! command -v rclone >/dev/null || ! command -v zstd >/dev/null; then
-                apt-get update
-                apt-get install -y --no-install-recommends rclone zstd
-              fi
-              export token="$(printf %s "$token64" | base64 -d)"
-              export refresh="$(printf %s "$refresh64" | base64 -d)"
-              export PASSPHRASE="$(printf %s "$pass64" | base64 -d)"
-              unset token64 refresh64 pass64
-              export RCLONE_CONFIG="$workdir/rclone.conf"
-              export RCLONE_CONFIG_DROPBOX_TYPE=dropbox
-              export RCLONE_CONFIG_DROPBOX_TOKEN="$(jq -cn \
-                "{access_token:env.token,token_type:\"bearer\",refresh_token:env.refresh,expiry:\"1970-01-01T00:00:00Z\"}")"
-              unset token refresh
-              export COMPOSE_PROJECT_NAME=npm
-              bash "$workdir/restore.sh" "$1"
-            '"'"' _ '"$mode"
+        run: ./googleCloud/restore-service.sh
