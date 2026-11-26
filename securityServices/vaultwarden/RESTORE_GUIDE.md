@@ -37,8 +37,9 @@ Safety behavior:
 ### GCP workflow
 
 The [GCP Vaultwarden restore workflow](../../.github/workflows/gcp-vaultwarden-restore.yml)
-runs after successful Terraform Apply and NPM restore, alongside FreshRSS and
-Watchtower. Every successful Apply, including a no-op, **forcibly replaces
+runs after successful Terraform Apply and NPM restore. It shares a concurrency
+group with the NPM, FreshRSS, and Watchtower restore jobs. Every successful
+Apply, including a no-op, **forcibly replaces
 Vaultwarden data** with the latest backup. Back up current data and schedule
 downtime before applying. Manual dispatch skips an existing volume unless
 `force` is enabled; it requires an already bootstrapped VM and the workflow on
