@@ -39,27 +39,23 @@ docker compose logs -f vaultwarden
 
 Vaultwarden is proxied through NPM. Access through the configured domain (e.g., `https://vault.yourdomain.com`).
 
-The admin panel is available at `<domain>/admin` and requires the `ADMIN_TOKEN` set in `.env`.
+The admin panel is available at `<domain>/admin` when an `ADMIN_TOKEN` is configured. No admin token is configured by default, so the admin panel is disabled. If admin access is needed, configure `ADMIN_TOKEN` through a secure, untracked deployment mechanism.
 
 ---
 
-## Configuration (`.env`)
+## Configuration
 
-Key variables (see `.env` for full list):
+New user registrations are disabled by `SIGNUPS_ALLOWED: "false"` in `docker-compose.yml`. To change this setting, update the Compose environment and recreate the container.
 
-| Variable | Description |
-|---|---|
-| `ADMIN_TOKEN` | Bcrypt-hashed token for accessing the `/admin` panel |
-| `DOMAIN` | Full URL Vaultwarden is served from (e.g., `https://vault.yourdomain.com`) |
-| `SIGNUPS_ALLOWED` | Set to `false` to disable new registrations after initial setup |
+Set `DOMAIN` in the Compose environment to the full public URL (e.g., `https://vault.yourdomain.com`) if you need URL-dependent features such as invitations or attachment downloads.
 
 ---
 
 ## Post-Deployment Checklist
 
-- [ ] Log in with admin account and enroll at least one MFA method (TOTP, YubiKey, or Duo)
+- [ ] Log in with a vault account and enroll at least one MFA method (TOTP, YubiKey, or Duo)
 - [ ] Confirm MFA authenticates successfully before marking deployment complete
-- [ ] Set `SIGNUPS_ALLOWED=false` once all users have registered
+- [ ] Confirm new user registrations remain disabled
 
 ---
 
@@ -67,6 +63,6 @@ Key variables (see `.env` for full list):
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| Admin panel returns 404 | `ADMIN_TOKEN` not set in `.env` | Set `ADMIN_TOKEN` and restart |
-| Can't connect from Bitwarden client | `DOMAIN` not set or NPM proxy misconfigured | Verify NPM proxy host and `DOMAIN` in `.env` |
-| Container exits immediately | Invalid `.env` configuration | Check `docker compose logs vaultwarden` |
+| Admin panel is unavailable | `ADMIN_TOKEN` is not configured | Configure `ADMIN_TOKEN` securely if admin access is needed |
+| Can't connect from Bitwarden client | NPM proxy misconfigured | Verify the NPM proxy host and, if needed, set `DOMAIN` in the Compose environment |
+| Container exits immediately | Invalid Compose configuration | Check `docker compose logs vaultwarden` |
