@@ -10,6 +10,7 @@ set -euo pipefail
 case "$SERVICE" in
   npm) service_dir=securityServices/npm ;;
   freshrss) service_dir=knowledgeServices/freshrss ;;
+  vaultwarden) service_dir=securityServices/vaultwarden ;;
   watchtower) service_dir=securityServices/watchtower ;;
   *) echo "Unsupported restore service: $SERVICE" >&2; exit 1 ;;
 esac

@@ -62,11 +62,10 @@ directory, and installs `rclone` and `zstd` if needed. Credentials travel over
 SSH standard input; temporary files are removed on exit. The passphrase must be
 a single line. Avoid shell tracing. The workflow no longer accepts `vm_name`
 or `dropbox_path` inputs or sends Discord notifications. Use the script directly
-for an alternative Dropbox path. Workflow concurrency does not coordinate
-manual script runs or the NPM restore workflow. Within one deployment, FreshRSS
-follows NPM, but restores from separate runs can overlap. An overlapping restore
-can restart `filedata-backup` while another restore is still changing its volume,
-allowing a partial backup. Coordinate overlapping restores and backups manually.
+for an alternative Dropbox path. GCP service restore jobs share a GitHub Actions
+concurrency group, but direct transport helper, script, and manual fallback runs
+are not covered. Coordinate those manually to prevent overlapping restores and
+partial backups.
 
 ### 3. Clear sensitive shell state
 
