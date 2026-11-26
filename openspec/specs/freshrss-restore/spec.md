@@ -75,7 +75,13 @@ The restore script SHALL require confirmation before stopping a running containe
 #### Scenario: Backup container uses the volume
 - **GIVEN** `filedata-backup` is running and a backup has been downloaded
 - **WHEN** the script restores FreshRSS
-- **THEN** it SHALL stop `filedata-backup` before clearing the volume and restart it only after successful health verification
+- **THEN** it SHALL stop `filedata-backup` before clearing the volume
+- **AND** it SHALL attempt to restart `filedata-backup` on success or failure
+
+#### Scenario: Another restore holds the lock
+- **GIVEN** another FreshRSS restore holds the restore lock
+- **WHEN** the script fails to acquire the lock
+- **THEN** it SHALL exit without restarting `filedata-backup` or removing the other restore's state marker
 
 ### REQ-005: Archive extraction
 The restore script SHALL decrypt and extract the backup archive into the `freshrss_filedata` volume using a streaming pipeline that avoids writing intermediate plaintext to disk.

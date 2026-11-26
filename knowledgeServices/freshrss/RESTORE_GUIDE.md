@@ -76,10 +76,11 @@ Confirm that FreshRSS serves the expected data through Nginx Proxy Manager.
 
 ## Manual fallback
 
-Stop FreshRSS and any backup container using its volume, then restore a verified
-archive into the existing volume:
+Run the following in Bash to validate the archive, stop FreshRSS and a running
+`filedata-backup`, and restore the existing volume:
 
 ```bash
+(
 set -euo pipefail
 BACKUP=/path/to/backup.tar.zst.gpg
 read -r -s -p "GPG passphrase: " PASSPHRASE
@@ -87,6 +88,14 @@ printf '\n'
 trap 'unset PASSPHRASE' EXIT
 gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$BACKUP" 3<<<"$PASSPHRASE" \
   | zstd -d | tar -tf - >/dev/null
+if [[ ! -e /tmp/freshrss-restore.lock ]]; then
+  (umask 022; : >> /tmp/freshrss-restore.lock)
+fi
+exec 9</tmp/freshrss-restore.lock
+if ! flock -n 9; then
+  printf 'Another FreshRSS restore is already in progress.\n' >&2
+  exit 1
+fi
 BACKUP_WAS_RUNNING=false
 restore_backup_state() {
   local exit_status=$?
@@ -113,9 +122,11 @@ gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$BACKUP" 3<<<"$
   | zstd -d | docker run --rm -i -v freshrss_filedata:/restore alpine \
     sh -c 'cd /restore && tar -xf -'
 docker compose up -d
+)
 ```
 
 The archive is decrypted and checked before `docker compose down` or volume
+cleanup. The shared lock prevents overlapping restores and remains held through
 cleanup. With `set -euo pipefail`, a failed command or pipeline stops the
-sequence before FreshRSS is started. The EXIT trap clears the passphrase from
-the shell on success or failure and restores `filedata-backup` if it was running.
+sequence before FreshRSS is started. The subshell's EXIT trap clears the
+passphrase and restores `filedata-backup` if it was running.

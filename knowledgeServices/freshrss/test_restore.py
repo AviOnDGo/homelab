@@ -1,3 +1,4 @@
+import fcntl
 import os
 import subprocess
 import tarfile
@@ -7,6 +8,7 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).with_name("restore.sh")
+GUIDE = Path(__file__).with_name("RESTORE_GUIDE.md")
 
 
 def restore_env(tmp_path: str) -> tuple[dict[str, str], Path]:
@@ -82,6 +84,74 @@ esac
 
 
 class RestoreTests(unittest.TestCase):
+    def test_lock_failure_does_not_restore_another_runs_backup_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = restore_env(tmp)
+            marker = Path(tmp) / "freshrss-restore-backup-state"
+            marker.write_text("running\n")
+            (Path(tmp) / "backup-stopped").touch()
+            flock_stub = Path(tmp) / "bin" / "flock"
+            flock_stub.write_text("#!/bin/sh\nexit 1\n")
+            flock_stub.chmod(0o755)
+            result = subprocess.run(
+                [str(SCRIPT)], env=env, input="", capture_output=True, text=True
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("Another FreshRSS restore", result.stderr)
+            self.assertTrue(marker.exists())
+            self.assertTrue((Path(tmp) / "backup-stopped").exists())
+            self.assertFalse(log.exists())
+
+    def test_manual_fallback_cleanup_and_lock(self):
+        guide = GUIDE.read_text()
+        fallback = guide.split("## Manual fallback", 1)[1]
+        command = fallback.split("```bash\n", 1)[1].split("\n```", 1)[0]
+        for scenario in ("success", "extract-failure", "locked", "backup-stopped"):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as tmp:
+                env, log = restore_env(tmp)
+                env.pop("PASSPHRASE")
+                lock_path = Path(tmp) / "restore.lock"
+                script = command.replace("/tmp/freshrss-restore.lock", str(lock_path))
+                if scenario == "extract-failure":
+                    env["FAIL_EXTRACT"] = "1"
+                if scenario == "backup-stopped":
+                    env["BACKUP_NOT_RUNNING"] = "1"
+                with lock_path.open("w") as lock:
+                    if scenario == "locked":
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    result = subprocess.run(
+                        [
+                            "bash",
+                            "-c",
+                            script
+                            + '\nstatus=$?; printf "\\nSTATUS=%s PASSPHRASE=%s\\n" '
+                            '"$status" "${PASSPHRASE-unset}"',
+                        ],
+                        env=env,
+                        input="test-passphrase\n",
+                        capture_output=True,
+                        text=True,
+                    )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected_status = 1 if scenario in ("extract-failure", "locked") else 0
+                self.assertIn(f"STATUS={expected_status} PASSPHRASE=unset", result.stdout)
+                calls = log.read_text()
+                if scenario == "locked":
+                    self.assertIn("Another FreshRSS restore", result.stderr)
+                    self.assertNotIn("docker stop", calls)
+                    self.assertNotIn("docker compose", calls)
+                elif scenario == "backup-stopped":
+                    self.assertNotIn("docker stop filedata-backup", calls)
+                    self.assertNotIn("docker start filedata-backup", calls)
+                else:
+                    self.assertIn("docker stop filedata-backup", calls)
+                    self.assertIn("docker start filedata-backup", calls)
+                    self.assertFalse((Path(tmp) / "backup-stopped").exists())
+                    if scenario == "extract-failure":
+                        self.assertNotIn("docker compose up", calls)
+                    else:
+                        self.assertIn("docker compose up -d", calls)
+
     def test_restore_selects_archive_and_coordinates_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             env, log = restore_env(tmp)

@@ -46,7 +46,6 @@ cleanup() {
   unset PASSPHRASE
   exit "$exit_status"
 }
-trap cleanup EXIT
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -86,6 +85,7 @@ if ! flock -n 9; then
   error "Another FreshRSS restore is already in progress."
   exit 1
 fi
+trap cleanup EXIT
 
 if ! docker info &>/dev/null; then
   error "Cannot connect to Docker daemon."
