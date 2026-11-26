@@ -49,7 +49,7 @@ jobs:
     name: Terraform Plan
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply')) }}
     runs-on: ubuntu-latest
-    environment: plan
+    environment: prod
     defaults:
       run:
         working-directory: googleCloud

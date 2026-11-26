@@ -7,7 +7,7 @@ This directory provisions the free-tier GCP VM with Terraform and deploys throug
 - Authentication uses GitHub OIDC Workload Identity Federation only.
 - Static service account key files are not used.
 - High-risk bootstrap secrets are not interpolated into Terraform-managed startup metadata.
-- Production apply and destroy runs are gated by GitHub Environment protection.
+- Production apply runs are gated by GitHub Environment protection.
 
 ## Workflow
 
@@ -22,8 +22,6 @@ Execution behavior:
 	- workflow ref .github/workflows/gcp-vm-deploy.yml@refs/heads/main
 	- prod environment
 	- Exception: for temporary testing only, workflow_dispatch can set `enforce_main_guard=false`.
-- Plan runs use the `plan` environment without required reviewers. Apply and
-  destroy use the protected `prod` environment.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
 - After successful apply, the reusable NPM restore workflow runs in `prod` and
@@ -99,15 +97,13 @@ Detailed guide with console.google.com navigation paths:
 	- On the shared service account, grant:
 		- roles/iam.workloadIdentityUser to your GitHub principalSet from the WIF provider.
 
-8. Configure GitHub repository variables and environment secrets
+8. Configure GitHub repository/environment variables
 	- Set all variables listed in Required GitHub Variables.
 	- Use the full provider resource in GCP_WIF_PROVIDER.
-	- Add `GCP_BILLING_ACCOUNT_ID` as an environment secret in both `plan` and
-	  `prod`.
 
 9. Configure GitHub Environment protection
-	- Create `plan` without required reviewers.
-	- Create `prod` with required reviewers for apply and destroy approvals.
+	- Create prod environment with required reviewers.
+	- Ensure apply is manually approved through prod environment gates.
 
 10. Validate with a safe first run
 	- Run workflow_dispatch with action=plan.
@@ -237,7 +233,7 @@ Checks include:
 - Configure workload identity provider and claim mappings.
 - Configure a conditional binding for the shared service account identity.
 - Set GitHub variables listed above.
-- Ensure `plan` has no required reviewers and `prod` has required reviewers.
+- Ensure GitHub Environment prod has required reviewers/approvals.
 - Run workflow_dispatch with action=plan.
 - Review plan output for expected drift.
 - Run workflow_dispatch with action=apply from main.
@@ -246,10 +242,10 @@ Checks include:
 ## Private Backend Configuration
 
 Both Terraform modules use a partial GCS backend with the existing `tfstate`
-prefix. Before running the updated workflows, set these GitHub repository
+prefix. Before running the updated workflows, set these GitHub environment
 variables to the exact buckets already holding the corresponding state:
 
-- `GCP_TF_STATE_BUCKET` for the VM module.
+- `GCP_TF_STATE_BUCKET` for the VM module's `prod` environment.
 - `TAILSCALE_TF_STATE_BUCKET` for every environment used by the Tailscale workflow.
 
 Missing bucket inputs fail initialization before any plan/apply/destroy command.
@@ -321,7 +317,7 @@ terraform plan \
 ## Verification Checklist
 
 - Confirm required variables are configured: `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_BUDGET_CURRENCY_CODE`, `GCP_TF_STATE_BUCKET`, `GCP_REGION`, `GCP_ZONE`.
-- Confirm both `plan` and `prod` contain the `GCP_BILLING_ACCOUNT_ID` environment secret.
+- Confirm `prod` contains the `GCP_BILLING_ACCOUNT_ID` environment secret.
 - Confirm `GCP_SERVICE_ACCOUNT` uses full email format (`<name>@<project>.iam.gserviceaccount.com`).
 - Confirm Tailscale onboarding config is set (`TAILSCALE_TAILNET` and either OAuth credentials or an ephemeral auth key).
 - Confirm WIF provider condition matches repository and owner values.
@@ -350,7 +346,7 @@ If post-provision onboarding fails after Terraform apply:
 - Permission-validation step fails before Terraform
 	- Confirm workflow is using API-based permission checks (not deprecated/unsupported gcloud subcommands).
 	- Recheck project and billing IAM role assignments for deploy service account.
-	- Confirm required GCP variables are configured as GitHub repository variables.
+	- Confirm required GCP variables are configured in the `prod` GitHub environment.
 - Terraform init fails with `bucket doesn't exist`
 	- Check `GCP_TF_STATE_BUCKET` points to the existing state bucket.
 	- For a genuinely new deployment only, create its configured backend bucket.
