@@ -4,8 +4,8 @@ services:
     container_name: vaultwarden
     labels:
       - "com.centurylinklabs.watchtower.enable=false"
-    env_file:
-      - .env
+    environment:
+      SIGNUPS_ALLOWED: "false"
     volumes:
       - filedata:/data
     # Port exposed for direct access - use npm proxy instead for secure access
