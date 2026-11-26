@@ -26,6 +26,14 @@ Execution behavior:
   destroy use the protected `prod` environment.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
+- After successful apply, the reusable NPM restore workflow runs in `prod` and
+  forcibly replaces existing NPM data from the latest backup, even after a
+  no-op apply. It can also be dispatched manually from a permitted branch;
+  manual runs replace existing NPM data only with `force`. GitHub requires
+  the workflow file on the default branch for manual
+  dispatch; the `prod` environment and OIDC trust policy must allow the branch.
+  The separate restore job may require another `prod` approval. See the
+  [NPM restore guide](../securityServices/npm/RESTORE_GUIDE.md).
 
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
@@ -165,6 +173,13 @@ Optional Dropbox credentials for rclone on the VM:
 - `DROPBOX_AUTH_TOKEN` + `DROPBOX_REFRESH_TOKEN`
 	- After onboarding, the apply job runs `scripts/host/configure-rclone.sh` on the VM as root. It installs rclone and configures a verified `dropbox` remote in `/root/.config/rclone/rclone.conf`.
 	- Tokens and the script are sent over SSH stdin, not command lines. If either secret is missing, the step warns and skips.
+
+The NPM restore workflow requires `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`,
+and `GPG_PASSPHRASE` in `prod` (or repository secrets). Its own `prod` job
+receives environment secrets independently; repository secrets are explicitly
+passed to the reusable workflow. Missing credentials fail the restore job.
+OIDC trust restrictions must also allow the reusable workflow's
+`job_workflow_ref`, as well as manual runs of that workflow.
 
 ## OIDC Trust Configuration
 

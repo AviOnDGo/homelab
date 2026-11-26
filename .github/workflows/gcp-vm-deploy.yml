@@ -502,6 +502,17 @@ jobs:
             echo "[verify] Tailscale is not running (may be configured later manually)"
           fi
 
+  restore-npm:
+    name: Restore NPM
+    needs: apply
+    uses: ./.github/workflows/gcp-npm-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
   teardown:
     name: Terraform Teardown
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' }}
