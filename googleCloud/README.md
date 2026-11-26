@@ -195,13 +195,25 @@ Configure Workload Identity Provider claim mapping:
 
 Provider condition baseline:
 
-assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER"
+assertion.repository == "OWNER/REPO" &&
+assertion.repository_owner == "OWNER" &&
+assertion.environment == "prod" &&
+assertion.ref == "refs/heads/main" &&
+assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main"
 
-Binding condition baseline (single service account):
+The reusable NPM restore workflow also uses this service account. In that
+provider configuration, add the NPM restore workflow_ref as an allowed value
+in a separate provider or in an explicit
+`assertion.job_workflow_ref == "...gcp-npm-restore.yml@refs/heads/main"` alternative.
+Do not rely on repository scope alone.
+
+Binding condition baseline (single production service account):
 
 principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/WIF_POOL_ID/attribute.repository/OWNER/REPO
 
-Apply ref restriction is enforced in workflow guard steps (`refs/heads/main` and workflow ref checks), while repository scoping is enforced in WIF/provider and service-account binding.
+Apply and restore trust is enforced at the WIF provider and service-account
+binding by repository, environment, ref, and workflow-ref claims. Workflow
+guard steps provide a second defense for `refs/heads/main` and workflow refs.
 
 ## Least-Privilege IAM Guidance
 
