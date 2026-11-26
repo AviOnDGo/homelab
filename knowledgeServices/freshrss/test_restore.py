@@ -85,7 +85,16 @@ esac
 
 class RestoreTests(unittest.TestCase):
     def test_invalid_backup_state_is_not_consumed_by_cleanup(self):
-        for marker_type in ("empty", "wrong", "symlink", "dangling", "directory"):
+        for marker_type in (
+            "empty",
+            "wrong",
+            "multiline",
+            "extra-newline",
+            "no-final-newline",
+            "symlink",
+            "dangling",
+            "directory",
+        ):
             for fail_early in (False, True):
                 with self.subTest(marker=marker_type, fail_early=fail_early), \
                         tempfile.TemporaryDirectory() as tmp:
@@ -99,7 +108,14 @@ class RestoreTests(unittest.TestCase):
                             target.write_text("running\n")
                         marker.symlink_to(target)
                     else:
-                        marker.write_text("" if marker_type == "empty" else "stopped\n")
+                        marker_contents = {
+                            "empty": "",
+                            "wrong": "stopped\n",
+                            "multiline": "running\nstopped\n",
+                            "extra-newline": "running\n\n",
+                            "no-final-newline": "running",
+                        }
+                        marker.write_text(marker_contents[marker_type])
                     (Path(tmp) / "backup-stopped").touch()
                     if fail_early:
                         env["FAIL_LIST"] = "1"

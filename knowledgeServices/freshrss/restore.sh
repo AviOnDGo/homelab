@@ -18,9 +18,13 @@ BACKUP_WAS_RUNNING=false
 # --------------------------------------------------------------------------- #
 validate_backup_state() {
   local saved_backup_state
-  if [[ -L "$BACKUP_STATE_FILE" || ! -f "$BACKUP_STATE_FILE" ]] \
-    || ! IFS= read -r saved_backup_state <"$BACKUP_STATE_FILE" \
-    || [[ "$saved_backup_state" != "running" ]]; then
+  if [[ -L "$BACKUP_STATE_FILE" || ! -f "$BACKUP_STATE_FILE" ]]; then
+    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
+    return 1
+  fi
+
+  IFS= read -r -N 9 saved_backup_state <"$BACKUP_STATE_FILE" || true
+  if [[ "$saved_backup_state" != $'running\n' ]]; then
     error "Invalid backup-state marker: $BACKUP_STATE_FILE"
     return 1
   fi
