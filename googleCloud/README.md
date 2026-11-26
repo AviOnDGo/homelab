@@ -116,7 +116,10 @@ Configure these repository or environment variables:
 	- Full resource name of workload identity provider.
 	- Example: projects/123456789/locations/global/workloadIdentityPools/github-pool/providers/github-provider
 - GCP_SERVICE_ACCOUNT
-	- Service account email used for both plan and apply jobs.
+	- Service account email used for plan and apply jobs and attached to the VM.
+	- The deployer must have `roles/iam.serviceAccountUser` on this service account.
+	- The VM inherits the deployer's permissions; stronger privilege separation
+	  requires updating the workflow to use a separate VM account.
 - GCP_PROJECT_ID
 	- Target GCP project.
 - GCP_BUDGET_CURRENCY_CODE
@@ -136,9 +139,6 @@ Optional variables:
 	- Default: `gcp-debian-free-tier-vm`
 - TAILSCALE_TAILNET
 	- Tailnet name used when minting short-lived keys from OAuth credentials.
-- GCP_VM_SERVICE_ACCOUNT
-	- Optional dedicated VM service account email exported as `TF_VAR_vm_service_account_email`.
-	- Recommended when startup needs runtime Secret Manager access.
 - BOOTSTRAP_GIT_REPO_SSH_URL
 	- Optional SSH Git URL exported as `TF_VAR_bootstrap_git_repo_ssh_url`.
 - BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME
