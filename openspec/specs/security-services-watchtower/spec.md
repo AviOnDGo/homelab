@@ -1,5 +1,5 @@
 ## Purpose
-Define Watchtower-specific update automation behavior, notification behavior, and recovery references.
+Define Watchtower-specific update automation behavior and recovery references.
 
 ## Requirements
 
@@ -33,15 +33,6 @@ Containers labeled with `com.centurylinklabs.watchtower.enable=false` SHALL be e
 - **THEN** the container SHALL be skipped
 - **AND** no automatic restart SHALL be triggered by Watchtower
 
-### REQ-004: Watchtower sends Discord notifications with host identity
-Watchtower SHALL send Discord notifications for update events, and `WATCHTOWER_NOTIFICATION_TEMPLATE` SHALL include `{{.Host}}`.
-
-#### Scenario: Notification includes hostname
-- **GIVEN** Watchtower notifications are enabled
-- **WHEN** an update succeeds or fails
-- **THEN** a Discord notification SHALL be emitted
-- **AND** the message template SHALL include the Docker host identity
-
 ### REQ-005: Watchtower restore procedure is redeploy-only and externally defined
 Watchtower SHALL provide `restore.sh`, and its canonical stateless restore behavior SHALL be defined in `openspec/specs/security-services-restore-scripts/spec.md`.
 
@@ -57,3 +48,13 @@ Watchtower SHALL provide `restore.sh`, and its canonical stateless restore behav
 - **THEN** the Watchtower restore SHALL run independently of the FreshRSS restore
 - **AND** it SHALL invoke the selected checkout's Watchtower restore script on the VM
 - **AND** it SHALL NOT require backup credentials or restore volume data
+
+### REQ-006: Watchtower notifications are disabled
+Watchtower SHALL NOT be configured to send notifications. The Compose service
+SHALL NOT pass the local environment file into the container.
+
+#### Scenario: An existing environment file contains notification settings
+- **GIVEN** an existing local environment file contains notification settings
+- **WHEN** Watchtower is deployed
+- **THEN** those settings SHALL NOT be passed into the Watchtower container
+- **AND** operators SHALL use service logs to monitor update results
