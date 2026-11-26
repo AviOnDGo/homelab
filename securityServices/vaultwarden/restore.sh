@@ -9,20 +9,28 @@ VOLUME_NAME="vaultwarden_filedata"
 CONTAINER_NAME="vaultwarden"
 DROPBOX_REMOTE="${DROPBOX_REMOTE:-dropbox}"
 DROPBOX_PATH="${DROPBOX_PATH:-/Apps/vaultwarden}"
-TMP_DIR="/tmp/vaultwarden-restore-$$"
+TMP_DIR=""
 MODE="${1:-}"
 BACKUP_WAS_RUNNING=false
+RESTORE_UNSAFE=false
 
 # --------------------------------------------------------------------------- #
 # Cleanup trap — runs on any exit (success or failure)
 # --------------------------------------------------------------------------- #
 cleanup() {
   local status=$?
-  if [[ "$BACKUP_WAS_RUNNING" == "true" ]] && ! docker start filedata-backup >/dev/null; then
-    echo "[ERROR] Could not restart filedata-backup." >&2
-    status=1
+  if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
+    if [[ "$RESTORE_UNSAFE" == "true" ]]; then
+      echo "[ERROR] Vaultwarden restore is incomplete; filedata-backup remains stopped." >&2
+      echo "[ERROR] Recover Vaultwarden data before manually restarting filedata-backup." >&2
+    elif ! docker start filedata-backup >/dev/null; then
+      echo "[ERROR] Could not restart filedata-backup." >&2
+      status=1
+    fi
   fi
-  rm -rf "$TMP_DIR"
+  if [[ -n "$TMP_DIR" ]]; then
+    rm -rf -- "$TMP_DIR"
+  fi
   unset PASSPHRASE
   exit "$status"
 }
@@ -124,14 +132,24 @@ info "Latest backup: $LATEST_FILE"
 # --------------------------------------------------------------------------- #
 # 4. Download and validate backup
 # --------------------------------------------------------------------------- #
-mkdir -p "$TMP_DIR"
+umask 077
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/vaultwarden-restore.XXXXXXXX")
 info "Downloading $LATEST_FILE to $TMP_DIR ..."
 rclone copy "${DROPBOX_REMOTE}:${DROPBOX_PATH}/${LATEST_FILE}" "$TMP_DIR" --progress
 LOCAL_BACKUP="${TMP_DIR}/${LATEST_FILE}"
 
 info "Validating backup before changing Vaultwarden..."
+mkdir "$TMP_DIR/staged"
 gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 3<<<"$PASSPHRASE" \
-  | zstd -d | tar -tf - >/dev/null
+  | zstd -d | tar --no-same-owner --no-same-permissions -xf - -C "$TMP_DIR/staged"
+
+for required_file in db.sqlite3 rsa_key.pem; do
+  if [[ ! -s "$TMP_DIR/staged/$required_file" || -L "$TMP_DIR/staged/$required_file" \
+        || ! -f "$TMP_DIR/staged/$required_file" ]]; then
+    error "Backup is missing a non-empty regular $required_file."
+    exit 1
+  fi
+done
 
 # --------------------------------------------------------------------------- #
 # 5. Confirm before stopping the service
@@ -168,6 +186,7 @@ if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep
   docker rm -f "$CONTAINER_NAME"
 fi
 
+RESTORE_UNSAFE=true
 if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
   info "Clearing existing volume..."
   docker run --rm -v "${VOLUME_NAME}:/restore" alpine \
@@ -204,6 +223,7 @@ sleep 3
 
 if docker exec "$CONTAINER_NAME" ls -lh /data/db.sqlite3 &>/dev/null \
   && docker exec "$CONTAINER_NAME" ls -lh /data/rsa_key.pem &>/dev/null; then
+  RESTORE_UNSAFE=false
   echo ""
   echo "=============================================="
   echo "  Vaultwarden restore completed successfully!"

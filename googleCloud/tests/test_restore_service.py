@@ -113,11 +113,13 @@ class RestoreServiceTests(unittest.TestCase):
         self.assertNotEqual(self.invoke().returncode, 0)
 
     def test_vaultwarden_remote_restore_and_cleanup(self) -> None:
-        archive_file = self.work / "content"
-        archive_file.write_text("test data", encoding="utf-8")
         archive_path = self.work / "backup.tar"
         with tarfile.open(archive_path, "w") as archive:
-            archive.add(archive_file, arcname="content")
+            for name in ("db.sqlite3", "rsa_key.pem"):
+                data = b"test data"
+                member = tarfile.TarInfo(f"./{name}")
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
         self.env.update(
             SERVICE="vaultwarden",
             FORCE="true",
@@ -160,6 +162,90 @@ esac""",
         self.assertTrue(compose_call.startswith("vaultwarden "))
         compose_path = Path(compose_call.split(" -f ", 1)[1].split(" ", 1)[0])
         self.assertFalse(compose_path.parent.exists())
+
+    def test_vaultwarden_preserves_data_and_backup_state_on_failure(self) -> None:
+        archive_path = self.work / "backup.tar"
+        self.env.update(
+            SERVICE="vaultwarden",
+            FORCE="true",
+            ARCHIVE=str(archive_path),
+            TMPDIR=str(self.work),
+        )
+        for name, body in {
+            "gcloud": 'for arg in "$@"; do command="$arg"; done\nexec bash -c "$command"',
+            "sudo": 'exec "$@"',
+            "docker": """
+echo "$*" >> "$ARGUMENTS"
+case "$1" in
+  info|stop|start|compose) ;;
+  exec) [[ "$FAILURE" != verify ]] ;;
+  volume) ;;
+  ps) echo vaultwarden ;;
+  inspect) echo true ;;
+  rm) [[ "$FAILURE" != remove ]] ;;
+  run)
+    if [[ "$*" == *" -i "* ]]; then
+      cat >/dev/null
+      [[ "$FAILURE" != extract ]]
+    else
+      [[ "$FAILURE" != wipe ]]
+    fi ;;
+  *) exit 1 ;;
+esac""",
+            "rclone": """
+case "$1" in
+  lsd) ;;
+  lsf) echo vaultwarden_2025-01-01_00-00-00.tar.zst.gpg ;;
+  copy) printf encrypted > "$3/${2##*/}" ;;
+  *) exit 1 ;;
+esac""",
+            "zstd": "cat",
+            "gpg": 'cat "$ARCHIVE"',
+            "jq": 'echo "{}"',
+            "sleep": "exit 0",
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        cases = (
+            ("missing-db", ("rsa_key.pem",), "", False, False),
+            ("missing-key", ("db.sqlite3",), "", False, False),
+            ("invalid-empty", ("db.sqlite3", "rsa_key.pem"), "", False, False),
+            ("invalid-symlink", ("db.sqlite3", "rsa_key.pem"), "", False, False),
+            ("remove", ("db.sqlite3", "rsa_key.pem"), "remove", True, True),
+            ("wipe", ("db.sqlite3", "rsa_key.pem"), "wipe", True, False),
+            ("extract", ("db.sqlite3", "rsa_key.pem"), "extract", True, False),
+            ("verify", ("db.sqlite3", "rsa_key.pem"), "verify", True, False),
+            ("success", ("db.sqlite3", "rsa_key.pem"), "", True, True),
+        )
+        for label, files, failure, stopped, restarted in cases:
+            with self.subTest(case=label):
+                with tarfile.open(archive_path, "w") as archive:
+                    for name in files:
+                        data = b"test data"
+                        member = tarfile.TarInfo(f"./{name}")
+                        if label == "invalid-empty" and name == "db.sqlite3":
+                            data = b""
+                        if label == "invalid-symlink" and name == "rsa_key.pem":
+                            member.type = tarfile.SYMTYPE
+                            member.linkname = "db.sqlite3"
+                            archive.addfile(member)
+                            continue
+                        member.size = len(data)
+                        archive.addfile(member, io.BytesIO(data))
+                self.arguments.unlink(missing_ok=True)
+                self.env["FAILURE"] = failure
+                result = self.invoke()
+                self.assertEqual(result.returncode == 0, label == "success", result.stderr)
+                calls = self.arguments.read_text(encoding="utf-8").splitlines()
+                self.assertEqual("stop filedata-backup" in calls, stopped)
+                self.assertEqual("start filedata-backup" in calls, restarted)
+                if label.startswith(("missing-", "invalid-")):
+                    self.assertIn("Backup is missing", result.stderr)
+                    self.assertFalse(any(call.startswith(("rm ", "run ")) for call in calls))
+                if failure in ("wipe", "extract", "verify"):
+                    self.assertIn("filedata-backup remains stopped", result.stderr)
+                self.assertEqual(list(self.work.glob("vaultwarden-restore.*")), [])
 
     def test_deployment_runs_vaultwarden_after_npm(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
