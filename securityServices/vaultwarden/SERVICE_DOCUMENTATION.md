@@ -39,15 +39,45 @@ docker compose logs -f vaultwarden
 
 Vaultwarden is proxied through NPM. Access through the configured domain (e.g., `https://vault.yourdomain.com`).
 
-This deployment intentionally leaves `ADMIN_TOKEN` unset, so the admin panel at `<domain>/admin` remains disabled.
+The default deployment leaves `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` unset. The admin panel at `<domain>/admin` is disabled only after any saved `admin_token` has also been removed as described below.
 
 ---
 
 ## Configuration
 
-New user registrations are disabled by `SIGNUPS_ALLOWED: "false"` in `docker-compose.yml`. A saved `signups_allowed` value in `/data/config.json` can override the Compose setting. If that file exists, verify that `signups_allowed` is `false` or absent. If it is `true`, stop the container, change only that value to `false` with a JSON-aware editor, and start the container again.
+New user registrations are disabled by `SIGNUPS_ALLOWED: "false"` in `docker-compose.yml`, but saved settings in `/data/config.json` take precedence. A nonempty `signups_domains_whitelist` permits registration from those domains even when signups are otherwise disabled. Organization invitations can still allow invited users to register.
 
-The Compose service no longer passes values from `.env` to the container. Before recreating an existing deployment, if it relies on `DOMAIN` for URL-dependent features such as invitations or attachment downloads, copy that URL into the Compose `environment:` section (for example, `DOMAIN: "https://vault.yourdomain.com"`). Do not copy `ADMIN_TOKEN`; the admin panel is intentionally disabled. If an existing `/data/config.json` contains an `admin_token` entry, remove that entry with a JSON-aware editor as part of the migration.
+### Migrating an existing deployment
+
+The Compose service no longer passes values from `.env` to the container. Before recreating it:
+
+1. Preserve any required settings previously supplied through `.env`, including `DOMAIN` and SMTP settings needed for email 2FA, invitations, or other mail. Put non-secret settings in a private Compose override outside the repository. Provision credentials outside version control as files mounted under `/run/secrets/`; Vaultwarden supports the `_FILE` suffix for configuration values. For example, an override can contain:
+
+   ```yaml
+   services:
+     vaultwarden:
+       environment:
+         DOMAIN: "https://vault.yourdomain.com"
+         SMTP_HOST: "smtp.yourdomain.com"
+         SMTP_FROM: "vaultwarden@yourdomain.com"
+         SMTP_PORT: "587"
+         SMTP_SECURITY: "starttls"
+         SMTP_USERNAME_FILE: "/run/secrets/smtp_username"
+         SMTP_PASSWORD_FILE: "/run/secrets/smtp_password"
+       volumes:
+         - /absolute/path/to/smtp_username:/run/secrets/smtp_username:ro
+         - /absolute/path/to/smtp_password:/run/secrets/smtp_password:ro
+   ```
+
+   Replace the placeholders and preserve any other settings your deployment requires. Protect the override and credential files with appropriate permissions. Do not copy `ADMIN_TOKEN` or `DISABLE_ADMIN_TOKEN`, or a nonempty `SIGNUPS_DOMAINS_WHITELIST`. If SMTP is unauthenticated, omit the username and password file entries.
+2. Stop Vaultwarden. If `/data/config.json` exists in `vaultwarden_filedata`, use a JSON-aware editor to remove `admin_token`, set `signups_allowed` to `false` or remove it, and empty or remove `signups_domains_whitelist`. Update or remove a saved `domain` if it differs from the intended `DOMAIN`; also reconcile saved SMTP values because they override the environment. Preserve the remaining settings and protect the file and any backups because they can contain secrets.
+3. Recreate the service with the override (use its absolute path on every subsequent Compose operation):
+
+   ```bash
+   docker compose -f docker-compose.yml -f /absolute/path/to/vaultwarden.override.yml up -d
+   ```
+
+   If no override is needed, use `docker compose up -d`. Verify that `/admin` is unavailable, uninvited registrations are disabled, and required mail-dependent features, including email 2FA if used, work.
 
 ---
 
@@ -55,7 +85,7 @@ The Compose service no longer passes values from `.env` to the container. Before
 
 - [ ] Log in with a vault user account and enroll at least one MFA method (TOTP, YubiKey, or Duo)
 - [ ] Confirm MFA authenticates successfully before marking deployment complete
-- [ ] If `/data/config.json` exists, confirm `signups_allowed` is `false` or absent
+- [ ] If `/data/config.json` exists, confirm `admin_token` is absent, `signups_allowed` is `false` or absent, and `signups_domains_whitelist` is empty or absent
 
 ---
 
@@ -63,7 +93,7 @@ The Compose service no longer passes values from `.env` to the container. Before
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| Admin panel is unavailable | Expected: this deployment leaves `ADMIN_TOKEN` unset | No action is needed; the admin panel is intentionally disabled |
-| New user registrations remain enabled | `/data/config.json` contains `signups_allowed: true` | Stop the container, change only `signups_allowed` to `false` with a JSON-aware editor, and start the container again |
-| Can't connect from Bitwarden client | NPM proxy misconfigured or required `DOMAIN` is not set | Verify the NPM proxy host and, if needed, set `DOMAIN` in the Compose environment |
+| Admin panel is available | A saved `admin_token` or an admin setting enables it | Remove the saved token and ensure `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` are unset, then recreate the container |
+| New user registrations remain enabled | Saved `signups_allowed` is `true` or the domain whitelist is nonempty | Stop the container and correct both saved settings as described above |
+| Can't connect from Bitwarden client | NPM proxy misconfigured or required `DOMAIN` is incorrect | Verify the NPM proxy host, Compose environment, and any saved `domain` |
 | Container exits immediately | Invalid Compose configuration | Check `docker compose logs vaultwarden` |
