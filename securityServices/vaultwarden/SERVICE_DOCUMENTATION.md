@@ -39,7 +39,7 @@ docker compose logs -f vaultwarden
 
 Vaultwarden is proxied through NPM. Access through the configured domain (e.g., `https://vault.yourdomain.com`).
 
-The default deployment leaves `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` unset. The admin panel at `<domain>/admin` is disabled only after any saved `admin_token` has also been removed as described below.
+The default deployment leaves `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` unset. The admin panel at `<domain>/admin` is disabled only after any saved `admin_token` is removed and `disable_admin_token` is false or absent as described below.
 
 ---
 
@@ -70,7 +70,7 @@ The Compose service no longer passes values from `.env` to the container. Before
    ```
 
    Replace the placeholders and preserve any other settings your deployment requires. Protect the override and credential files with appropriate permissions. Do not copy `ADMIN_TOKEN` or `DISABLE_ADMIN_TOKEN`, or a nonempty `SIGNUPS_DOMAINS_WHITELIST`. If SMTP is unauthenticated, omit the username and password file entries.
-2. Stop Vaultwarden. If `/data/config.json` exists in `vaultwarden_filedata`, use a JSON-aware editor to remove `admin_token`, set `signups_allowed` to `false` or remove it, and empty or remove `signups_domains_whitelist`. Update or remove a saved `domain` if it differs from the intended `DOMAIN`; also reconcile saved SMTP values because they override the environment. Preserve the remaining settings and protect the file and any backups because they can contain secrets.
+2. Stop Vaultwarden. If `/data/config.json` exists in `vaultwarden_filedata`, use a JSON-aware editor to remove `admin_token`, remove `disable_admin_token` or set it to `false`, set `signups_allowed` to `false` or remove it, and empty or remove `signups_domains_whitelist`. Update or remove a saved `domain` if it differs from the intended `DOMAIN`; also reconcile saved SMTP values because they override the environment. Preserve the remaining settings and protect the file and any backups because they can contain secrets.
 3. Recreate the service with the override (use its absolute path on every subsequent Compose operation):
 
    ```bash
@@ -79,13 +79,22 @@ The Compose service no longer passes values from `.env` to the container. Before
 
    If no override is needed, use `docker compose up -d`. Verify that `/admin` is unavailable, uninvited registrations are disabled, and required mail-dependent features, including email 2FA if used, work.
 
+### Creating the first account
+
+On a fresh volume, temporarily enable signups to create the first vault account. Restrict access to trusted clients at the proxy before enabling signups; anyone with access can register during this window.
+
+1. If `/data/config.json` exists, stop Vaultwarden and use a JSON-aware editor to remove any saved `signups_allowed` entry so the Compose setting takes effect. Ensure `signups_domains_whitelist` is empty or absent. Preserve the other settings and protect the file because it can contain secrets.
+2. Set `SIGNUPS_ALLOWED: "true"` in `docker-compose.yml` and run `docker compose up -d` from the service directory. If you use a private Compose override, include it with `-f` as in the migration instructions and ensure it does not override this setting.
+3. Register the first vault user account through the web vault.
+4. Immediately set `SIGNUPS_ALLOWED: "false"` again and run `docker compose up -d` with the same Compose files. Do this even if registration fails. Confirm the saved `signups_allowed` is `false` or absent and the whitelist is empty or absent, then verify uninvited signups are disabled before restoring normal proxy access.
+
 ---
 
 ## Post-Deployment Checklist
 
 - [ ] Log in with a vault user account and enroll at least one MFA method (TOTP, YubiKey, or Duo)
 - [ ] Confirm MFA authenticates successfully before marking deployment complete
-- [ ] If `/data/config.json` exists, confirm `admin_token` is absent, `signups_allowed` is `false` or absent, and `signups_domains_whitelist` is empty or absent
+- [ ] If `/data/config.json` exists, confirm `admin_token` is absent, `disable_admin_token` and `signups_allowed` are `false` or absent, and `signups_domains_whitelist` is empty or absent
 
 ---
 
@@ -93,7 +102,7 @@ The Compose service no longer passes values from `.env` to the container. Before
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| Admin panel is available | A saved `admin_token` or an admin setting enables it | Remove the saved token and ensure `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` are unset, then recreate the container |
+| Admin panel is available | A saved `admin_token` or an admin setting enables it | Remove the saved token, set saved `disable_admin_token` to `false` or remove it, and ensure `ADMIN_TOKEN` and `DISABLE_ADMIN_TOKEN` are unset, then recreate the container |
 | New user registrations remain enabled | Saved `signups_allowed` is `true` or the domain whitelist is nonempty | Stop the container and correct both saved settings as described above |
 | Can't connect from Bitwarden client | NPM proxy misconfigured or required `DOMAIN` is incorrect | Verify the NPM proxy host, Compose environment, and any saved `domain` |
 | Container exits immediately | Invalid Compose configuration | Check `docker compose logs vaultwarden` |
