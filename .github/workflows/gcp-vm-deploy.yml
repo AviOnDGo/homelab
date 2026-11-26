@@ -346,106 +346,6 @@ jobs:
         run: |
           ./googleCloud/bootstrap-readiness.sh "$VM_NAME" "$PROJECT_ID" "$ZONE"
 
-      - name: Acquire short-lived Tailscale auth credential
-        id: tailscale_auth
-        working-directory: .
-        env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
-          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
-        run: |
-          if [[ -n "$TS_STATIC_AUTH_KEY" ]]; then
-            echo "Using Tailscale key from approved secret source"
-            echo "::add-mask::$TS_STATIC_AUTH_KEY"
-            echo "auth_key=$TS_STATIC_AUTH_KEY" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_OAUTH_CLIENT_SECRET" || -z "$TS_TAILNET" ]]; then
-            echo "::warning::Tailscale credentials are incomplete; onboarding will be skipped."
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Attempt OAuth flow; warn if it fails but continue (Tailscale setup can be done manually)
-          set +e
-          oauth_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/oauth/token" \
-            -u "$TS_OAUTH_CLIENT_ID:$TS_OAUTH_CLIENT_SECRET" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "grant_type=client_credentials" 2>&1)
-          oauth_status=$?
-          set -e
-
-          if [[ $oauth_status -ne 0 ]]; then
-            echo "::warning::Tailscale OAuth token request failed (curl error $oauth_status)"
-            echo "::warning::Response: $oauth_response"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          access_token=$(echo "$oauth_response" | jq -r '.access_token' 2>/dev/null || echo "")
-
-          if [[ -z "$access_token" || "$access_token" == "null" ]]; then
-            echo "::warning::Unable to extract Tailscale OAuth access token from response"
-            echo "::warning::Response: $oauth_response"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          set +e
-          key_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/tailnet/$TS_TAILNET/keys" \
-            -H "Authorization: Bearer $access_token" \
-            -H "Content-Type: application/json" \
-            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:server"]}}},"expirySeconds":1800,"description":"gcp-vm-deploy-onboarding"}' 2>&1)
-          key_status=$?
-          set -e
-
-          if [[ $key_status -ne 0 ]]; then
-            echo "::warning::Tailscale key generation request failed (curl error $key_status)"
-            echo "::warning::Response: $key_response"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          auth_key=$(echo "$key_response" | jq -r '.key' 2>/dev/null || echo "")
-
-          if [[ -z "$auth_key" || "$auth_key" == "null" ]]; then
-            echo "::warning::Unable to extract Tailscale auth key from response"
-            echo "::warning::Response: $key_response"
-            echo "::warning::Tailscale onboarding will be skipped; manually configure Tailscale in VM"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "::add-mask::$auth_key"
-          echo "auth_key=$auth_key" >> "$GITHUB_OUTPUT"
-
-      - name: Run post-provision onboarding on VM
-        working-directory: .
-        env:
-          TS_AUTH_KEY: ${{ steps.tailscale_auth.outputs.auth_key }}
-        run: |
-          gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo TS_AUTH_KEY='$TS_AUTH_KEY' bash -s" <<'EOF'
-          set -euo pipefail
-
-          if [[ -n "$TS_AUTH_KEY" ]]; then
-            echo "[onboarding] Starting Tailscale onboarding..."
-            sudo tailscale up --authkey="$TS_AUTH_KEY" --ssh --accept-dns=false --advertise-tags=tag:server
-            echo "[onboarding] Tailscale onboarding complete"
-          else
-            echo "[onboarding] Tailscale auth key not available; skipping Tailscale onboarding"
-          fi
-
-          echo "[onboarding] Verifying Docker status..."
-          sudo systemctl is-active --quiet docker && echo "[onboarding] Docker is running" || echo "[onboarding] Docker is not running"
-
-          echo "[onboarding] Bootstrap and onboarding complete"
-          EOF
-
       - name: Configure rclone Dropbox remote on VM
         working-directory: .
         env:
@@ -475,18 +375,25 @@ jobs:
               exec bash -s
             '"'"''
 
-      - name: Verify onboarding outcomes
+      - name: Verify Docker status
         working-directory: .
         run: |
-          # Tailscale verification is optional (may be skipped if OAuth failed)
-          if gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo tailscale status --json >/tmp/tailscale-status.json && jq -e '.BackendState == \"Running\"' /tmp/tailscale-status.json >/dev/null 2>&1"; then
-            echo "[verify] Tailscale is running"
+          if gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" \
+            --command "sudo systemctl is-active --quiet docker"; then
+            echo "[verify] Docker is running"
           else
-            echo "[verify] Tailscale is not running (may be configured later manually)"
+            echo "::warning::Docker is not running"
           fi
+
+  configure-tailscale:
+    name: Configure Tailscale and DuckDNS
+    needs: apply
+    uses: ./.github/workflows/gcp-duckdns-update.yml
+    secrets:
+      DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+      TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+      TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+      TAILSCALE_EPHEMERAL_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
 
   restore-npm:
     name: Restore NPM

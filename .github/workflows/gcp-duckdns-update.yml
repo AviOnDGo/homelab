@@ -1,0 +1,218 @@
+name: Configure Tailscale and DuckDNS for GCP VM
+
+on:
+  workflow_call:
+    secrets:
+      DUCKDNS_TOKEN:
+        required: false
+      TAILSCALE_OAUTH_CLIENT_ID:
+        required: false
+      TAILSCALE_OAUTH_CLIENT_SECRET:
+        required: false
+      TAILSCALE_EPHEMERAL_AUTH_KEY:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  update:
+    name: Configure Tailscale and DuckDNS
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: gcp-duckdns-update
+      queue: max
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare GCP access
+        uses: ./.github/actions/gcp-restore
+        with:
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+
+      - name: Install Tailscale on VM
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+        run: |
+          gcloud compute ssh "$VM_NAME" \
+            --project "$PROJECT_ID" \
+            --zone "$ZONE" \
+            --command "sudo bash -s" <<'EOF'
+          set -euo pipefail
+          if ! command -v tailscale >/dev/null 2>&1; then
+            curl -fsSL https://tailscale.com/install.sh | sh
+          fi
+          systemctl enable --now tailscaled
+          EOF
+
+      - name: Log in to Tailscale on VM
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
+          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
+        run: |
+          set -euo pipefail
+
+          get_tailscale_state() {
+            gcloud compute ssh "$VM_NAME" \
+              --project "$PROJECT_ID" \
+              --zone "$ZONE" \
+              --command "sudo tailscale status --json" \
+              | jq -er '.BackendState'
+          }
+
+          state="$(get_tailscale_state)"
+          for _ in {1..12}; do
+            if [[ "$state" != "NoState" && "$state" != "Starting" ]]; then
+              break
+            fi
+            sleep 5
+            state="$(get_tailscale_state)"
+          done
+
+          if [[ "$state" == "Running" ]]; then
+            echo "Tailscale is already running on the VM"
+            exit 0
+          fi
+
+          if [[ "$state" == "Stopped" ]]; then
+            if ! gcloud compute ssh "$VM_NAME" \
+              --project "$PROJECT_ID" \
+              --zone "$ZONE" \
+              --command "sudo tailscale up --timeout=15s"; then
+              echo "::warning::Tailscale reconnect failed; checking whether login is required"
+            fi
+            state="$(get_tailscale_state)"
+            if [[ "$state" == "Running" ]]; then
+              echo "Tailscale reconnected on the VM"
+              exit 0
+            fi
+          fi
+
+          if [[ "$state" != "NeedsLogin" ]]; then
+            echo "::error::Tailscale is not ready for login (state: $state)"
+            exit 1
+          fi
+
+          auth_key="$TS_STATIC_AUTH_KEY"
+
+          if [[ -z "$auth_key" ]]; then
+            if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_OAUTH_CLIENT_SECRET" || -z "$TS_TAILNET" ]]; then
+              echo "::warning::Tailscale credentials are incomplete; onboarding will be skipped."
+              exit 0
+            fi
+
+            access_token="$(
+              curl --fail --silent --show-error \
+                --user "$TS_OAUTH_CLIENT_ID:$TS_OAUTH_CLIENT_SECRET" \
+                --header "Content-Type: application/x-www-form-urlencoded" \
+                --data-urlencode "grant_type=client_credentials" \
+                https://api.tailscale.com/api/v2/oauth/token \
+                | jq -er '.access_token'
+            )"
+            echo "::add-mask::$access_token"
+
+            tailnet="$(jq -rn --arg tailnet "$TS_TAILNET" '$tailnet | @uri')"
+            auth_key="$(
+              curl --fail --silent --show-error \
+                --request POST \
+                --header "Authorization: Bearer $access_token" \
+                --header "Content-Type: application/json" \
+                --data '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:server"]}}},"expirySeconds":1800,"description":"gcp-vm-deploy-onboarding"}' \
+                "https://api.tailscale.com/api/v2/tailnet/$tailnet/keys" \
+                | jq -er '.key'
+            )"
+            unset access_token
+          fi
+
+          if [[ -z "$auth_key" || "$auth_key" == *$'\n'* || "$auth_key" == *$'\r'* ]]; then
+            echo "::error::Tailscale auth key is missing or invalid"
+            exit 1
+          fi
+          echo "::add-mask::$auth_key"
+
+          printf '%s\n' "$auth_key" | gcloud compute ssh "$VM_NAME" \
+            --project "$PROJECT_ID" \
+            --zone "$ZONE" \
+            --command "sudo tailscale up --authkey=file:/dev/stdin --ssh --accept-dns=false --advertise-tags=tag:server"
+          unset auth_key
+
+      - name: Update DuckDNS with VM Tailscale address
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          DUCKDNS_DOMAIN: ${{ vars.DUCKDNS_DOMAIN }}
+          DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          : "${VM_NAME:?Missing GCP_VM_NAME}"
+          : "${PROJECT_ID:?Missing GCP_PROJECT_ID}"
+          : "${ZONE:?Missing GCP_ZONE}"
+          : "${DUCKDNS_DOMAIN:?Missing DUCKDNS_DOMAIN}"
+          : "${DUCKDNS_TOKEN:?Missing DUCKDNS_TOKEN}"
+
+          if [[ ! "$DUCKDNS_DOMAIN" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+            echo "::error::DUCKDNS_DOMAIN must be one DuckDNS subdomain label"
+            exit 1
+          fi
+
+          status="$(
+            gcloud compute ssh "$VM_NAME" \
+              --project "$PROJECT_ID" \
+              --zone "$ZONE" \
+              --command "sudo tailscale status --json"
+          )"
+          if [[ "$(jq -er '.BackendState' <<< "$status")" != "Running" ]]; then
+            echo "::error::Tailscale is not running on the VM"
+            exit 1
+          fi
+
+          if ! tailscale_ip="$(
+            jq -r '.Self.TailscaleIPs[]?' <<< "$status" \
+              | awk -F. '
+                  NF == 4 {
+                    for (i = 1; i <= 4; i++) {
+                      if ($i !~ /^[0-9]+$/ || $i + 0 > 255) next
+                    }
+                    if ($1 + 0 == 100 && $2 + 0 >= 64 && $2 + 0 <= 127) {
+                      print
+                      count++
+                    }
+                  }
+                  END {
+                    if (count != 1) exit 1
+                  }
+                '
+          )"; then
+            echo "::error::Expected one Tailscale IPv4 address in 100.64.0.0/10"
+            exit 1
+          fi
+
+          response="$(
+            curl --fail --silent --show-error --get \
+              --data-urlencode "domains=$DUCKDNS_DOMAIN" \
+              --data-urlencode "token=$DUCKDNS_TOKEN" \
+              --data-urlencode "ip=$tailscale_ip" \
+              https://www.duckdns.org/update
+          )"
+          if [[ "$response" != "OK" ]]; then
+            echo "::error::DuckDNS rejected the update or returned an invalid response"
+            exit 1
+          fi
+          echo "DuckDNS update succeeded for $DUCKDNS_DOMAIN.duckdns.org"
