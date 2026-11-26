@@ -1,0 +1,45 @@
+name: Restore Watchtower on GCP VM
+
+on:
+  workflow_call:
+    secrets:
+      WATCHTOWER_NOTIFICATION_URL:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: gcp-watchtower-restore
+  cancel-in-progress: false
+
+jobs:
+  restore:
+    name: Restore Watchtower
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare GCP restore
+        uses: ./.github/actions/gcp-restore
+        with:
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+
+      - name: Restore Watchtower on VM
+        env:
+          SERVICE: watchtower
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          WATCHTOWER_SCHEDULE: ${{ vars.WATCHTOWER_SCHEDULE }}
+          WATCHTOWER_NOTIFICATION_URL: ${{ secrets.WATCHTOWER_NOTIFICATION_URL }}
+        run: ./googleCloud/restore-service.sh

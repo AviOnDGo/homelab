@@ -3,19 +3,62 @@ set +x
 set -euo pipefail
 
 : "${SERVICE:?Missing service}"
-: "${FORCE:?Missing force setting}"
 : "${VM_NAME:?Missing VM name}"
 : "${PROJECT_ID:?Missing project ID}"
 : "${ZONE:?Missing zone}"
-: "${DROPBOX_AUTH_TOKEN:?Missing DROPBOX_AUTH_TOKEN secret}"
-: "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
-: "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
 
 case "$SERVICE" in
   npm) service_dir=securityServices/npm ;;
   freshrss) service_dir=knowledgeServices/freshrss ;;
+  watchtower) service_dir=securityServices/watchtower ;;
   *) echo "Unsupported restore service: $SERVICE" >&2; exit 1 ;;
 esac
+
+if [[ "$SERVICE" == watchtower ]]; then
+  : "${WATCHTOWER_SCHEDULE:?Missing WATCHTOWER_SCHEDULE variable}"
+  : "${WATCHTOWER_NOTIFICATION_URL:?Missing WATCHTOWER_NOTIFICATION_URL secret}"
+
+  for value in "$WATCHTOWER_SCHEDULE" "$WATCHTOWER_NOTIFICATION_URL"; do
+    if [[ "$value" == *$'\n'* || "$value" == *$'\r'* ||
+          "$value" == *"'"* || "$value" == *\\* ]]; then
+      echo "Watchtower configuration values cannot contain newlines, single quotes, or backslashes." >&2
+      exit 1
+    fi
+  done
+
+  {
+    printf '%s' "$WATCHTOWER_SCHEDULE" | base64 -w0; echo
+    printf '%s' "$WATCHTOWER_NOTIFICATION_URL" | base64 -w0; echo
+    tar -C "$service_dir" -cf - restore.sh docker-compose.yml
+  } | gcloud compute ssh --quiet "$VM_NAME" \
+    --project "$PROJECT_ID" --zone "$ZONE" \
+    --command 'sudo bash -c '"'"'
+      set +x
+      set -euo pipefail
+      umask 077
+      read -r schedule64
+      read -r notification64
+      workdir=$(mktemp -d /tmp/watchtower-restore-workflow.XXXXXXXX)
+      trap "rm -rf -- \"\$workdir\"" EXIT
+      tar -xf - -C "$workdir"
+      schedule=$(printf %s "$schedule64" | base64 -d)
+      notification=$(printf %s "$notification64" | base64 -d)
+      unset schedule64 notification64
+      printf "WATCHTOWER_SCHEDULE='\''%s'\''\nWATCHTOWER_NOTIFICATION_URL='\''%s'\''\n" \
+        "$schedule" "$notification" > "$workdir/.env"
+      unset schedule notification
+      cd "$workdir"
+      export COMPOSE_PROJECT_NAME=watchtower
+      printf "y\n" | bash ./restore.sh
+    '"'"''
+  exit
+fi
+
+: "${FORCE:?Missing force setting}"
+: "${DROPBOX_AUTH_TOKEN:?Missing DROPBOX_AUTH_TOKEN secret}"
+: "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
+: "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
+
 case "$FORCE" in
   false) mode=--if-missing ;;
   true) mode=--force ;;
