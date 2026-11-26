@@ -62,9 +62,10 @@ directory, and installs `rclone` and `zstd` if needed. Credentials travel over
 SSH standard input; temporary files are removed on exit. The passphrase must be
 a single line. Avoid shell tracing. The workflow no longer accepts `vm_name`
 or `dropbox_path` inputs or sends Discord notifications. Use the script directly
-for an alternative Dropbox path. GCP filedata restore workflows share a VM lock,
-but direct script and manual fallback runs do not acquire it. Coordinate those
-manually to prevent overlapping restores and partial backups.
+for an alternative Dropbox path. GCP service restore jobs share a GitHub Actions
+concurrency group, but direct transport helper, script, and manual fallback runs
+are not covered. Coordinate those manually to prevent overlapping restores and
+partial backups.
 
 ### 3. Clear sensitive shell state
 
