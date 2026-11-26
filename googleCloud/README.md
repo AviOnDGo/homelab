@@ -156,6 +156,12 @@ Tailscale credential options (configure one path):
 - Option B (fallback): `TAILSCALE_EPHEMERAL_AUTH_KEY`
 	- Workflow fetches pre-generated short-lived key from secret store.
 
+Optional Dropbox credentials for rclone on the VM:
+
+- `DROPBOX_AUTH_TOKEN` + `DROPBOX_REFRESH_TOKEN`
+	- After onboarding, the apply job runs `scripts/host/configure-rclone.sh` on the VM as root. It installs rclone and configures a verified `dropbox` remote in `/root/.config/rclone/rclone.conf`.
+	- Tokens and the script are sent over SSH stdin, not command lines. If either secret is missing, the step warns and skips.
+
 ## OIDC Trust Configuration
 
 Configure Workload Identity Provider claim mapping:
