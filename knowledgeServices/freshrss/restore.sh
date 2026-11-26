@@ -10,6 +10,7 @@ CONTAINER_NAME="freshrss"
 DROPBOX_REMOTE="dropbox"
 DROPBOX_PATH="${DROPBOX_PATH:-/Apps/freshrss}"
 TMP_DIR="/tmp/freshrss-restore-$$"
+BACKUP_WAS_RUNNING=false
 
 # --------------------------------------------------------------------------- #
 # Cleanup trap — runs on any exit (success or failure)
@@ -30,7 +31,10 @@ error() { echo "[ERROR] $*" >&2; }
 confirm() {
   local prompt="$1"
   local answer
-  read -r -p "$prompt [y/N] " answer
+  if ! read -r -p "$prompt [y/N] " answer; then
+    error "Confirmation input unavailable; restore aborted."
+    exit 1
+  fi
   [[ "$answer" == "y" || "$answer" == "Y" ]]
 }
 
@@ -39,13 +43,22 @@ confirm() {
 # --------------------------------------------------------------------------- #
 info "Running preflight checks..."
 
-for cmd in docker rclone gpg zstd; do
+for cmd in docker rclone gpg zstd flock; do
   if ! command -v "$cmd" &>/dev/null; then
     error "Required tool not found: $cmd"
     error "Install $cmd and re-run this script."
     exit 1
   fi
 done
+
+if [[ ! -e /tmp/freshrss-restore.lock ]]; then
+  (umask 022; : >> /tmp/freshrss-restore.lock)
+fi
+exec 9</tmp/freshrss-restore.lock
+if ! flock -n 9; then
+  error "Another FreshRSS restore is already in progress."
+  exit 1
+fi
 
 if ! docker info &>/dev/null; then
   error "Cannot connect to Docker daemon."
@@ -81,10 +94,13 @@ fi
 # --------------------------------------------------------------------------- #
 info "Listing backups at ${DROPBOX_REMOTE}:${DROPBOX_PATH} ..."
 
-LATEST_FILE=$(rclone lsf "${DROPBOX_REMOTE}:${DROPBOX_PATH}" --files-only 2>/dev/null \
-  | sort \
-  | tail -n 1 \
-  || true)
+if ! BACKUP_LIST=$(rclone lsf "${DROPBOX_REMOTE}:${DROPBOX_PATH}" --files-only); then
+  error "Unable to list backups at ${DROPBOX_REMOTE}:${DROPBOX_PATH}."
+  exit 1
+fi
+LATEST_FILE=$(printf '%s\n' "$BACKUP_LIST" \
+  | grep -E '^freshrss_[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}\.tar\.zst\.gpg$' \
+  | LC_ALL=C sort | tail -n 1 || true)
 
 if [[ -z "$LATEST_FILE" ]]; then
   error "No backup files found at ${DROPBOX_REMOTE}:${DROPBOX_PATH}"
@@ -101,6 +117,10 @@ mkdir -p "$TMP_DIR"
 info "Downloading $LATEST_FILE to $TMP_DIR ..."
 rclone copy "${DROPBOX_REMOTE}:${DROPBOX_PATH}/${LATEST_FILE}" "$TMP_DIR" --progress
 LOCAL_BACKUP="${TMP_DIR}/${LATEST_FILE}"
+if [[ ! -s "$LOCAL_BACKUP" ]]; then
+  error "Downloaded backup is missing or empty: $LOCAL_BACKUP"
+  exit 1
+fi
 
 # --------------------------------------------------------------------------- #
 # 5. Stop the service if running
@@ -112,10 +132,6 @@ if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q
     info "Aborted by operator."
     exit 0
   fi
-  info "Stopping FreshRSS service..."
-  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" down
-else
-  info "FreshRSS is not running — no shutdown needed."
 fi
 
 # --------------------------------------------------------------------------- #
@@ -123,15 +139,33 @@ fi
 # --------------------------------------------------------------------------- #
 if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
   warn "Volume '$VOLUME_NAME' already exists and contains data."
-  warn "It will be permanently destroyed and recreated."
+  warn "Its contents will be permanently deleted."
   if ! confirm "Wipe volume '$VOLUME_NAME' and restore from backup?"; then
     info "Aborted by operator."
     exit 0
   fi
-  info "Removing existing volume..."
-  docker volume rm "$VOLUME_NAME"
 fi
 
+if [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
+  BACKUP_WAS_RUNNING=true
+  info "Stopping filedata-backup..."
+  docker stop filedata-backup >/dev/null
+fi
+
+if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  info "Stopping FreshRSS service..."
+  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" down
+  if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+    error "FreshRSS is still running; refusing to clear its volume."
+    exit 1
+  fi
+fi
+
+if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
+  info "Clearing existing volume..."
+  docker run --rm -v "${VOLUME_NAME}:/restore" alpine \
+    sh -c 'find /restore -mindepth 1 -maxdepth 1 -exec rm -rf {} +'
+fi
 info "Creating volume '$VOLUME_NAME'..."
 docker volume create "$VOLUME_NAME"
 
@@ -141,7 +175,7 @@ docker volume create "$VOLUME_NAME"
 info "Restoring backup into volume '$VOLUME_NAME' ..."
 info "(This may take a minute depending on backup size)"
 
-gpg --batch --yes --passphrase "$PASSPHRASE" -d "$LOCAL_BACKUP" \
+gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 3<<<"$PASSPHRASE" \
   | zstd -d \
   | docker run --rm -i -v "${VOLUME_NAME}:/restore" alpine \
       sh -c "cd /restore && tar -xf -"
@@ -173,9 +207,14 @@ until docker exec "$CONTAINER_NAME" php /var/www/FreshRSS/cli/health.php &>/dev/
   ELAPSED=$(( ELAPSED + INTERVAL ))
 done
 
+if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
+  info "Restarting filedata-backup..."
+  docker start filedata-backup >/dev/null
+fi
+
 echo ""
 echo "=========================================="
 echo "  FreshRSS restore completed successfully!"
-echo "  check-install.php passed."
+echo "  FreshRSS health check passed."
 echo "  Access FreshRSS via your NPM proxy URL."
 echo "=========================================="
