@@ -53,11 +53,10 @@ The restore job SHALL use the GitHub `prod` environment with required reviewers 
 - **THEN** GitHub SHALL wait for an eligible reviewer to approve the job before it starts
 - **AND** the workflow SHALL NOT stop FreshRSS or clear `freshrss_filedata` while approval is pending
 
-#### Scenario: Concurrent restore attempts are prevented
-- **GIVEN** a FreshRSS restore run is already in progress on the target VM
-- **WHEN** another restore run is started
-- **THEN** the second run SHALL fail with a lock/concurrency error
-- **AND** it SHALL NOT execute volume clearing or extraction steps
+#### Scenario: Concurrent workflow runs are serialized
+- **GIVEN** a FreshRSS restore workflow run is already in progress
+- **WHEN** another run of the workflow is dispatched
+- **THEN** the workflow concurrency group SHALL prevent both runs from executing simultaneously
 
 ### REQ-004: Restore workflow SHALL emit best-effort Discord notifications
 The workflow SHALL attempt to send Discord notifications for both restore success and restore failure when `DISCORD_WEBHOOK_URL` is configured, but notification delivery failures SHALL NOT change the restore result.

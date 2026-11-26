@@ -2,7 +2,8 @@
 
 ## Prerequisites
 
-- Docker, Docker Compose, `rclone`, GPG, `zstd`, and `flock` on the host.
+- Docker, Docker Compose, `rclone`, GPG, `zstd`, and `tar` on the host.
+- `flock` is also needed for the manual fallback.
 - The external `knowledge_network` network and access to a Dropbox rclone remote.
 - The GPG passphrase used for the filedata backup.
 - For GCP: an existing checkout at `/tmp/homelab`, SSH access through GCP, the
@@ -28,14 +29,24 @@ cd knowledgeServices/freshrss
 ./restore.sh
 ```
 
-The script prompts for the passphrase and confirmation before stopping FreshRSS
-or clearing its volume. Alternatively, supply `PASSPHRASE` and `DROPBOX_PATH` as
-environment variables. It downloads and validates the latest matching `.tar.zst.gpg` archive before
-stopping anything, stops `filedata-backup` only if it was running, clears the
-existing volume in place, restores the archive, starts FreshRSS and checks its
-health. On success or failure, it attempts to restore `filedata-backup` to its
-prior state. If restarting it fails, the saved state is retained for the next
-restore attempt.
+The script prompts for the passphrase and confirmation before removing an
+existing FreshRSS container or clearing its volume. Alternatively, supply
+`PASSPHRASE` and `DROPBOX_PATH` as environment variables. For noninteractive
+restores, use `--force` to replace existing data, or `--if-missing` to skip an
+existing volume. `--if-missing` refuses to remove an existing FreshRSS container
+if the volume is absent.
+
+The script downloads and validates the latest matching `.tar.zst.gpg` archive
+before stopping anything, stops `filedata-backup` only if it was running, clears
+the existing volume in place, restores the archive, starts FreshRSS and checks
+its health once after a short wait. On success or failure, it attempts to
+restart `filedata-backup` if it was running. If restarting it fails, restart it
+manually; the script does not retain its prior state for the next attempt.
+
+The script does not lock against concurrent restores. Do not run it or the manual
+fallback while another restore is in progress. If an older version left a
+`freshrss-restore-backup-state` marker in `${TMPDIR:-/tmp}`, check and restore
+the backup container's state manually, then remove the marker.
 
 For GCP, dispatch `.github/workflows/gcp-freshrss-restore.yml` and approve the
 pending deployment in GitHub Actions. The `prod` environment must have required
@@ -70,7 +81,7 @@ Confirm that FreshRSS serves the expected data through Nginx Proxy Manager.
   No container is stopped before the download completes.
 - If the restore fails after `filedata-backup` is stopped, the script attempts to
   return it to its prior running state. If that restart fails, inspect the logs,
-  rerun the restore to retry the restart, or start `filedata-backup` manually.
+  and start `filedata-backup` manually.
 - If health checks fail, inspect `docker compose logs freshrss` and keep FreshRSS
   stopped until the restored data has been checked.
 
@@ -126,7 +137,7 @@ docker compose up -d
 ```
 
 The archive is decrypted and checked before `docker compose down` or volume
-cleanup. The shared lock prevents overlapping restores and remains held through
-cleanup. With `set -euo pipefail`, a failed command or pipeline stops the
-sequence before FreshRSS is started. The subshell's EXIT trap clears the
-passphrase and restores `filedata-backup` if it was running.
+cleanup. The lock prevents overlapping manual fallback runs but does not
+coordinate with `restore.sh`. With `set -euo pipefail`, a failed command or
+pipeline stops the sequence before FreshRSS is started. The subshell's EXIT trap
+clears the passphrase and restores `filedata-backup` if it was running.

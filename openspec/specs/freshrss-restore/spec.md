@@ -1,11 +1,11 @@
 ## Requirements
 
 ### REQ-001: Preflight validation
-The restore script SHALL verify that all required tools (`docker`, `rclone`, `gpg`, `zstd`, `flock`) are present and that the Docker daemon and Dropbox rclone remote are reachable before performing any destructive operation.
+The restore script SHALL verify that all required tools (`docker`, `rclone`, `gpg`, `zstd`, `tar`) are present and that the Docker daemon and Dropbox rclone remote are reachable before performing any destructive operation.
 
 #### Scenario: Missing required tool
 - **GIVEN** the restore script is invoked
-- **WHEN** any of `docker`, `rclone`, `gpg`, `zstd`, or `flock` is not found on `PATH`
+- **WHEN** any of `docker`, `rclone`, `gpg`, `zstd`, or `tar` is not found on `PATH`
 - **THEN** the script SHALL exit with a non-zero status and print an actionable error identifying the missing tool
 
 #### Scenario: Docker daemon unreachable
@@ -50,7 +50,7 @@ The restore script SHALL identify the most recent backup archive at the configur
 - **THEN** it SHALL exit with a non-zero status and print the Dropbox path along with instructions to verify it
 
 ### REQ-004: Destructive operation confirmation
-The restore script SHALL require confirmation before stopping a running container and before wiping an existing volume.
+The restore script SHALL require confirmation before removing an existing container and before wiping an existing volume, except in `--force` mode.
 
 #### Scenario: Service running at restore time
 - **GIVEN** the `freshrss` container is running
@@ -78,10 +78,15 @@ The restore script SHALL require confirmation before stopping a running containe
 - **THEN** it SHALL stop `filedata-backup` before clearing the volume
 - **AND** it SHALL attempt to restart `filedata-backup` on success or failure
 
-#### Scenario: Another restore holds the lock
-- **GIVEN** another FreshRSS restore holds the restore lock
-- **WHEN** the script fails to acquire the lock
-- **THEN** it SHALL exit without restarting `filedata-backup` or removing the other restore's state marker
+#### Scenario: Automatic restore with an existing volume
+- **GIVEN** the `freshrss_filedata` volume already exists
+- **WHEN** the script is invoked with `--if-missing`
+- **THEN** it SHALL skip the restore without clearing the volume
+
+#### Scenario: Forced restore
+- **GIVEN** the FreshRSS container or volume already exists
+- **WHEN** the script is invoked with `--force`
+- **THEN** it SHALL proceed without interactive confirmation
 
 ### REQ-005: Archive extraction
 The restore script SHALL decrypt and extract the backup archive into the `freshrss_filedata` volume using a streaming pipeline that avoids writing intermediate plaintext to disk.
@@ -92,16 +97,16 @@ The restore script SHALL decrypt and extract the backup archive into the `freshr
 - **THEN** GPG SHALL decrypt the archive using a passphrase file descriptor, `zstd -d` SHALL decompress it, and `tar -xf -` SHALL extract it into the root of the `freshrss_filedata` volume via a temporary Alpine container
 
 ### REQ-006: Post-restore health verification
-The restore script SHALL verify that FreshRSS is healthy after restart using the FreshRSS CLI, retrying for up to 300 seconds before declaring failure.
+The restore script SHALL verify that FreshRSS is healthy after restart using the FreshRSS CLI after a short wait.
 
-#### Scenario: FreshRSS becomes healthy within timeout
+#### Scenario: FreshRSS is healthy
 - **GIVEN** the service has been restarted after restore
-- **WHEN** `docker exec freshrss php /var/www/FreshRSS/cli/health.php` exits 0 within 300 seconds
+- **WHEN** `docker exec freshrss php /var/www/FreshRSS/cli/health.php` exits 0
 - **THEN** the script SHALL print a success banner and exit 0
 
-#### Scenario: FreshRSS does not become healthy within timeout
+#### Scenario: FreshRSS health check fails
 - **GIVEN** the service has been restarted after restore
-- **WHEN** 300 seconds elapse without `check-install.php` exiting 0
+- **WHEN** the health check exits with a non-zero status
 - **THEN** the script SHALL exit with a non-zero status and print the command to inspect container logs
 
 ### REQ-007: Cleanup on exit

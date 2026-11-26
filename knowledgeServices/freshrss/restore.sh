@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # restore.sh — Restore FreshRSS from the latest Dropbox backup
-# Usage: [PASSPHRASE=<gpg-passphrase>] [DROPBOX_PATH=/Apps/freshrss] ./restore.sh
+# Usage: ./restore.sh [--if-missing|--force]
 
 set -euo pipefail
 
@@ -10,57 +10,23 @@ CONTAINER_NAME="freshrss"
 DROPBOX_REMOTE="dropbox"
 DROPBOX_PATH="${DROPBOX_PATH:-/Apps/freshrss}"
 TMP_DIR="/tmp/freshrss-restore-$$"
-BACKUP_STATE_FILE="${TMPDIR:-/tmp}/freshrss-restore-backup-state"
+MODE="${1:-}"
 BACKUP_WAS_RUNNING=false
 
 # --------------------------------------------------------------------------- #
 # Cleanup trap — runs on any exit (success or failure)
 # --------------------------------------------------------------------------- #
-validate_backup_state() {
-  local saved_backup_state
-  if [[ -L "$BACKUP_STATE_FILE" || ! -f "$BACKUP_STATE_FILE" ]]; then
-    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
-    return 1
-  fi
-
-  IFS= read -r -N 9 saved_backup_state <"$BACKUP_STATE_FILE" || true
-  if [[ "$saved_backup_state" != $'running\n' ]]; then
-    error "Invalid backup-state marker: $BACKUP_STATE_FILE"
-    return 1
-  fi
-}
-
-restore_backup_state() {
-  validate_backup_state || return 1
-
-  local backup_running
-  backup_running=$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)
-  if [[ "$backup_running" != "true" ]]; then
-    if ! docker start filedata-backup >/dev/null; then
-      error "Could not restart filedata-backup; saved state retained for the next run."
-      return 1
-    fi
-    info "Restarted filedata-backup to restore its prior running state."
-  fi
-
-  rm -f -- "$BACKUP_STATE_FILE"
-}
-
 cleanup() {
-  local exit_status=$?
-  trap - EXIT
-
-  if ! rm -rf "$TMP_DIR"; then
-    error "Could not remove temporary restore files: $TMP_DIR"
-    exit_status=1
+  local status=$?
+  if [[ "$BACKUP_WAS_RUNNING" == "true" ]] && ! docker start filedata-backup >/dev/null; then
+    echo "[ERROR] Could not restart filedata-backup." >&2
+    status=1
   fi
-  if [[ -e "$BACKUP_STATE_FILE" || -L "$BACKUP_STATE_FILE" ]] \
-    && ! restore_backup_state; then
-    exit_status=1
-  fi
+  rm -rf "$TMP_DIR"
   unset PASSPHRASE
-  exit "$exit_status"
+  exit "$status"
 }
+trap cleanup EXIT
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -72,6 +38,13 @@ error() { echo "[ERROR] $*" >&2; }
 confirm() {
   local prompt="$1"
   local answer
+  if [[ "$MODE" == "--force" ]]; then
+    return 0
+  fi
+  if [[ "$MODE" == "--if-missing" ]]; then
+    error "FreshRSS is running; refusing to restore automatically."
+    exit 1
+  fi
   if ! read -r -p "$prompt [y/N] " answer; then
     error "Confirmation input unavailable; restore aborted."
     exit 1
@@ -84,7 +57,7 @@ confirm() {
 # --------------------------------------------------------------------------- #
 info "Running preflight checks..."
 
-for cmd in docker rclone gpg zstd tar flock; do
+for cmd in docker rclone gpg zstd tar; do
   if ! command -v "$cmd" &>/dev/null; then
     error "Required tool not found: $cmd"
     error "Install $cmd and re-run this script."
@@ -92,20 +65,15 @@ for cmd in docker rclone gpg zstd tar flock; do
   fi
 done
 
-if [[ ! -e /tmp/freshrss-restore.lock ]]; then
-  (umask 022; : >> /tmp/freshrss-restore.lock)
-fi
-exec 9</tmp/freshrss-restore.lock
-if ! flock -n 9; then
-  error "Another FreshRSS restore is already in progress."
-  exit 1
-fi
-trap cleanup EXIT
-
 if ! docker info &>/dev/null; then
   error "Cannot connect to Docker daemon."
   error "Ensure Docker is running and your user has access to the Docker socket."
   exit 1
+fi
+
+if [[ "$MODE" == "--if-missing" ]] && docker volume inspect "$VOLUME_NAME" &>/dev/null; then
+  info "Volume '$VOLUME_NAME' already exists; skipping automatic restore."
+  exit 0
 fi
 
 info "Checking rclone Dropbox connectivity..."
@@ -130,6 +98,7 @@ if [[ -z "$PASSPHRASE" ]]; then
   error "Passphrase cannot be empty."
   exit 1
 fi
+export -n PASSPHRASE
 
 # --------------------------------------------------------------------------- #
 # 3. Find latest backup on Dropbox
@@ -159,23 +128,16 @@ mkdir -p "$TMP_DIR"
 info "Downloading $LATEST_FILE to $TMP_DIR ..."
 rclone copy "${DROPBOX_REMOTE}:${DROPBOX_PATH}/${LATEST_FILE}" "$TMP_DIR" --progress
 LOCAL_BACKUP="${TMP_DIR}/${LATEST_FILE}"
-if [[ ! -s "$LOCAL_BACKUP" ]]; then
-  error "Downloaded backup is missing or empty: $LOCAL_BACKUP"
-  exit 1
-fi
 
-# Validate decryption, compression, and archive structure before touching services
-# or existing volume data.
-info "Validating backup archive..."
+info "Validating backup before changing FreshRSS..."
 gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 3<<<"$PASSPHRASE" \
-  | zstd -d \
-  | tar -tf - >/dev/null
+  | zstd -d | tar -tf - >/dev/null
 
 # --------------------------------------------------------------------------- #
 # 5. Stop the service if running
 # --------------------------------------------------------------------------- #
-if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-  warn "The '${CONTAINER_NAME}' container is currently running."
+if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  warn "The '${CONTAINER_NAME}' container already exists."
   warn "This restore will stop the service and overwrite ALL existing data."
   if ! confirm "Stop FreshRSS and proceed with restore?"; then
     info "Aborted by operator."
@@ -195,31 +157,15 @@ if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
   fi
 fi
 
-if [[ -e "$BACKUP_STATE_FILE" || -L "$BACKUP_STATE_FILE" ]]; then
-  if ! validate_backup_state; then
-    exit 1
-  fi
+if [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
   BACKUP_WAS_RUNNING=true
-elif [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
-  BACKUP_WAS_RUNNING=true
-  if ! (umask 077; set -o noclobber; printf 'running\n' >"$BACKUP_STATE_FILE"); then
-    error "Cannot save filedata-backup state; refusing to stop the container."
-    exit 1
-  fi
-fi
-
-if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
   info "Stopping filedata-backup..."
   docker stop filedata-backup >/dev/null
 fi
 
-if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-  info "Stopping FreshRSS service..."
-  docker compose -f "${SCRIPT_DIR}/docker-compose.yml" down
-  if docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-    error "FreshRSS is still running; refusing to clear its volume."
-    exit 1
-  fi
+if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+  info "Removing FreshRSS container..."
+  docker rm -f "$CONTAINER_NAME"
 fi
 
 if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
@@ -227,6 +173,7 @@ if docker volume inspect "$VOLUME_NAME" &>/dev/null; then
   docker run --rm -v "${VOLUME_NAME}:/restore" alpine \
     sh -c 'find /restore -mindepth 1 -maxdepth 1 -exec rm -rf {} +'
 fi
+
 info "Creating volume '$VOLUME_NAME'..."
 docker volume create "$VOLUME_NAME"
 
@@ -250,37 +197,20 @@ info "Starting FreshRSS service..."
 docker compose -f "${SCRIPT_DIR}/docker-compose.yml" up -d
 
 # --------------------------------------------------------------------------- #
-# 9. Verify — retry loop up to 300 seconds
+# 9. Verify
 # --------------------------------------------------------------------------- #
-info "Waiting for FreshRSS to become healthy (up to 300s)..."
+info "Waiting for container to become ready..."
+sleep 3
 
-MAX_WAIT=300
-INTERVAL=5
-ELAPSED=0
-
-until docker exec "$CONTAINER_NAME" php /var/www/FreshRSS/cli/health.php &>/dev/null; do
-  if (( ELAPSED >= MAX_WAIT )); then
-    error "FreshRSS did not become healthy within ${MAX_WAIT}s."
-    error "Check logs with: docker compose -f ${SCRIPT_DIR}/docker-compose.yml logs -f freshrss"
-    exit 1
-  fi
-  sleep "$INTERVAL"
-  ELAPSED=$(( ELAPSED + INTERVAL ))
-done
-
-if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
-  info "Restarting filedata-backup..."
-  restore_backup_state
-fi
-
-echo ""
-echo "=========================================="
-echo "  FreshRSS restore completed successfully!"
-echo "  FreshRSS health check passed."
-if [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
-  echo "  filedata-backup is running."
+if docker exec "$CONTAINER_NAME" php /var/www/FreshRSS/cli/health.php &>/dev/null; then
+  echo ""
+  echo "=========================================="
+  echo "  FreshRSS restore completed successfully!"
+  echo "  FreshRSS health check passed."
+  echo "  Access FreshRSS via your NPM proxy URL."
+  echo "=========================================="
 else
-  echo "  filedata-backup is not running."
+  error "FreshRSS health check failed."
+  error "The restore may have failed. Check: docker compose -f ${SCRIPT_DIR}/docker-compose.yml logs"
+  exit 1
 fi
-echo "  Access FreshRSS via your NPM proxy URL."
-echo "=========================================="

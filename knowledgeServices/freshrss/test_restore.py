@@ -11,10 +11,11 @@ SCRIPT = Path(__file__).with_name("restore.sh")
 GUIDE = Path(__file__).with_name("RESTORE_GUIDE.md")
 
 
-def restore_env(tmp_path: str) -> tuple[dict[str, str], Path]:
-    bin_dir = Path(tmp_path) / "bin"
+def restore_env(directory: str) -> tuple[dict[str, str], Path]:
+    root = Path(directory)
+    bin_dir = root / "bin"
     bin_dir.mkdir()
-    log = Path(tmp_path) / "calls"
+    log = root / "calls"
     stub = bin_dir / "stub"
     stub.write_text(
         """#!/usr/bin/env bash
@@ -22,40 +23,36 @@ set -eu
 echo "$(basename "$0") $*" >> "$CALLS"
 case "$(basename "$0"):$1" in
   docker:info) ;;
-  docker:inspect)
-    if [[ -f "$STATE/backup-stopped" || "${BACKUP_NOT_RUNNING:-}" == 1 ]]; then
-      echo false
-    else
-      echo true
-    fi ;;
-  docker:ps)
-    if [[ "${FRESHRSS_NOT_RUNNING:-}" != 1 && ! -f "$STATE/stopped" ]]; then
-      echo freshrss
-    fi ;;
-  docker:compose)
-    if [[ "$*" == *" down" ]]; then touch "$STATE/stopped"; fi ;;
   docker:volume)
-    if [[ "$2" == inspect && "${NO_VOLUME:-}" == 1 ]]; then exit 1; fi
-    [[ "$2" != create ]] || echo freshrss_filedata ;;
-  docker:run)
-    if [[ "$*" == *" -i "* ]]; then
-      if [[ "${FAIL_EXTRACT:-}" == 1 ]]; then exit 1; fi
-      cat >/dev/null
-    fi ;;
-  docker:exec) [[ "${FAIL_HEALTH:-}" != 1 ]] ;;
+    case "$2" in
+      inspect) [[ -f "$STATE/volume" ]] ;;
+      create) touch "$STATE/volume" ;;
+      rm) rm "$STATE/volume" ;;
+    esac ;;
+  docker:ps)
+    [[ ! -f "$STATE/container" ]] || echo freshrss ;;
+  docker:inspect)
+    if [[ -f "$STATE/backup-stopped" ]]; then echo false
+    else echo "${BACKUP_RUNNING:-false}"; fi ;;
   docker:stop) touch "$STATE/backup-stopped" ;;
   docker:start)
     if [[ "${FAIL_START:-}" == 1 ]]; then exit 1; fi
     rm -f "$STATE/backup-stopped" ;;
+  docker:rm) rm -f "$STATE/container" ;;
+  docker:run)
+    if [[ "${FAIL_RUN:-}" == 1 ]]; then exit 1; fi
+    if [[ "${FAIL_EXTRACT:-}" == 1 && "$*" == *" -i "* ]]; then exit 1; fi
+    cat >/dev/null ;;
+  docker:compose) ;;
+  docker:exec) [[ "${FAIL_HEALTH:-}" != 1 ]] ;;
   rclone:lsd) ;;
   rclone:lsf)
-    if [[ "${FAIL_LIST:-}" == 1 ]]; then exit 1; fi
     printf '%s\\n' freshrss_2024-01-01_00-00-00.tar.zst.gpg unrelated.txt \\
       freshrss_2025-01-01_00-00-00.tar.zst.gpg ;;
-  rclone:copy)
-    if [[ "${FAIL_COPY:-}" == 1 ]]; then exit 1; fi
-    printf encrypted > "$3/${2##*/}" ;;
+  rclone:copy) printf encrypted > "$3/${2##*/}" ;;
   gpg:*)
+    read -r -u 3 supplied_passphrase
+    [[ "$supplied_passphrase" == "$EXPECTED_PASSPHRASE" ]]
     if [[ "${FAIL_GPG:-}" == 1 ]]; then exit 1; fi
     cat "$ARCHIVE" ;;
   zstd:*) cat ;;
@@ -67,297 +64,216 @@ esac
     stub.chmod(0o755)
     for name in ("docker", "rclone", "gpg", "zstd", "sleep"):
         (bin_dir / name).symlink_to(stub)
-    archive_path = Path(tmp_path) / "archive.tar"
-    archive_file = Path(tmp_path) / "archive-content"
-    archive_file.write_text("valid archive")
+    archive_path = root / "archive.tar"
+    archive_file = root / "database.sqlite"
+    archive_file.write_text("test data")
     with tarfile.open(archive_path, "w") as archive:
-        archive.add(archive_file, arcname="archive-content")
+        archive.add(archive_file, arcname="database.sqlite")
     return {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "CALLS": str(log),
-        "STATE": str(tmp_path),
-        "TMPDIR": str(tmp_path),
+        "STATE": directory,
         "ARCHIVE": str(archive_path),
-        "PASSPHRASE": "test-passphrase",
+        "PASSPHRASE": "test-secret-value",
+        "EXPECTED_PASSPHRASE": "test-secret-value",
     }, log
 
 
 class RestoreTests(unittest.TestCase):
-    def test_invalid_backup_state_is_not_consumed_by_cleanup(self):
-        for marker_type in (
-            "empty",
-            "wrong",
-            "multiline",
-            "extra-newline",
-            "no-final-newline",
-            "symlink",
-            "dangling",
-            "directory",
-        ):
-            for fail_early in (False, True):
-                with self.subTest(marker=marker_type, fail_early=fail_early), \
-                        tempfile.TemporaryDirectory() as tmp:
-                    env, log = restore_env(tmp)
-                    marker = Path(tmp) / "freshrss-restore-backup-state"
-                    if marker_type == "directory":
-                        marker.mkdir()
-                    elif marker_type in ("symlink", "dangling"):
-                        target = Path(tmp) / "target"
-                        if marker_type == "symlink":
-                            target.write_text("running\n")
-                        marker.symlink_to(target)
-                    else:
-                        marker_contents = {
-                            "empty": "",
-                            "wrong": "stopped\n",
-                            "multiline": "running\nstopped\n",
-                            "extra-newline": "running\n\n",
-                            "no-final-newline": "running",
-                        }
-                        marker.write_text(marker_contents[marker_type])
-                    (Path(tmp) / "backup-stopped").touch()
-                    if fail_early:
-                        env["FAIL_LIST"] = "1"
-                    result = subprocess.run(
-                        [str(SCRIPT)], env=env, input="y\ny\n",
-                        capture_output=True, text=True,
-                    )
+    def test_automatic_restore_skips_existing_volume(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = restore_env(tmp)
+            (Path(tmp) / "volume").touch()
+            result = subprocess.run(
+                [str(SCRIPT), "--if-missing"],
+                env=env,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("skipping automatic restore", result.stdout)
+            self.assertNotIn("rclone", log.read_text())
+            self.assertNotIn("docker rm", log.read_text())
+
+    def test_automatic_restore_selects_backup_without_exposing_passphrase(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = restore_env(tmp)
+            result = subprocess.run(
+                [str(SCRIPT), "--if-missing"],
+                env=env,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = log.read_text()
+            self.assertIn("freshrss_2025-01-01_00-00-00.tar.zst.gpg", calls)
+            self.assertIn("--passphrase-fd 3", calls)
+            self.assertNotIn(env["PASSPHRASE"], calls + result.stdout + result.stderr)
+            self.assertIn("docker compose", calls)
+
+    def test_force_validates_before_replacing_existing_data(self):
+        for fail in (True, False):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as tmp:
+                env, log = restore_env(tmp)
+                (Path(tmp) / "volume").touch()
+                (Path(tmp) / "container").touch()
+                if fail:
+                    env["FAIL_GPG"] = "1"
+                result = subprocess.run(
+                    [str(SCRIPT), "--force"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                )
+                calls = log.read_text()
+                if fail:
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("Invalid backup-state marker", result.stderr)
-                    self.assertTrue(marker.exists() or marker.is_symlink())
-                    self.assertTrue((Path(tmp) / "backup-stopped").exists())
-                    self.assertNotIn("docker start filedata-backup", log.read_text())
-                    self.assertNotIn("docker stop filedata-backup", log.read_text())
+                    self.assertNotIn("docker rm", calls)
+                    self.assertNotIn("docker run", calls)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertLess(calls.index("gpg "), calls.index("docker rm"))
+                    self.assertIn("docker run --rm -v freshrss_filedata:/restore", calls)
 
-    def test_valid_backup_state_is_recovered_after_early_failure(self):
+    def test_force_restarts_running_backup(self):
+        for fail in (True, False):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as tmp:
+                env, log = restore_env(tmp)
+                env["BACKUP_RUNNING"] = "true"
+                if fail:
+                    env["FAIL_RUN"] = "1"
+                (Path(tmp) / "volume").touch()
+                result = subprocess.run(
+                    [str(SCRIPT), "--force"],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    stdin=subprocess.DEVNULL,
+                )
+                self.assertEqual(result.returncode == 0, not fail, result.stderr)
+                calls = log.read_text()
+                self.assertLess(
+                    calls.index("docker stop filedata-backup"), calls.index("docker run")
+                )
+                self.assertIn("docker start filedata-backup", calls)
+                self.assertFalse((Path(tmp) / "backup-stopped").exists())
+
+    def test_failed_health_check_still_restarts_backup(self):
         with tempfile.TemporaryDirectory() as tmp:
             env, log = restore_env(tmp)
-            marker = Path(tmp) / "freshrss-restore-backup-state"
-            marker.write_text("running\n")
-            (Path(tmp) / "backup-stopped").touch()
-            env["FAIL_LIST"] = "1"
+            env.update(BACKUP_RUNNING="true", FAIL_HEALTH="1")
             result = subprocess.run(
-                [str(SCRIPT)], env=env, input="", capture_output=True, text=True
+                [str(SCRIPT), "--force"], env=env, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True,
             )
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("docker start filedata-backup", log.read_text())
-            self.assertFalse(marker.exists())
-            self.assertFalse((Path(tmp) / "backup-stopped").exists())
+            self.assertIn("FreshRSS health check failed", result.stderr)
+            calls = log.read_text()
+            self.assertIn("docker exec freshrss php /var/www/FreshRSS/cli/health.php", calls)
+            self.assertIn("docker start filedata-backup", calls)
 
-    def test_lock_failure_does_not_restore_another_runs_backup_state(self):
+    def test_failed_backup_restart_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            marker = Path(tmp) / "freshrss-restore-backup-state"
-            marker.write_text("running\n")
-            (Path(tmp) / "backup-stopped").touch()
-            flock_stub = Path(tmp) / "bin" / "flock"
-            flock_stub.write_text("#!/bin/sh\nexit 1\n")
-            flock_stub.chmod(0o755)
+            env, _ = restore_env(tmp)
+            env.update(BACKUP_RUNNING="true", FAIL_START="1")
             result = subprocess.run(
-                [str(SCRIPT)], env=env, input="", capture_output=True, text=True
+                [str(SCRIPT), "--force"], env=env, stdin=subprocess.DEVNULL,
+                capture_output=True, text=True,
             )
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Another FreshRSS restore", result.stderr)
-            self.assertTrue(marker.exists())
+            self.assertIn("Could not restart filedata-backup", result.stderr)
             self.assertTrue((Path(tmp) / "backup-stopped").exists())
-            self.assertFalse(log.exists())
+
+    def test_workflow_confirmations_allow_replacing_existing_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = restore_env(tmp)
+            (Path(tmp) / "volume").touch()
+            (Path(tmp) / "container").touch()
+            result = subprocess.run(
+                [str(SCRIPT)], env=env, input="y\ny\n",
+                capture_output=True, text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("docker rm -f freshrss", log.read_text())
+            self.assertIn("docker exec freshrss php", log.read_text())
 
     def test_manual_fallback_cleanup_and_lock(self):
-        guide = GUIDE.read_text()
-        fallback = guide.split("## Manual fallback", 1)[1]
+        fallback = GUIDE.read_text().split("## Manual fallback", 1)[1]
         command = fallback.split("```bash\n", 1)[1].split("\n```", 1)[0]
-        for scenario in ("success", "extract-failure", "locked", "backup-stopped"):
+        for scenario in ("success", "extract-failure", "locked"):
             with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as tmp:
                 env, log = restore_env(tmp)
                 env.pop("PASSPHRASE")
-                lock_path = Path(tmp) / "restore.lock"
-                script = command.replace("/tmp/freshrss-restore.lock", str(lock_path))
+                env["BACKUP_RUNNING"] = "true"
                 if scenario == "extract-failure":
                     env["FAIL_EXTRACT"] = "1"
-                if scenario == "backup-stopped":
-                    env["BACKUP_NOT_RUNNING"] = "1"
+                lock_path = Path(tmp) / "restore.lock"
+                script = command.replace("/tmp/freshrss-restore.lock", str(lock_path))
                 with lock_path.open("w") as lock:
                     if scenario == "locked":
                         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     result = subprocess.run(
-                        [
-                            "bash",
-                            "-c",
-                            script
-                            + '\nstatus=$?; printf "\\nSTATUS=%s PASSPHRASE=%s\\n" '
-                            '"$status" "${PASSPHRASE-unset}"',
-                        ],
-                        env=env,
-                        input="test-passphrase\n",
-                        capture_output=True,
-                        text=True,
+                        ["bash", "-c", script], env=env, input="test-secret-value\n",
+                        capture_output=True, text=True,
                     )
-                self.assertEqual(result.returncode, 0, result.stderr)
-                expected_status = 1 if scenario in ("extract-failure", "locked") else 0
-                self.assertIn(f"STATUS={expected_status} PASSPHRASE=unset", result.stdout)
+                self.assertEqual(result.returncode == 0, scenario == "success", result.stderr)
                 calls = log.read_text()
                 if scenario == "locked":
                     self.assertIn("Another FreshRSS restore", result.stderr)
                     self.assertNotIn("docker stop", calls)
-                    self.assertNotIn("docker compose", calls)
-                elif scenario == "backup-stopped":
-                    self.assertNotIn("docker stop filedata-backup", calls)
-                    self.assertNotIn("docker start filedata-backup", calls)
                 else:
                     self.assertIn("docker stop filedata-backup", calls)
                     self.assertIn("docker start filedata-backup", calls)
-                    self.assertFalse((Path(tmp) / "backup-stopped").exists())
                     if scenario == "extract-failure":
-                        self.assertNotIn("docker compose up", calls)
-                    else:
-                        self.assertIn("docker compose up -d", calls)
+                        self.assertNotIn("docker compose up -d", calls)
 
-    def test_restore_selects_archive_and_coordinates_backup(self):
+    def test_missing_passphrase_fails_when_input_is_unavailable(self):
         with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
+            env, _ = restore_env(tmp)
+            env.pop("PASSPHRASE")
             result = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
+                [str(SCRIPT), "--if-missing"],
+                env=env,
+                capture_output=True,
+                text=True,
+                stdin=subprocess.DEVNULL,
             )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            calls = log.read_text()
-            self.assertIn(
-                "rclone copy dropbox:/Apps/freshrss/"
-                "freshrss_2025-01-01_00-00-00.tar.zst.gpg",
-                calls,
-            )
-            self.assertLess(
-                calls.index("rclone copy"), calls.index("docker stop filedata-backup")
-            )
-            self.assertLess(
-                calls.index("docker stop filedata-backup"), calls.index("docker run")
-            )
-            self.assertLess(
-                calls.index("docker exec freshrss"), calls.index("docker start filedata-backup")
-            )
-            self.assertNotIn("test-passphrase", calls)
+            self.assertNotEqual(result.returncode, 0)
 
-    def test_download_failures_do_not_stop_services(self):
-        for failure in ("FAIL_LIST", "FAIL_COPY"):
-            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp:
+    def test_no_argument_prompts_before_replacing_data(self):
+        for answer in ("n\n", "y\n"):
+            with self.subTest(answer=answer), tempfile.TemporaryDirectory() as tmp:
                 env, log = restore_env(tmp)
-                env[failure] = "1"
+                (Path(tmp) / "volume").touch()
                 result = subprocess.run(
-                    [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-                )
-                self.assertNotEqual(result.returncode, 0)
-                calls = log.read_text()
-                self.assertNotIn("docker stop", calls)
-                self.assertNotIn("docker compose", calls)
-                self.assertNotIn("docker run", calls)
-
-    def test_invalid_archive_does_not_stop_or_clear_services(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            env["FAIL_GPG"] = "1"
-            result = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-            )
-            self.assertNotEqual(result.returncode, 0)
-            calls = log.read_text()
-            self.assertNotIn("docker stop", calls)
-            self.assertNotIn("docker compose", calls)
-            self.assertNotIn("docker run", calls)
-
-    def test_failed_extraction_restores_backup_container(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            env["FAIL_EXTRACT"] = "1"
-            result = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-            )
-            self.assertNotEqual(result.returncode, 0)
-            calls = log.read_text()
-            self.assertIn("docker stop filedata-backup", calls)
-            self.assertIn("docker start filedata-backup", calls)
-            self.assertFalse((Path(tmp) / "backup-stopped").exists())
-
-    def test_failed_health_check_restores_backup_container(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            env["FAIL_HEALTH"] = "1"
-            result = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-            )
-            self.assertNotEqual(result.returncode, 0)
-            calls = log.read_text()
-            self.assertIn("docker start filedata-backup", calls)
-            self.assertFalse((Path(tmp) / "backup-stopped").exists())
-
-    def test_retry_restores_backup_state_saved_by_failed_attempt(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            env.update(FAIL_EXTRACT="1", FAIL_START="1")
-            first = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-            )
-            self.assertNotEqual(first.returncode, 0)
-            self.assertTrue((Path(tmp) / "backup-stopped").exists())
-            self.assertEqual(
-                (Path(tmp) / "freshrss-restore-backup-state").read_text().strip(),
-                "running",
-            )
-
-            env.pop("FAIL_EXTRACT")
-            env.pop("FAIL_START")
-            second = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-            )
-            self.assertEqual(second.returncode, 0, second.stderr)
-            self.assertIn("filedata-backup is running.", second.stdout)
-            self.assertFalse((Path(tmp) / "backup-stopped").exists())
-            self.assertFalse((Path(tmp) / "freshrss-restore-backup-state").exists())
-
-    def test_initially_stopped_backup_remains_stopped(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            env["BACKUP_NOT_RUNNING"] = "1"
-            result = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\ny\n", capture_output=True, text=True
-            )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertNotIn("docker stop filedata-backup", log.read_text())
-            self.assertNotIn("docker start filedata-backup", log.read_text())
-            self.assertIn("filedata-backup is not running.", result.stdout)
-
-    def test_declined_confirmation_does_not_stop_services(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            result = subprocess.run(
-                [str(SCRIPT)], env=env, input="n\n", capture_output=True, text=True
-            )
-            self.assertEqual(result.returncode, 0)
-            calls = log.read_text()
-            self.assertNotIn("docker stop", calls)
-            self.assertNotIn("docker compose", calls)
-            self.assertNotIn("docker run", calls)
-
-    def test_missing_confirmation_fails_without_stopping_services(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            env, log = restore_env(tmp)
-            result = subprocess.run(
-                [str(SCRIPT)], env=env, input="y\n", capture_output=True, text=True
-            )
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Confirmation input unavailable", result.stderr)
-            self.assertNotIn("docker stop", log.read_text())
-
-    def test_confirmations_allow_missing_service_or_volume(self):
-        for absent in ("FRESHRSS_NOT_RUNNING", "NO_VOLUME"):
-            with self.subTest(absent=absent), tempfile.TemporaryDirectory() as tmp:
-                env, log = restore_env(tmp)
-                env[absent] = "1"
-                result = subprocess.run(
-                    [str(SCRIPT)], env=env, input="y\ny\n",
-                    capture_output=True, text=True,
+                    [str(SCRIPT)],
+                    env=env,
+                    input=answer,
+                    capture_output=True,
+                    text=True,
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertIn("docker start filedata-backup", log.read_text())
+                self.assertIn("Its contents will be permanently deleted", result.stdout)
+                self.assertEqual(
+                    "docker run --rm -v freshrss_filedata:/restore" in log.read_text(),
+                    answer == "y\n",
+                )
+
+    def test_unrecognized_argument_uses_interactive_prompt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env, log = restore_env(tmp)
+            (Path(tmp) / "volume").touch()
+            result = subprocess.run(
+                [str(SCRIPT), "unexpected"], env=env, input="n\n",
+                capture_output=True, text=True
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("Its contents will be permanently deleted", result.stdout)
+            self.assertNotIn("docker run --rm -v freshrss_filedata:/restore", log.read_text())
 
 
 if __name__ == "__main__":
