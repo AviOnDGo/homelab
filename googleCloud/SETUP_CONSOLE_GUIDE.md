@@ -122,8 +122,7 @@ Navigation: IAM & Admin -> Workload Identity Federation
 - `attribute.actor=assertion.actor`
 - `attribute.environment=assertion.environment`
 9. Add provider condition:
-- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main"`
-- Add a second allowed `assertion.job_workflow_ref` for `.github/workflows/gcp-npm-restore.yml@refs/heads/main` if the shared service account must run the reusable restore workflow.
+- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main")`
 10. Create provider.
 
 ## 7. Add Conditional Impersonation Binding
@@ -142,8 +141,9 @@ principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workl
 
 4. Add role:
 - `Workload Identity User` -> `roles/iam.workloadIdentityUser`
-5. Add an IAM condition that also requires repository, ref, environment, and workflow-ref claims. Do not use repository scope alone.
-	Workflow guard steps provide a second defense, but WIF must reject unapproved refs and workflows.
+5. Keep the binding scope repository-only through the repository principalSet shown above.
+	Do not add ref, environment, or workflow-ref checks to this IAM binding; configure those restrictions in step 9 with the WIF provider attribute condition.
+	Workflow guard steps provide an additional defense.
 
 6. Save.
 
