@@ -63,10 +63,16 @@ is stopped during the restore and restarted afterward.
 The workflow uses the protected `prod` environment and may require approval.
 Its branch restrictions and GCP OIDC trust policy must allow the selected branch.
 Manual dispatch requires the workflow file to exist on the default branch.
+For a manual restore, ensure the VM exists and has completed bootstrap; the
+restore workflow does not wait for bootstrap readiness.
 
 The workflow sends the passphrase and Dropbox credentials over SSH standard
 input, not command arguments. It installs rclone and zstd on the VM if needed,
 uses temporary rclone configuration, and removes the temporary files on exit.
+The workflow delegates GCP setup and transport to the
+[shared restore action](../../.github/actions/gcp-restore/action.yml) and
+[VM transport helper](../../googleCloud/restore-service.sh); the NPM restore
+script remains the recovery entry point on the VM.
 The passphrase must be a single line. Avoid shell tracing when restoring.
 If a restore fails after creating the volume, investigate before retrying.
 Another successful Apply will force a restore again.
