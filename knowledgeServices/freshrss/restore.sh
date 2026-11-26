@@ -196,7 +196,7 @@ info "Restore complete."
 info "Starting FreshRSS and waiting up to 300 seconds for it to become healthy..."
 if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" up -d --wait --wait-timeout 300; then
   error "FreshRSS failed to start or become healthy."
-  error "Check: docker compose -f ${SCRIPT_DIR}/docker-compose.yml logs"
+  error "Check: docker logs --tail 100 ${CONTAINER_NAME}"
   exit 1
 fi
 

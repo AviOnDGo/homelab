@@ -177,6 +177,7 @@ class RestoreTests(unittest.TestCase):
             )
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("failed to start or become healthy", result.stderr)
+            self.assertIn("docker logs --tail 100 freshrss", result.stderr)
             calls = log.read_text()
             self.assertIn("docker start filedata-backup", calls)
             self.assertIn("up -d --wait --wait-timeout 300", calls)
