@@ -130,13 +130,16 @@ docker exec ollama ollama list
 
 The `ollama_data` volume is **intentionally excluded** from automated filedata backups. Model weights are large (2+ GB each) and freely re-downloadable from the Ollama model registry, so backing them up wastes storage quota.
 
-If you still want to include it, add it to `backupServices/filedata/docker-compose.yml`:
+If you still want to include it, register it in
+`backupServices/filedata/backup-volumes.conf` and configure its schedule,
+mode, and destination in the filedata environment examples:
 
-```yaml
-# In backupServices/filedata/docker-compose.yml, add to the filedata-backup service:
-volumes:
-  - ollama_data:/data/ollama_data:ro
+```text
+ollama|ollama_data|default
 ```
+
+Add `local` and/or `prod` to the profile list when Ollama is deployed on those
+hosts.
 
 Also add `OLLAMA_RETENTION_DAYS=7` to `backupServices/filedata/.env`.
 
