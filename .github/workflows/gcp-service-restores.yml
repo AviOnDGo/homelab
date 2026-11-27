@@ -1,4 +1,4 @@
-name: Restore GCP services
+name: "GCP Restore: Service Group (Internal)"
 
 on:
   workflow_call:

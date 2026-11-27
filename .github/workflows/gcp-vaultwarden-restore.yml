@@ -1,4 +1,4 @@
-name: Restore Vaultwarden on GCP VM
+name: "GCP Restore: Vaultwarden"
 
 on:
   workflow_call:

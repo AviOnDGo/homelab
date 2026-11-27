@@ -1,4 +1,4 @@
-name: Deploy GCP VM Terraform
+name: "Deploy: GCP VM"
 
 on:
   push:

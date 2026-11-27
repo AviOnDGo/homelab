@@ -345,7 +345,7 @@ Publishing is disabled until an operator approves and completes this sequence:
    git merge-base --is-ancestor 'v1.0.0^{commit}' origin/main
    ```
 
-3. With the workflow on `main`, dispatch **Semantic Release** with **publish**
+3. With the workflow on `main`, dispatch **Release: Semantic Release** with **publish**
    unchecked. Record the predicted version and notes (or no release). The
    preview uses a temporary local Git mirror and does not publish.
 4. Set the Actions repository variable `RELEASES_ENABLED` to `true`. Verify

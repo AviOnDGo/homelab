@@ -1,4 +1,4 @@
-name: Restore Filedata Backup on GCP VM
+name: "GCP Restore: Filedata Backup"
 
 on:
   workflow_call:

@@ -1,4 +1,4 @@
-name: Restore Watchtower on GCP VM
+name: "GCP Restore: Watchtower"
 
 on:
   workflow_call:
