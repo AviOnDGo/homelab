@@ -84,12 +84,11 @@ The `romm_postgresdata` volume SHALL be registered with the Local-scoped Postgre
 - **AND** `db-backup` SHALL join `games_network`
 - **AND** a dedicated `ROMM_CRON_SCHEDULE` cron entry SHALL exist
 
-#### Scenario: RomM filedata backup is Local-only
-- **GIVEN** `backupServices/filedata/docker-compose.yml` and `backupServices/filedata/docker-compose.prod.yml` are inspected
-- **WHEN** reviewing their volumes and cron entries
-- **THEN** neither SHALL reference `romm_filedata`
-- **AND** `backupServices/filedata/docker-compose.local.yml` SHALL mount `romm_filedata` read-only
-- **AND** its Gaming Services cron group SHALL run the `romm` backup job
+#### Scenario: RomM filedata backup is selected for default and Local
+- **GIVEN** `backupServices/filedata/backup-volumes.conf` is inspected
+- **WHEN** reviewing RomM's host selections
+- **THEN** `romm_filedata` SHALL be selected for `default` and `local`
+- **AND** its generated Gaming Services cron job SHALL run the `romm` backup job
 
 #### Scenario: RomM PostgreSQL backup script supports RomM
 - **GIVEN** `backupServices/postgres/docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml` are inspected
