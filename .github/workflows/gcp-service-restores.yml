@@ -1,0 +1,71 @@
+name: Restore GCP services
+
+on:
+  workflow_call:
+    secrets:
+      DROPBOX_AUTH_TOKEN:
+        required: false
+      DROPBOX_REFRESH_TOKEN:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+      FIREFLY_APP_KEY:
+        required: false
+      FIREFLY_DB_USERNAME:
+        required: false
+      FIREFLY_DB_PASSWORD:
+        required: false
+      FIREFLY_STATIC_CRON_TOKEN:
+        required: false
+      PIHOLE_WEB_PASSWORD:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  restore-freshrss:
+    name: Restore FreshRSS
+    uses: ./.github/workflows/gcp-freshrss-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  restore-vaultwarden:
+    name: Restore Vaultwarden
+    uses: ./.github/workflows/gcp-vaultwarden-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  restore-firefly:
+    name: Restore Firefly
+    uses: ./.github/workflows/gcp-firefly-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      FIREFLY_APP_KEY: ${{ secrets.FIREFLY_APP_KEY }}
+      FIREFLY_DB_USERNAME: ${{ secrets.FIREFLY_DB_USERNAME }}
+      FIREFLY_DB_PASSWORD: ${{ secrets.FIREFLY_DB_PASSWORD }}
+      FIREFLY_STATIC_CRON_TOKEN: ${{ secrets.FIREFLY_STATIC_CRON_TOKEN }}
+
+  restore-pihole:
+    name: Restore Pi-hole
+    uses: ./.github/workflows/gcp-pihole-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      PIHOLE_WEB_PASSWORD: ${{ secrets.PIHOLE_WEB_PASSWORD }}

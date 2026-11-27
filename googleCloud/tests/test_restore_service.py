@@ -277,13 +277,12 @@ esac""",
                 self.assertEqual(list(self.work.glob("vaultwarden-restore.*")), [])
 
     def test_deployment_runs_vaultwarden_after_npm(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+        workflow = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
             encoding="utf-8"
         )
         job = workflow.split("\n  restore-vaultwarden:\n", 1)[1].split(
-            "\n  restore-watchtower:", 1
+            "\n  restore-firefly:", 1
         )[0]
-        self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertIn("    uses: ./.github/workflows/gcp-vaultwarden-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
 
@@ -653,13 +652,10 @@ esac""",
             self.assertIn(f'          : "${{{name}:?', workflow)
 
     def test_deployment_runs_pihole_after_npm(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+        workflow = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
             encoding="utf-8"
         )
-        job = workflow.split("\n  restore-pihole:\n", 1)[1].split(
-            "\n  restore-watchtower:", 1
-        )[0]
-        self.assertIn("    needs: [apply, restore-npm]\n", job)
+        job = workflow.split("\n  restore-pihole:\n", 1)[1]
         self.assertNotIn("\n    if:", job)
         self.assertIn("    uses: ./.github/workflows/gcp-pihole-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
@@ -670,13 +666,12 @@ esac""",
             self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
 
     def test_deployment_runs_firefly_after_npm(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+        workflow = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
             encoding="utf-8"
         )
         job = workflow.split("\n  restore-firefly:\n", 1)[1].split(
-            "\n  restore-watchtower:", 1
+            "\n  restore-pihole:", 1
         )[0]
-        self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertIn("    uses: ./.github/workflows/gcp-firefly-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
         for name in (
@@ -690,12 +685,27 @@ esac""",
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
             encoding="utf-8"
         )
-        job = workflow.split("\n  restore-freshrss:\n", 1)[1].split(
-            "\n  teardown:", 1
+        job = workflow.split("\n  restore-services:\n", 1)[1].split(
+            "\n  restore-watchtower:", 1
         )[0]
         self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertNotIn("\n    if:", job)
-        self.assertIn("    uses: ./.github/workflows/gcp-freshrss-restore.yml\n", job)
+        self.assertIn("    uses: ./.github/workflows/gcp-service-restores.yml\n", job)
+        group = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
+            encoding="utf-8"
+        )
+        freshrss = group.split("\n  restore-freshrss:\n", 1)[1].split(
+            "\n  restore-vaultwarden:", 1
+        )[0]
+        self.assertIn("    uses: ./.github/workflows/gcp-freshrss-restore.yml\n", freshrss)
+        self.assertIn("      force: true\n", freshrss)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "FIREFLY_APP_KEY", "FIREFLY_DB_USERNAME", "FIREFLY_DB_PASSWORD",
+            "FIREFLY_STATIC_CRON_TOKEN", "PIHOLE_WEB_PASSWORD",
+        ):
+            self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
+            self.assertIn(f"      {name}:\n", group)
 
     def test_remote_command_runs_npm_skip_path(self) -> None:
         for name, body in {
@@ -975,7 +985,7 @@ esac
             encoding="utf-8"
         )
         job = workflow.split("\n  restore-watchtower:\n", 1)[1].split(
-            "\n  teardown:", 1
+            "\n  restore-filedata-backup:", 1
         )[0]
         self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertNotIn("\n    if:", job)

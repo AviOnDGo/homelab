@@ -66,9 +66,17 @@ Execution behavior:
   before running it. Manual restores also require the external
   `security_network` to exist on the VM. See the
   [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
-- After all four filedata source restores (NPM, FreshRSS, Vaultwarden, and
-  Pi-hole) succeed, the filedata backup scheduler is rebuilt and started with
-  the `prod` profile. A manual run is also available. Missing production
+- After apply and NPM restore succeed, the
+  [service restore group](../.github/workflows/gcp-service-restores.yml) runs
+  FreshRSS, Vaultwarden, Firefly, and Pi-hole. Add future service restore jobs
+  to this group so the filedata backup scheduler waits for them too.
+- After every grouped restore finishes, whether successful or failed, the
+  filedata backup scheduler is rebuilt and started with the `prod` profile.
+  It does not start if apply or NPM restore fails, or if the group or workflow
+  is canceled. A failed restore can leave an existing volume incomplete; the
+  scheduler can back up that incomplete data and apply remote retention cleanup.
+  Check failed restores and recover affected data promptly. A manual run is
+  also available. Missing production
   volumes are omitted with a workflow warning and a Discord alert when the
   webhook is configured; at least one source volume must exist. Restore missing
   volumes and rerun the workflow to add their mounts and schedules.

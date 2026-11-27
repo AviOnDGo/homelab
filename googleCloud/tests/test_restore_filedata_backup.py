@@ -291,17 +291,20 @@ esac
                 self.env.pop(failure)
                 (self.work / "docker-calls").unlink()
 
-    def test_workflow_waits_for_all_source_restores(self):
+    def test_workflow_waits_for_group_even_when_a_restore_fails(self):
         deployment = (ROOT / ".github/workflows/gcp-vm-deploy.yml").read_text()
         job = deployment.split("\n  restore-filedata-backup:\n", 1)[1].split(
             "\n  teardown:", 1
         )[0]
+        self.assertIn("needs: [apply, restore-npm, restore-services]", job)
+        self.assertIn("!cancelled()", job)
+        self.assertIn("needs.apply.result == 'success'", job)
+        self.assertIn("needs.restore-npm.result == 'success'", job)
         self.assertIn(
-            "needs: [apply, restore-npm, restore-freshrss, "
-            "restore-vaultwarden, restore-pihole]",
+            "(needs.restore-services.result == 'success' || "
+            "needs.restore-services.result == 'failure')",
             job,
         )
-        self.assertNotIn("\n    if:", job)
         workflow = (
             ROOT / ".github/workflows/gcp-filedata-backup-restore.yml"
         ).read_text()

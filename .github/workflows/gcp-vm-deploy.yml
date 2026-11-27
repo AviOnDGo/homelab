@@ -404,34 +404,10 @@ jobs:
       DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
 
-  restore-freshrss:
-    name: Restore FreshRSS
+  restore-services:
+    name: Restore services
     needs: [apply, restore-npm]
-    uses: ./.github/workflows/gcp-freshrss-restore.yml
-    with:
-      force: true
-    secrets:
-      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
-      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
-  restore-vaultwarden:
-    name: Restore Vaultwarden
-    needs: [apply, restore-npm]
-    uses: ./.github/workflows/gcp-vaultwarden-restore.yml
-    with:
-      force: true
-    secrets:
-      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
-      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-
-  restore-firefly:
-    name: Restore Firefly
-    needs: [apply, restore-npm]
-    uses: ./.github/workflows/gcp-firefly-restore.yml
-    with:
-      force: true
+    uses: ./.github/workflows/gcp-service-restores.yml
     secrets:
       DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
       DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
@@ -440,17 +416,6 @@ jobs:
       FIREFLY_DB_USERNAME: ${{ secrets.FIREFLY_DB_USERNAME }}
       FIREFLY_DB_PASSWORD: ${{ secrets.FIREFLY_DB_PASSWORD }}
       FIREFLY_STATIC_CRON_TOKEN: ${{ secrets.FIREFLY_STATIC_CRON_TOKEN }}
-
-  restore-pihole:
-    name: Restore Pi-hole
-    needs: [apply, restore-npm]
-    uses: ./.github/workflows/gcp-pihole-restore.yml
-    with:
-      force: true
-    secrets:
-      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
-      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
       PIHOLE_WEB_PASSWORD: ${{ secrets.PIHOLE_WEB_PASSWORD }}
 
   restore-watchtower:
@@ -460,7 +425,8 @@ jobs:
 
   restore-filedata-backup:
     name: Restore Filedata Backup
-    needs: [apply, restore-npm, restore-freshrss, restore-vaultwarden, restore-pihole]
+    needs: [apply, restore-npm, restore-services]
+    if: ${{ !cancelled() && needs.apply.result == 'success' && needs.restore-npm.result == 'success' && (needs.restore-services.result == 'success' || needs.restore-services.result == 'failure') }}
     uses: ./.github/workflows/gcp-filedata-backup-restore.yml
     secrets:
       DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
