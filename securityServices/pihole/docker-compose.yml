@@ -3,6 +3,7 @@ services:
   pihole:
     env_file: .env
     environment:
+      FTLCONF_webserver_api_password: ${WEB_PASSWORD:?Set WEB_PASSWORD in the Pi-hole .env file}
       # If using Docker's default `bridge` network setting the dns listening mode should be set to 'all'
       FTLCONF_dns_listeningMode: 'all'
     image: pihole/pihole:latest

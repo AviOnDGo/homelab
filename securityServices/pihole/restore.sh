@@ -40,6 +40,8 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
+docker compose --env-file "${SCRIPT_DIR}/.env" -f "${COMPOSE_FILE}" config --quiet
+
 if ! rclone lsd "${DROPBOX_REMOTE}:" >/dev/null 2>&1; then
   error "Cannot reach rclone remote '${DROPBOX_REMOTE}'."
   exit 1
@@ -81,7 +83,7 @@ if docker volume inspect "${VOLUME_NAME}" >/dev/null 2>&1; then
   if ! confirm "Remove and recreate volume, then restore?"; then
     info "Keeping existing volume. Skipping restore by operator choice."
     info "Starting Pi-hole service..."
-    docker compose -f "${COMPOSE_FILE}" up -d
+    docker compose --env-file "${SCRIPT_DIR}/.env" -f "${COMPOSE_FILE}" up -d
     exit 0
   fi
 else
@@ -89,7 +91,7 @@ else
 fi
 
 info "Stopping Pi-hole service before restore..."
-docker compose -f "${COMPOSE_FILE}" down
+docker compose --env-file "${SCRIPT_DIR}/.env" -f "${COMPOSE_FILE}" down
 
 if docker volume inspect "${VOLUME_NAME}" >/dev/null 2>&1; then
   info "Removing existing volume '${VOLUME_NAME}'..."
@@ -105,7 +107,7 @@ gpg --batch --yes --passphrase "${PASSPHRASE}" -d "${LOCAL_BACKUP}" \
   | docker run --rm -i -v "${VOLUME_NAME}:/restore" alpine sh -c "cd /restore && tar -xf -"
 
 info "Starting Pi-hole service..."
-docker compose -f "${COMPOSE_FILE}" up -d
+docker compose --env-file "${SCRIPT_DIR}/.env" -f "${COMPOSE_FILE}" up -d
 
 info "Verifying restored files..."
 if ! docker exec "${CONTAINER_NAME}" ls -lh /etc/pihole/gravity.db >/dev/null 2>&1; then

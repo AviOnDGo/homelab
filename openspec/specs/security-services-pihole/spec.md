@@ -18,7 +18,7 @@ Pi-hole admin credentials SHALL be sourced from `.env` using variable substituti
 #### Scenario: Password source is variable-backed
 - **GIVEN** `securityServices/pihole/docker-compose.yml` is inspected
 - **WHEN** `FTLCONF_webserver_api_password` is reviewed
-- **THEN** the value SHALL be a variable reference
+- **THEN** the value SHALL reference `WEB_PASSWORD` from the operator-managed `.env`
 - **AND** plaintext password values SHALL exist only in operator-managed secret inputs
 
 ### REQ-003: Pi-hole DNS ports are exposed and web UI is not directly exposed

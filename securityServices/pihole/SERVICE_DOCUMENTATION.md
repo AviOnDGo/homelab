@@ -4,6 +4,11 @@ Pi-hole network-wide ad blocking DNS server for the homelab infrastructure.
 
 ## Service Configuration
 
+- Copy `.env.example` to `.env` and set `WEB_PASSWORD`. Existing installations
+  should rename `FTLCONF_webserver_api_password` to `WEB_PASSWORD` in `.env`.
+- Run Compose commands from this directory so Compose loads its `.env` for interpolation.
+  An exported `WEB_PASSWORD` takes precedence over the file.
+- DNS listening mode is configured as `all` in `docker-compose.yml`; change it there if needed.
 - **Container:** `pihole`
 - **Image:** `pihole/pihole:latest`
 - **Network:** `service` (local network)
@@ -27,7 +32,8 @@ See [RESTORE_GUIDE.md](./RESTORE_GUIDE.md) for restore and rollback instructions
 ## Access
 
 - Web Interface: http://localhost:9004/admin
-- Password: Set via `FTLCONF_webserver_api_password` environment variable
+- Password: Set via `WEB_PASSWORD` in `.env`, passed to Pi-hole as
+  `FTLCONF_webserver_api_password`
 
 ## Data Persistence
 
