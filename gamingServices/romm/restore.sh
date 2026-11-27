@@ -8,7 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 FILEDATA_DIR="${SCRIPT_DIR}/../../backupServices/filedata"
 FILEDATA_ENV="${FILEDATA_DIR}/.env"
-FILEDATA_COMPOSE="${FILEDATA_DIR}/docker-compose.local.yml"
+FILEDATA_STARTUP="${FILEDATA_DIR}/start-backup.sh"
 FILEDATA_IMAGE="homelab/filedata-backup:local"
 POSTGRES_VOLUME="romm_postgresdata"
 FILEDATA_VOLUME="romm_filedata"
@@ -289,7 +289,7 @@ if ! docker compose -f "${COMPOSE_FILE}" up -d; then
 fi
 
 info "Starting Local filedata backup service..."
-if ! docker compose -f "${FILEDATA_COMPOSE}" up -d "${FILEDATA_CONTAINER}"; then
+if ! "${FILEDATA_STARTUP}" local; then
   error "RomM restored, but ${FILEDATA_CONTAINER} failed to start."
   exit 1
 fi
