@@ -107,9 +107,8 @@ Prefer NPM routing over direct host port publishing.
 
 If Syncthing backup lanes cause operational issues, rollback with the following sequence:
 
-1. Remove or comment Syncthing lane mounts and cron entries from:
-  - `backupServices/filedata/docker-compose.yml`
-  - `backupServices/filedata/docker-compose.local.yml`
+1. Remove the Syncthing entry from:
+  - `backupServices/filedata/backup-volumes.conf`
 2. Remove Syncthing lane variables from:
   - `backupServices/filedata/env.acc.example`
   - `backupServices/filedata/env.prd.example`
@@ -117,7 +116,7 @@ If Syncthing backup lanes cause operational issues, rollback with the following 
 
 ```bash
 cd backupServices/filedata
-docker compose up -d --force-recreate filedata-backup
+./start-backup.sh default
 ```
 
 4. Keep previously generated Syncthing and SecondBrain backup artifacts until post-rollback verification completes.
