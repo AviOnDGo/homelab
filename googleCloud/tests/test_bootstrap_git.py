@@ -214,6 +214,34 @@ fetch_secret_value() {
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.checkout.exists())
 
+    def test_mixed_case_host_reuses_verified_hashed_key(self) -> None:
+        known_hosts = self.ssh_dir / "known_hosts"
+        cases = (
+            ("git@Git.Example.com:owner/repo.git", "git.example.com"),
+            ("ssh://git@Git.Example.com:443/owner/repo.git", "[git.example.com]:443"),
+        )
+        for url, hostname in cases:
+            with self.subTest(url=url):
+                known_hosts.write_text(
+                    f"{hostname} ssh-ed25519 "
+                    "AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n",
+                    encoding="utf-8",
+                )
+                subprocess.run(
+                    ["ssh-keygen", "-H", "-f", str(known_hosts)],
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+                original = known_hosts.read_bytes()
+                if self.checkout.exists():
+                    self.git("-C", str(self.checkout), "remote", "set-url", "origin", url)
+                self.env["TEST_GIT_URL"] = url
+                result = self.bootstrap()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(known_hosts.read_bytes(), original)
+                self.assertFalse((self.work / "scan-log").exists())
+
     def test_existing_checkout_fails_if_host_scan_fails(self) -> None:
         self.assertEqual(self.bootstrap().returncode, 0)
         url = "ssh://git@other.example:443/owner/repo.git"

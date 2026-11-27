@@ -205,6 +205,7 @@ if [ -n "$HOMELAB_GIT_URL" ]; then
       exit 1
     fi
     git_port="$((10#$git_port))"
+    git_host="$${git_host,,}"
     git_known_host="$git_host"
     if [ "$git_port" -ne 22 ]; then
       git_known_host="[$git_host]:$git_port"
