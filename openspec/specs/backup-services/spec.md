@@ -252,10 +252,10 @@ to verify files exist), monthly (full test-restore to a non-production environme
 - **THEN** database row counts SHALL match known baselines
 - **AND** Vaultwarden vault SHALL unlock successfully from the restored data
 
-### REQ-018: Remote backup services SHALL be deployed from dedicated remote-scoped compose files
+### REQ-018: Remote backup services SHALL be deployed from dedicated scoped compose files
 When deploying backup services to a remote host, the operator SHALL use
-`docker-compose.remote.yml` instead of `docker-compose.yml` for both
-`backupServices/postgres/` and `backupServices/filedata/`.
+`backupServices/postgres/docker-compose.remote.yml` for PostgreSQL and
+`backupServices/filedata/docker-compose.prod.yml` for filedata.
 
 #### Scenario: Remote postgres backup deployed with correct scope
 - **GIVEN** a remote host is configured for the remote PostgreSQL backup profile
@@ -265,44 +265,45 @@ When deploying backup services to a remote host, the operator SHALL use
 - **AND** only `finance_network` and `security_network` SHALL be joined
 - **AND** `firefly` and `firefoxsync` SHALL each have a scheduled backup job
 
-#### Scenario: Remote filedata backup deployed with correct scope
-- **GIVEN** a remote host is configured for the remote filedata backup profile
+#### Scenario: Prod filedata backup deployed with correct scope
+- **GIVEN** a remote host is configured for the prod filedata backup profile
 - **WHEN** the operator starts the filedata backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.remote.yml up -d`
+- **THEN** the command SHALL be `docker compose -f docker-compose.prod.yml up -d`
 - **AND** only `pihole_filedata`, `npm_filedata`, `vaultwarden_filedata`, and
   `freshrss_filedata` volumes SHALL be mounted
 
-### REQ-019: Remote-scoped compose files SHALL be self-contained and tracked on main
-Each `docker-compose.remote.yml` file SHALL be a fully valid, standalone Docker Compose
-file that does not use `extends:` or `include:` to reference `docker-compose.yml`.
+### REQ-019: Scoped compose files SHALL be self-contained and tracked on main
+The remote PostgreSQL and prod filedata Compose files SHALL be fully valid, standalone
+Docker Compose files that do not use `extends:` or `include:` to reference `docker-compose.yml`.
 Both files SHALL remain versioned on the `main` branch.
 
 #### Scenario: Remote compose files exist on main
 - **GIVEN** the `main` branch
 - **WHEN** the paths `backupServices/postgres/docker-compose.remote.yml` and
-  `backupServices/filedata/docker-compose.remote.yml` are checked
+  `backupServices/filedata/docker-compose.prod.yml` are checked
 - **THEN** both files SHALL exist and be valid Docker Compose Specification
   documents
 - **AND** neither file SHALL reference `extends:` or `include:` directives
 
-### REQ-020: Remote backup profiles SHALL validate independently
-Each remote backup profile SHALL render successfully with `docker compose
+### REQ-020: Scoped backup profiles SHALL validate independently
+Each remote PostgreSQL and prod filedata backup profile SHALL render successfully with `docker compose
 config` without requiring the canonical default profile.
 
-#### Scenario: Remote compose configuration is independently valid
-- **GIVEN** the operator is in a backup service directory
-- **WHEN** `docker compose -f docker-compose.remote.yml config` is run
+#### Scenario: Scoped compose configuration is independently valid
+- **GIVEN** the operator is in the applicable backup service directory
+- **WHEN** `docker compose -f docker-compose.remote.yml config` is run for PostgreSQL
+  or `docker compose -f docker-compose.prod.yml config` is run for filedata
 - **THEN** the command SHALL produce a valid Compose model
 - **AND** it SHALL NOT require `docker-compose.yml` to be present or included
 
-### REQ-021: Remote backup profile changes SHALL remain deployment-scoped
-Changes to a remote-scoped backup profile SHALL affect only services deployed
-to that remote profile and SHALL NOT enable default or Local profile jobs.
+### REQ-021: Scoped backup profile changes SHALL remain deployment-scoped
+Changes to a remote PostgreSQL or prod filedata backup profile SHALL affect only
+services deployed to that profile and SHALL NOT enable default or Local profile jobs.
 
-#### Scenario: Remote profile addition preserves default and Local scope
-- **GIVEN** a backup job is added to the remote profile
+#### Scenario: Scoped profile addition preserves default and Local scope
+- **GIVEN** a backup job is added to the remote PostgreSQL or prod filedata profile
 - **WHEN** all backup profile Compose files are inspected
-- **THEN** the remote profile SHALL contain only that profile's deployed jobs
+- **THEN** the changed profile SHALL contain only that profile's deployed jobs
 - **AND** the default and Local profiles SHALL retain their documented service sets
 
 ### REQ-022: Paperless retained documents are registered with filedata-backup
@@ -310,10 +311,10 @@ The `paperless_filedata` volume SHALL be mounted read-only in `filedata-backup` 
 
 #### Scenario: Backup profiles preserve configuration during the category move
 - **GIVEN** Paperless backup configuration exists before the move to Knowledge Services
-- **WHEN** the default, Local, and Remote database and filedata profiles are reviewed after the move
+- **WHEN** the default, Local, Remote PostgreSQL, and Prod filedata profiles are reviewed after the move
 - **THEN** the default and Local profiles SHALL group Paperless entries under Knowledge Services
 - **AND** existing Paperless backup modes, schedules, and remote destinations SHALL remain unchanged
-- **AND** the Remote profiles SHALL NOT enable Paperless jobs
+- **AND** the Remote PostgreSQL and Prod filedata profiles SHALL NOT enable Paperless jobs
 
 #### Scenario: Paperless media volume is mounted in filedata-backup
 - **GIVEN** `backupServices/filedata/docker-compose.yml` is inspected
@@ -421,7 +422,7 @@ The Syncthing filedata backup lane SHALL use `archive` backup mode, run daily, a
 
 ### REQ-029: Syncthing Backup Scope Is Default And Local Only
 Syncthing backup registration SHALL be enabled in the default filedata profile,
-retained as commented configuration in the Local profile, and absent from Remote.
+retained as commented configuration in the Local profile, and absent from Prod.
 
 #### Scenario: Profile scope matches Syncthing backup deployment
 - **GIVEN** filedata compose profile files are compared
@@ -429,13 +430,13 @@ retained as commented configuration in the Local profile, and absent from Remote
 - **THEN** the Syncthing config lane SHALL be enabled in `docker-compose.yml`
 - **AND** the Local Syncthing mount and volume declaration SHALL remain commented
 - **AND** the Local profile SHALL NOT schedule Syncthing while its registration is disabled
-- **AND** the Syncthing config lane SHALL be absent from `docker-compose.remote.yml`
+- **AND** the Syncthing config lane SHALL be absent from `docker-compose.prod.yml`
 
 ### REQ-030: Backup Compose Entries Follow Category And Service Order
 Both backup services SHALL group source-volume mounts, top-level source-volume
 declarations, and cron jobs alphabetically by service category, then by service
 name. Multiple volumes of one service SHALL be sorted by purpose suffix. This
-layout SHALL apply to default, Local, and Remote compose files, including disabled
+layout SHALL apply to default, Local, Remote PostgreSQL, and Prod filedata compose files, including disabled
 entries. Network references and declarations SHALL be sorted by network name.
 Shared secrets mounts SHALL follow the grouped source volumes.
 
@@ -504,7 +505,7 @@ Both services SHALL retain the `unless-stopped` restart policy.
 - **THEN** the container SHALL execute the updated image-bundled script
 
 ### REQ-033: Jackett and Transmission Configuration Are Backed Up
-The default and Local filedata backup profiles SHALL mount `jackett_filedata` and `transmission_filedata` read-only and SHALL schedule separate encrypted archive jobs for each volume. The Remote profile SHALL NOT register either volume.
+The default and Local filedata backup profiles SHALL mount `jackett_filedata` and `transmission_filedata` read-only and SHALL schedule separate encrypted archive jobs for each volume. The Prod profile SHALL NOT register either volume.
 
 #### Scenario: Applicable profiles back up Jackett and Transmission
 - **GIVEN** the default or Local filedata backup profile is deployed
@@ -513,13 +514,13 @@ The default and Local filedata backup profiles SHALL mount `jackett_filedata` an
 - **AND** `transmission_filedata` SHALL be mounted at `/backup-sources/transmission` and scheduled for archive backup
 - **AND** the profile SHALL use the corresponding production or acceptance Dropbox paths from its environment example
 
-#### Scenario: Remote profile excludes Jackett and Transmission
-- **GIVEN** the Remote filedata backup profile is inspected
+#### Scenario: Prod profile excludes Jackett and Transmission
+- **GIVEN** the Prod filedata backup profile is inspected
 - **WHEN** media volume sources and jobs are reviewed
 - **THEN** neither `jackett_filedata` nor `transmission_filedata` SHALL be registered
 
 ### REQ-034: Jellyfin Backup Covers Configuration Only
-The default filedata backup profile SHALL register `jellyfin_filedata` as a read-only source at `/backup-sources/jellyfin` and SHALL back it up using the existing encrypted archive workflow. The profile SHALL NOT back up Jellyfin media-library bind mounts, downloads, transcodes, or cache. Jellyfin SHALL NOT be registered in Local or Remote filedata backup profiles unless those profiles deploy Jellyfin.
+The default filedata backup profile SHALL register `jellyfin_filedata` as a read-only source at `/backup-sources/jellyfin` and SHALL back it up using the existing encrypted archive workflow. The profile SHALL NOT back up Jellyfin media-library bind mounts, downloads, transcodes, or cache. Jellyfin SHALL NOT be registered in Local or Prod filedata backup profiles unless those profiles deploy Jellyfin.
 
 #### Scenario: Default filedata profile backs up Jellyfin configuration
 - **GIVEN** the default filedata backup compose file and production environment example are inspected
@@ -528,8 +529,8 @@ The default filedata backup profile SHALL register `jellyfin_filedata` as a read
 - **AND** a dedicated Jellyfin cron job and archive destination SHALL be configured
 - **AND** no Jellyfin media-library source SHALL be registered
 
-#### Scenario: Local and Remote exclude Jellyfin backups
-- **GIVEN** the Local and Remote filedata backup profiles do not deploy Jellyfin
+#### Scenario: Local and Prod exclude Jellyfin backups
+- **GIVEN** the Local and Prod filedata backup profiles do not deploy Jellyfin
 - **WHEN** their source mounts, volume declarations, and cron jobs are inspected
 - **THEN** neither profile SHALL register `jellyfin_filedata`
 - **AND** neither profile SHALL schedule a Jellyfin backup job
@@ -547,7 +548,7 @@ The OpenCode service SHALL NOT require OpenCode-specific backup settings in
 the filedata environment examples.
 
 #### Scenario: OpenCode has no filedata backup entry
-- **GIVEN** the default, Local, and Remote filedata backup profiles are inspected
+- **GIVEN** the default, Local, and Prod filedata backup profiles are inspected
 - **WHEN** their AI Services entries and environment examples are reviewed
 - **THEN** no profile SHALL mount or schedule an OpenCode data backup
 - **AND** the environment examples SHALL NOT define OpenCode backup settings
