@@ -28,6 +28,23 @@ Safety behavior:
 
 - If restore fails after service shutdown, recovery is not auto-resumed.
 
+For GCP, the **Restore Pi-hole on GCP VM** workflow skips an existing volume by
+default; enable `force` to replace it. The deployment workflow forces a restore
+after every successful apply and NPM restore, including no-op applies. Schedule
+DNS downtime and verify the backup before applying. Configure the required
+secrets and WIF trust as described in the [GCP guide](../../googleCloud/README.md).
+The VM needs `security_network` and available TCP/UDP port 53. Restrict DNS
+access to authorized clients; do not expose an open resolver. Workflow
+concurrency does not protect direct restore or backup operations.
+
+After the workflow is available on the default branch, start a non-forced run
+with `gh workflow run gcp-pihole-restore.yml --ref main`.
+
+If a restore fails after clearing the volume, the script restarts a previously
+running `filedata-backup` even if the data is incomplete. Check the backup
+service and Pi-hole data before retrying; a non-forced run skips an existing
+volume.
+
 ### 2. Verify recovery
 
 ```bash

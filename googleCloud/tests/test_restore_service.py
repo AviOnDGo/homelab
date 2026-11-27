@@ -259,7 +259,7 @@ esac""",
         self.assertIn("      force: true\n", job)
 
     def test_restore_jobs_share_a_queued_concurrency_group(self) -> None:
-        for service in ("npm", "freshrss", "vaultwarden", "firefly", "watchtower"):
+        for service in ("npm", "freshrss", "vaultwarden", "firefly", "pihole", "watchtower"):
             with self.subTest(service=service):
                 workflow = (
                     ROOT / ".github" / "workflows" / f"gcp-{service}-restore.yml"
@@ -548,6 +548,44 @@ esac""",
             self.assertIn(f"      {name}:\n", workflow)
             self.assertIn(f"          {name}: ${{{{ secrets.{name} }}}}\n", workflow)
             self.assertIn(f'          : "${{{name}:?', workflow)
+
+    def test_pihole_workflow_wires_restore_credentials(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-pihole-restore.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("  workflow_call:\n", workflow)
+        self.assertIn("  workflow_dispatch:\n", workflow)
+        self.assertEqual(workflow.count("        default: false\n"), 2)
+        self.assertIn("    environment: prod\n", workflow)
+        self.assertIn("          SERVICE: pihole\n", workflow)
+        self.assertIn("          FORCE: ${{ inputs.force || false }}\n", workflow)
+        self.assertIn("        run: ./googleCloud/restore-service.sh\n", workflow)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "PIHOLE_WEB_PASSWORD",
+        ):
+            self.assertIn(f"      {name}:\n", workflow)
+            self.assertEqual(
+                workflow.count(f"          {name}: ${{{{ secrets.{name} }}}}\n"), 2
+            )
+            self.assertIn(f'          : "${{{name}:?', workflow)
+
+    def test_deployment_runs_pihole_after_npm(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        job = workflow.split("\n  restore-pihole:\n", 1)[1].split(
+            "\n  restore-watchtower:", 1
+        )[0]
+        self.assertIn("    needs: [apply, restore-npm]\n", job)
+        self.assertNotIn("\n    if:", job)
+        self.assertIn("    uses: ./.github/workflows/gcp-pihole-restore.yml\n", job)
+        self.assertIn("      force: true\n", job)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "PIHOLE_WEB_PASSWORD",
+        ):
+            self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
 
     def test_deployment_runs_firefly_after_npm(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(

@@ -306,3 +306,24 @@ database restore workflow using the existing GCP restore transport.
 - **WHEN** it invokes the restore script on the VM
 - **THEN** it SHALL transmit those values through SSH standard input without printing them or placing them in command arguments
 - **AND** Firefly configuration SHALL be supplied to Compose without persisting it in the temporary workflow directory
+
+### REQ-019: Pi-hole GCP recovery SHALL be workflow-orchestrated
+The deployment SHALL provide a reusable and manually dispatchable Pi-hole
+filedata restore workflow using the existing GCP restore transport.
+
+#### Scenario: Manual recovery protects an existing volume
+- **GIVEN** an operator dispatches the Pi-hole restore workflow
+- **WHEN** force is not enabled and the Pi-hole volume exists
+- **THEN** the restore SHALL skip the existing volume without replacing its data
+
+#### Scenario: Deployment restores after NPM
+- **GIVEN** the VM apply and NPM restore jobs complete successfully
+- **WHEN** the deployment schedules Pi-hole recovery
+- **THEN** it SHALL invoke the Pi-hole workflow with force enabled, including after a no-op apply
+- **AND** the recovery SHALL share the queued service restore concurrency group
+
+#### Scenario: Pi-hole credentials are transmitted privately
+- **GIVEN** the restore workflow receives Dropbox, GPG, and Pi-hole password secrets
+- **WHEN** it invokes the restore script on the VM
+- **THEN** it SHALL transmit those values through SSH standard input without printing them or placing them in command arguments
+- **AND** the Pi-hole password SHALL be supplied to Compose through the process environment
