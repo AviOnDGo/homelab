@@ -297,6 +297,19 @@ uses `archive` when `{SERVICE}_BACKUP_MODE` is unset or empty. Set
 environment examples include these settings. Hyphenated job names use
 uppercase underscore environment keys, such as `immich-library` mapping to
 `IMMICH_LIBRARY_BACKUP_MODE`.
+
+Before any archive or sync-crypt backup, the script checks that the source
+directory exists and is an actual mount point. If either check fails, the job
+stops before creating an archive or modifying a remote and sends a Discord
+failure notification when configured. This applies to scheduled and manual
+backups in all profiles. Rebuild and recreate the backup container to apply
+the updated script.
+
+The mount check does not verify the volume's identity or contents. An existing
+but empty volume can still cause sync-crypt to remove remote files, especially
+when retention is zero. Verify the source volume and its contents before
+enabling a sync job or replacing a volume.
+
 RomM filedata is enabled in the Local profile only and uses the Filen backend
 wrapped by rclone crypt at `filen-crypt:/Romm`.
 Before the RomM `sync-crypt` job runs, the script verifies that both `library/`
