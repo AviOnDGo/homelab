@@ -2,12 +2,11 @@
 
 ## Overview
 
-Watchtower is an automated Docker container update service that monitors running containers and automatically pulls new images when available. It runs daily at 4 AM, ensures security patches are applied promptly, and sends Discord notifications for all update events.
+Watchtower is an automated Docker container update service that monitors running containers and automatically pulls new images when available. Its update schedule is configurable.
 
 **Key Features:**
 - Automatic container image updates on configurable schedule
 - Label-based exclusion for critical services (databases, password vaults)
-- Discord webhook notifications for update events
 - Automatic cleanup of old images after successful updates
 - Preserves all container configuration (volumes, networks, env vars, labels)
 
@@ -15,17 +14,15 @@ Watchtower is an automated Docker container update service that monitors running
 
 ### Environment Variables
 
-All configuration is managed through `/securityServices/watchtower/.env`:
+Set the schedule in `securityServices/watchtower/.env`; other settings below
+are set in the Compose file. Notifications are not configured. The local
+environment file is used only for Compose interpolation: other variables
+previously passed to the container from that file are no longer forwarded.
 
 | Variable | Value | Description |
 |----------|-------|-------------|
-| `WATCHTOWER_SCHEDULE` | `0 4 * * *` | Cron schedule for updates (daily at 4 AM) |
+| `WATCHTOWER_SCHEDULE` | `0 0 3 * * *` | Example cron schedule (daily at 3 AM) |
 | `WATCHTOWER_CLEANUP` | `true` | Remove old images after successful updates |
-| `TZ` | `UTC` | Timezone for scheduling |
-| `WATCHTOWER_NOTIFICATION_URL` | `discord://...` | Discord webhook for notifications (shoutrrr format) |
-| `WATCHTOWER_NOTIFICATIONS` | `shoutrrr` | Notification system to use |
-| `WATCHTOWER_INCLUDE_STOPPED` | `false` | Don't update stopped containers |
-| `WATCHTOWER_INCLUDE_RESTARTING` | `true` | Update containers that are restarting |
 
 ### Excluded Containers
 
@@ -99,8 +96,7 @@ docker inspect invidious-db | grep watchtower.enable
 ## Monitoring
 
 ### What to Monitor
-- **Update success/failure notifications** - Check Discord channel daily
-- **Log entries at 4 AM** - Verify scheduled runs complete successfully
+- **Update logs** - Verify scheduled runs complete successfully
 - **Excluded containers** - Ensure they're not being updated
 - **Disk space** - Old images should be cleaned up automatically
 
@@ -108,7 +104,6 @@ docker inspect invidious-db | grep watchtower.enable
 1. Review update logs: `docker logs watchtower | tail -500`
 2. Verify excluded containers still have labels: `docker inspect <container> | grep watchtower`
 3. Check for any failed updates and investigate
-4. Validate Discord notifications are being received
 
 ## Troubleshooting
 
@@ -124,16 +119,6 @@ docker logs watchtower
 cd securityServices/watchtower
 docker compose restart
 ```
-
-### Discord Notifications Not Received
-1. Verify webhook URL format in `.env` (should be `discord://webhook_id/webhook_token`)
-2. Test webhook manually:
-   ```bash
-   curl -X POST "https://discord.com/api/webhooks/<id>/<token>" \
-     -H "Content-Type: application/json" \
-     -d '{"content": "Watchtower test notification"}'
-   ```
-3. Check Watchtower logs for notification errors
 
 ### Container Unexpectedly Updated
 1. Verify the container has the exclusion label:
@@ -210,4 +195,3 @@ If an update causes issues:
 - Official Documentation: https://containrrr.dev/watchtower/
 - GitHub Repository: https://github.com/containrrr/watchtower
 - Label-based filtering: https://containrrr.dev/watchtower/container-selection/
-- Notification configuration: https://containrrr.dev/watchtower/notifications/

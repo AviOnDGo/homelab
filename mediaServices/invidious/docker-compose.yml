@@ -11,9 +11,6 @@ services:
     ports:
       - 3001:3000
     environment:
-      http_proxy: http://gluetun:8888
-      https_proxy: http://gluetun:8888
-      no_proxy: localhost,127.0.0.1
       # Please read the following file for a comprehensive list of all available
       # configuration options and their associated syntax:
       # https://github.com/iv-org/invidious/blob/master/config/config.example.yml
@@ -25,6 +22,10 @@ services:
           host: invidious-db
           port: 5432
         check_tables: true
+        http_proxy:
+          type: http
+          host: gluetun
+          port: 8888
         invidious_companion:
         # URL used for the internal communication between invidious and invidious companion
         # There is no need to change that except if Invidious companion does not run on the same docker compose file.
@@ -58,7 +59,11 @@ services:
     env_file: .env
     environment:
        - SERVER_SECRET_KEY=${INVIDIOUS_COMPANION_KEY}
+       - PROXY=http://gluetun:8888
     restart: unless-stopped
+    networks:
+      - default
+      - security_network
     # Uncomment only if you have configured "public_url" for Invidious companion
     # Or if you want to use Invidious companion as an API in your program.
     # Remove "127.0.0.1:" if used from an external IP

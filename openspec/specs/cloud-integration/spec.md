@@ -196,15 +196,6 @@ Any optional repository clone performed during VM bootstrap SHALL use runtime-re
 - **THEN** credentials SHALL be retrieved at runtime from approved secret sources
 - **AND** temporary credential files SHALL be shredded or removed after clone completion
 
-### REQ-012: Netdata claim automation SHALL remain post-provision and secret-safe
-Netdata claim operations SHALL execute in post-provision onboarding stages and SHALL keep claim credentials out of Terraform state and metadata.
-
-#### Scenario: Netdata claim runs after readiness success
-- **GIVEN** bootstrap readiness verification succeeds
-- **WHEN** workflow onboarding starts
-- **THEN** Netdata claim SHALL be attempted using configured claim inputs
-- **AND** claim credentials SHALL NOT be persisted in Terraform-managed metadata artifacts
-
 ### REQ-013: Cloud recovery workflow SHALL use existing keyless GCP trust boundaries
 FreshRSS recovery workflow execution SHALL authenticate to GCP using repository-approved keyless OIDC federation and SHALL run under protected environment controls.
 
@@ -234,3 +225,63 @@ Restore credentials and passphrases SHALL be handled in workflow/runtime secret 
 - **WHEN** CI logs are inspected
 - **THEN** secret values for Dropbox access and decryption SHALL NOT be printed
 - **AND** diagnostics SHALL remain sufficient to troubleshoot non-secret failures
+
+### REQ-015: GCP VM provisioning SHALL exclude Netdata
+GCP VM bootstrap and post-provision workflow execution SHALL NOT install Netdata, configure Netdata Cloud, or send VM metrics to Netdata services.
+
+#### Scenario: VM provisioning does not enable Netdata reporting
+- **GIVEN** a GCP VM is provisioned through the cloud workflow
+- **WHEN** bootstrap and post-provision onboarding complete
+- **THEN** Netdata SHALL NOT be installed or claimed
+- **AND** Netdata claim credentials SHALL NOT be required or transmitted
+
+### REQ-016: GCP deployment SHALL configure the rclone Dropbox remote on the VM
+After onboarding, the deployment workflow SHALL run the workflow checkout's
+`scripts/host/configure-rclone.sh` on the VM as root, sending Dropbox tokens and
+the script over SSH standard input.
+
+#### Scenario: Dropbox secrets are configured
+- **GIVEN** `DROPBOX_AUTH_TOKEN` and `DROPBOX_REFRESH_TOKEN` exist in the `prod` environment
+- **WHEN** the apply job reaches the rclone setup step
+- **THEN** the VM SHALL have rclone installed and a verified `dropbox` remote in root's rclone config
+- **AND** the tokens SHALL NOT appear in command lines, Terraform state, or VM metadata
+
+#### Scenario: Dropbox secrets are absent
+- **GIVEN** either Dropbox secret is empty in the `prod` environment
+- **WHEN** the apply job reaches the rclone setup step
+- **THEN** the step SHALL emit a warning and skip rclone setup without failing the deployment
+
+### REQ-017: GCP Tailscale and DuckDNS setup SHALL be independently runnable
+The deployment SHALL provide a reusable, manually dispatchable workflow to
+install and connect Tailscale on the GCP VM and update its DuckDNS record.
+
+#### Scenario: Login is required but credentials are missing
+- **GIVEN** the VM's Tailscale backend state is `NeedsLogin` and credentials
+  are incomplete
+- **WHEN** the setup workflow runs
+- **THEN** the login step SHALL emit a warning and skip login
+- **AND** the DuckDNS update SHALL fail because Tailscale is not running
+
+#### Scenario: An existing running session needs no credentials
+- **GIVEN** the VM's Tailscale backend state is `Running`
+- **WHEN** the setup workflow runs
+- **THEN** it SHALL skip auth-key creation and login
+- **AND** it SHALL continue to update DuckDNS with the VM's Tailscale IPv4 address
+
+#### Scenario: A stopped session reconnects without credentials
+- **GIVEN** the VM's Tailscale backend state is `Stopped`
+- **WHEN** the setup workflow runs
+- **THEN** it SHALL attempt `tailscale up` without an auth key
+- **AND** it SHALL request login credentials only if the backend then reports `NeedsLogin`
+
+#### Scenario: A VM requires initial Tailscale login
+- **GIVEN** the VM needs Tailscale installation or login
+- **WHEN** the setup workflow runs with valid onboarding credentials
+- **THEN** it SHALL install Tailscale if needed and authenticate the VM
+- **AND** it SHALL update DuckDNS only after Tailscale is running
+
+#### Scenario: Tailscale or DNS update fails
+- **GIVEN** Tailscale setup or the DuckDNS update fails
+- **WHEN** the deployment invokes the setup workflow
+- **THEN** the setup workflow SHALL report the failure
+- **AND** service restore jobs SHALL NOT depend on its success

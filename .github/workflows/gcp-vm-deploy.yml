@@ -40,7 +40,7 @@ permissions:
 env:
   TF_IN_AUTOMATION: "true"
   TF_INPUT: "false"
-  TF_VAR_vm_service_account_email: ${{ vars.GCP_VM_SERVICE_ACCOUNT }}
+  TF_VAR_vm_service_account_email: ${{ vars.GCP_SERVICE_ACCOUNT }}
   TF_VAR_bootstrap_git_repo_ssh_url: ${{ vars.BOOTSTRAP_GIT_REPO_SSH_URL }}
   TF_VAR_bootstrap_git_deploy_key_secret_name: ${{ vars.BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME }}
 
@@ -56,7 +56,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate required workflow variables
         working-directory: .
@@ -90,53 +90,17 @@ jobs:
             exit 1
           fi
 
-      - name: Validate onboarding configuration
-        working-directory: .
-        env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
-          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
-          NETDATA_CLAIM_TOKEN: ${{ secrets.NETDATA_CLAIM_TOKEN }}
-          NETDATA_CLAIM_ROOMS: ${{ secrets.NETDATA_CLAIM_ROOMS }}
-          NETDATA_CLAIM_URL: ${{ vars.NETDATA_CLAIM_URL }}
-        run: |
-          missing=0
-          if [[ -z "$TS_STATIC_AUTH_KEY" ]]; then
-            if [[ -z "$TS_OAUTH_CLIENT_ID" || -z "$TS_OAUTH_CLIENT_SECRET" || -z "$TS_TAILNET" ]]; then
-              echo "Provide either TAILSCALE_EPHEMERAL_AUTH_KEY secret or OAuth settings (TAILSCALE_OAUTH_CLIENT_ID, TAILSCALE_OAUTH_CLIENT_SECRET, TAILSCALE_TAILNET)."
-              missing=1
-            fi
-          fi
-
-          if [[ -z "$NETDATA_CLAIM_TOKEN" ]]; then
-            echo "Missing required variable: NETDATA_CLAIM_TOKEN"
-            missing=1
-          fi
-          if [[ -z "$NETDATA_CLAIM_ROOMS" ]]; then
-            echo "Missing required variable: NETDATA_CLAIM_ROOMS"
-            missing=1
-          fi
-          if [[ -z "$NETDATA_CLAIM_URL" ]]; then
-            echo "Missing required variable: NETDATA_CLAIM_URL"
-            missing=1
-          fi
-
-          if [[ "$missing" -ne 0 ]]; then
-            exit 1
-          fi
-
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       - name: Authenticate to GCP via OIDC (shared identity)
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Validate workflow trust context
         run: |
@@ -226,7 +190,7 @@ jobs:
           fi
 
       - name: Upload Terraform plan
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: gcp-vm-tfplan
           path: googleCloud/tfplan
@@ -267,7 +231,7 @@ jobs:
           echo "WARNING: apply main/workflow guard bypassed for this manual run"
 
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate required workflow variables
         working-directory: .
@@ -302,16 +266,16 @@ jobs:
           fi
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       - name: Authenticate to GCP via OIDC (shared identity)
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Validate shared identity apply permissions
         run: |
@@ -349,7 +313,7 @@ jobs:
           fi
 
       - name: Download Terraform plan
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: gcp-vm-tfplan
           path: googleCloud
@@ -382,214 +346,92 @@ jobs:
         run: |
           ./googleCloud/bootstrap-readiness.sh "$VM_NAME" "$PROJECT_ID" "$ZONE"
 
-      - name: Acquire short-lived Tailscale auth credential
-        id: tailscale_auth
+      - name: Configure rclone Dropbox remote on VM
         working-directory: .
         env:
-          TS_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          TS_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
-          TS_STATIC_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
-          TS_TAILNET: ${{ vars.TAILSCALE_TAILNET }}
+          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
         run: |
-          if [[ -n "$TS_STATIC_AUTH_KEY" ]]; then
-            echo "Using Tailscale key from approved secret source"
-            echo "::add-mask::$TS_STATIC_AUTH_KEY"
-            echo "auth_key=$TS_STATIC_AUTH_KEY" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Attempt OAuth flow; warn if it fails but continue (Tailscale setup can be done manually)
-          set +e
-          oauth_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/oauth/token" \
-            -u "$TS_OAUTH_CLIENT_ID:$TS_OAUTH_CLIENT_SECRET" \
-            -H "Content-Type: application/x-www-form-urlencoded" \
-            --data-urlencode "grant_type=client_credentials" 2>&1)
-          oauth_status=$?
-          set -e
-
-          if [[ $oauth_status -ne 0 ]]; then
-            echo "::warning::Tailscale OAuth token request failed (curl error $oauth_status)"
-            echo "::warning::Response: $oauth_response"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          access_token=$(echo "$oauth_response" | jq -r '.access_token' 2>/dev/null || echo "")
-
-          if [[ -z "$access_token" || "$access_token" == "null" ]]; then
-            echo "::warning::Unable to extract Tailscale OAuth access token from response"
-            echo "::warning::Response: $oauth_response"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          set +e
-          key_response=$(curl -sS -X POST "https://api.tailscale.com/api/v2/tailnet/$TS_TAILNET/keys" \
-            -H "Authorization: Bearer $access_token" \
-            -H "Content-Type: application/json" \
-            -d '{"capabilities":{"devices":{"create":{"reusable":false,"ephemeral":true,"preauthorized":true,"tags":["tag:server"]}}},"expirySeconds":1800,"description":"gcp-vm-deploy-onboarding"}' 2>&1)
-          key_status=$?
-          set -e
-
-          if [[ $key_status -ne 0 ]]; then
-            echo "::warning::Tailscale key generation request failed (curl error $key_status)"
-            echo "::warning::Response: $key_response"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          auth_key=$(echo "$key_response" | jq -r '.key' 2>/dev/null || echo "")
-
-          if [[ -z "$auth_key" || "$auth_key" == "null" ]]; then
-            echo "::warning::Unable to extract Tailscale auth key from response"
-            echo "::warning::Response: $key_response"
-            echo "::warning::Tailscale onboarding will be skipped; manually configure Tailscale in VM"
-            echo "auth_key=" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "::add-mask::$auth_key"
-          echo "auth_key=$auth_key" >> "$GITHUB_OUTPUT"
-
-      - name: Run post-provision onboarding on VM
-        working-directory: .
-        env:
-          TS_AUTH_KEY: ${{ steps.tailscale_auth.outputs.auth_key }}
-          NETDATA_CLAIM_TOKEN: ${{ secrets.NETDATA_CLAIM_TOKEN }}
-          NETDATA_CLAIM_ROOMS: ${{ secrets.NETDATA_CLAIM_ROOMS }}
-          NETDATA_CLAIM_URL: ${{ vars.NETDATA_CLAIM_URL }}
-        run: |
-          gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo TS_AUTH_KEY='$TS_AUTH_KEY' NETDATA_CLAIM_TOKEN='$NETDATA_CLAIM_TOKEN' NETDATA_CLAIM_ROOMS='$NETDATA_CLAIM_ROOMS' NETDATA_CLAIM_URL='$NETDATA_CLAIM_URL' bash -s" <<'EOF'
           set -euo pipefail
-
-          if [[ -n "$TS_AUTH_KEY" ]]; then
-            echo "[onboarding] Starting Tailscale onboarding..."
-            sudo tailscale up --authkey="$TS_AUTH_KEY" --ssh --accept-dns=false --advertise-tags=tag:server
-            echo "[onboarding] Tailscale onboarding complete"
-          else
-            echo "[onboarding] Tailscale auth key not available; skipping Tailscale onboarding"
+          if [[ -z "$DROPBOX_AUTH_TOKEN" || -z "$DROPBOX_REFRESH_TOKEN" ]]; then
+            echo "::warning::Dropbox secrets missing; skipping rclone setup on the VM"
+            exit 0
           fi
+          # Send tokens on stdin, followed by this commit's script, so neither
+          # appears in a command line on the runner or the VM.
+          {
+            printf '%s\n' "$DROPBOX_AUTH_TOKEN" | base64 -w0; echo
+            printf '%s\n' "$DROPBOX_REFRESH_TOKEN" | base64 -w0; echo
+            cat scripts/host/configure-rclone.sh
+          } | gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" \
+            --command 'sudo bash -c '"'"'
+              set -euo pipefail
+              read -r token64
+              read -r refresh64
+              DROPBOX_AUTH_TOKEN="$(printf %s "$token64" | base64 -d | tr -d "\n")"
+              DROPBOX_REFRESH_TOKEN="$(printf %s "$refresh64" | base64 -d | tr -d "\n")"
+              export DROPBOX_AUTH_TOKEN DROPBOX_REFRESH_TOKEN
+              unset token64 refresh64
+              exec bash -s
+            '"'"''
 
-          echo "[onboarding] Starting Netdata onboarding..."
-          if [[ -n "$NETDATA_CLAIM_TOKEN" ]]; then
-            find_claim_cmd() {
-              if [[ -x "/opt/netdata/bin/netdata-claim.sh" ]]; then
-                echo "/opt/netdata/bin/netdata-claim.sh"
-              elif [[ -x "/usr/sbin/netdata-claim.sh" ]]; then
-                echo "/usr/sbin/netdata-claim.sh"
-              elif [[ -x "/usr/local/bin/netdata-claim" ]]; then
-                echo "/usr/local/bin/netdata-claim"
-              else
-                echo ""
-              fi
-            }
-
-            install_cloud_capable_netdata() {
-              echo "[onboarding] Installing cloud-capable Netdata package"
-              sudo apt-get update
-              sudo DEBIAN_FRONTEND=noninteractive apt-get remove -y netdata netdata-core || true
-              sudo DEBIAN_FRONTEND=noninteractive apt-get purge -y netdata netdata-core || true
-              sudo DEBIAN_FRONTEND=noninteractive apt-get autoremove -y || true
-              curl -fsSL https://my-netdata.io/kickstart.sh -o /tmp/netdata-kickstart.sh
-              sudo sh /tmp/netdata-kickstart.sh --non-interactive --stable-channel
-            }
-
-            run_netdata_claim() {
-              local cmd="$1"
-              set +e
-              claim_output=$(sudo "$cmd" --claim-token "$NETDATA_CLAIM_TOKEN" --claim-rooms "$NETDATA_CLAIM_ROOMS" --claim-url "$NETDATA_CLAIM_URL" 2>&1)
-              claim_status=$?
-              set -e
-
-              if [[ $claim_status -ne 0 ]] && echo "$claim_output" | grep -qi "unrecognized option --claim-token"; then
-                set +e
-                claim_output=$(sudo "$cmd" -token "$NETDATA_CLAIM_TOKEN" -rooms "$NETDATA_CLAIM_ROOMS" -url "$NETDATA_CLAIM_URL" 2>&1)
-                claim_status=$?
-                set -e
-              fi
-            }
-
-            claim_cmd=""
-            claim_cmd="$(find_claim_cmd)"
-
-            # Debian's distro package can be built without Netdata Cloud support.
-            if [[ -n "$claim_cmd" ]] && sudo "$claim_cmd" -h 2>&1 | grep -qi "disable-cloud"; then
-              echo "[onboarding] Installed Netdata build does not support cloud claim; replacing package"
-              install_cloud_capable_netdata
-            fi
-
-            claim_cmd="$(find_claim_cmd)"
-
-            if [[ -n "$claim_cmd" ]]; then
-              run_netdata_claim "$claim_cmd"
-
-              if [[ $claim_status -ne 0 ]] && echo "$claim_output" | grep -qi "disable-cloud"; then
-                echo "[onboarding] Netdata claim failed due to cloud-disabled build; replacing package and retrying"
-                install_cloud_capable_netdata
-                claim_cmd="$(find_claim_cmd)"
-
-                if [[ -n "$claim_cmd" ]]; then
-                  run_netdata_claim "$claim_cmd"
-                else
-                  claim_output="netdata-claim script missing after reinstall"
-                  claim_status=1
-                fi
-              fi
-
-              if [[ $claim_status -eq 0 ]]; then
-                echo "[onboarding] Netdata cloud claim complete"
-              else
-                echo "$claim_output"
-                echo "[onboarding] Netdata cloud claim failed"
-              fi
-            else
-              echo "[onboarding] Netdata claim script not found; skipping claim"
-            fi
-          else
-            echo "[onboarding] Netdata claim token not available; skipping claim"
-          fi
-
-          echo "[onboarding] Verifying Docker and Netdata status..."
-          sudo systemctl is-active --quiet docker && echo "[onboarding] Docker is running" || echo "[onboarding] Docker is not running"
-          sudo systemctl is-active --quiet netdata && echo "[onboarding] Netdata is running" || echo "[onboarding] Netdata is not running"
-          
-          echo "[onboarding] Bootstrap and onboarding complete"
-          EOF
-
-      - name: Verify onboarding outcomes
+      - name: Verify Docker status
         working-directory: .
         run: |
-          # Tailscale verification is optional (may be skipped if OAuth failed)
-          if gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo tailscale status --json >/tmp/tailscale-status.json && jq -e '.BackendState == \"Running\"' /tmp/tailscale-status.json >/dev/null 2>&1"; then
-            echo "[verify] Tailscale is running"
+          if gcloud compute ssh "$VM_NAME" --project "$PROJECT_ID" --zone "$ZONE" \
+            --command "sudo systemctl is-active --quiet docker"; then
+            echo "[verify] Docker is running"
           else
-            echo "[verify] Tailscale is not running (may be configured later manually)"
+            echo "::warning::Docker is not running"
           fi
 
-          # Netdata verification - check if service is running
-          if gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo systemctl is-active --quiet netdata"; then
-            echo "[verify] Netdata service is running"
-          else
-            echo "[verify] Netdata service is not running"
-          fi
+  configure-tailscale:
+    name: Configure Tailscale and DuckDNS
+    needs: apply
+    uses: ./.github/workflows/gcp-duckdns-update.yml
+    secrets:
+      DUCKDNS_TOKEN: ${{ secrets.DUCKDNS_TOKEN }}
+      TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+      TAILSCALE_OAUTH_CLIENT_SECRET: ${{ secrets.TAILSCALE_OAUTH_CLIENT_SECRET }}
+      TAILSCALE_EPHEMERAL_AUTH_KEY: ${{ secrets.TAILSCALE_EPHEMERAL_AUTH_KEY }}
 
-          if gcloud compute ssh "$VM_NAME" \
-            --project "$PROJECT_ID" \
-            --zone "$ZONE" \
-            --command "sudo test -s /var/lib/netdata/cloud.d/cloud.conf"; then
-            echo "[verify] Netdata cloud claim config present"
-          else
-            echo "[verify] Netdata cloud claim config missing"
-          fi
+  restore-npm:
+    name: Restore NPM
+    needs: apply
+    uses: ./.github/workflows/gcp-npm-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  restore-freshrss:
+    name: Restore FreshRSS
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-freshrss-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  restore-vaultwarden:
+    name: Restore Vaultwarden
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-vaultwarden-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+  restore-watchtower:
+    name: Restore Watchtower
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-watchtower-restore.yml
 
   teardown:
     name: Terraform Teardown
@@ -624,7 +466,7 @@ jobs:
           echo "WARNING: destroy main/workflow guard bypassed for this manual run"
 
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Validate required workflow variables
         working-directory: .
@@ -659,16 +501,16 @@ jobs:
           fi
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
 
       - name: Authenticate to GCP via OIDC (shared identity)
-        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
         with:
           workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup gcloud
-        uses: google-github-actions/setup-gcloud@e427ad8a34f8676edf47cf7d7925499adf3eb74f # v2
+        uses: google-github-actions/setup-gcloud@aa5489c8933f4cc7a4f7d45035b3b1440c9c10db # v3.0.1
 
       - name: Validate shared identity destroy permissions
         run: |

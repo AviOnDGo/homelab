@@ -109,12 +109,7 @@ resource "google_billing_budget" "monthly_budget" {
   }
 
   threshold_rules {
-    threshold_percent = 0.5 # 50% of the budget
-    spend_basis       = "CURRENT_SPEND"
-  }
-
-  threshold_rules {
-    threshold_percent = 0.9 # 90% of the budget
+    threshold_percent = 0.8 # 80% of the budget
     spend_basis       = "CURRENT_SPEND"
   }
 

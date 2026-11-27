@@ -110,24 +110,6 @@ fi
 systemctl restart docker
 mark_phase_done
 
-## Install Tailscale package only; onboarding is workflow-driven to avoid metadata secrets.
-mark_phase_start tailscale
-curl -fsSL https://tailscale.com/install.sh | sh
-mark_phase_done
-
-## Install Netdata agent with low-resource defaults; cloud claim is workflow-driven.
-mark_phase_start netdata
-apt-get install -y --no-install-recommends netdata
-mkdir -p /etc/netdata
-cat > /etc/netdata/netdata.conf <<EOF
-[global]
-    memory mode = ram
-    history = 3600
-    update every = 2
-EOF
-systemctl enable --now netdata || true
-mark_phase_done
-
 metadata_get() {
   local key="$1"
   curl -fsS -H "Metadata-Flavor: Google" \

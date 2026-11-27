@@ -1,119 +1,151 @@
-# FreshRSS — Restore Guide
-
-This guide covers restoring FreshRSS from a GPG-encrypted filedata backup produced by `backupServices/filedata`.
-
-Two restore paths are supported:
-- Workflow-driven restore from GitHub Actions (recommended for GCP VM)
-- Script-driven restore on the host via `restore.sh` (fallback when workflow is unavailable)
-
----
+# FreshRSS Restore Guide
 
 ## Prerequisites
 
-- Docker installed and running
-- `knowledge_network` Docker network exists
-- GPG symmetric key (passphrase) used for encryption — stored in Vaultwarden
-- `rclone` configured with the Dropbox remote (if downloading from cloud)
+- Docker, Docker Compose with `up --wait --wait-timeout`, `rclone`, GPG,
+  `zstd`, and `tar` on the host.
+- `flock` is also needed for the manual fallback.
+- The external `knowledge_network` network and access to a Dropbox rclone remote.
+- The GPG passphrase used for the filedata backup.
+- For GCP: SSH access through GCP, the workflow's GCP OIDC variables and the
+  Actions secrets `DROPBOX_AUTH_TOKEN`,
+  `DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE`.
+  The GCP OIDC trust policy must allow the FreshRSS restore workflow as
+  described in the [GCP guide](../../googleCloud/README.md).
 
-For workflow-driven restore, also ensure:
-- GitHub Actions `prod` environment contains the required GCP OIDC variables
-- GitHub Actions secrets are set: `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`, `GPG_PASSPHRASE`
-- `DISCORD_WEBHOOK_URL` may be set if you want Discord success/failure notifications from the workflow
+## Restore Steps
 
----
-
-## Workflow-Driven Restore (GCP)
-
-Use GitHub Actions workflow `.github/workflows/gcp-freshrss-restore.yml` for the standard GCP recovery flow.
-
-### Inputs
-
-- `confirm_restore`: must be `RESTORE_FRESHRSS`
-- `dropbox_path`: default `/Apps/freshrss`
-- `git_ref`: branch or tag synced to `/tmp/homelab` (default `main`)
-- `vm_name`: optional override (defaults to `GCP_VM_NAME` variable or `gcp-debian-free-tier-vm`)
-
-### What the workflow does
-
-1. Validates guard inputs and required secrets.
-2. Authenticates to GCP via OIDC (no static key files).
-3. SSHes into VM and runs ordered restore sequence:
-  - refresh `/tmp/homelab` to selected `git_ref`
-  - resolve and download the latest compatible backup from Dropbox
-  - stop `filedata-backup` if it is running
-  - stop FreshRSS if it is running
-  - recreate `freshrss_filedata`
-  - stream decrypt and extract into `freshrss_filedata`
-  - restart and verify FreshRSS
-  - restart `filedata-backup` only if it was running before the restore
-4. Attempts a Discord notification on success or failure when `DISCORD_WEBHOOK_URL` is configured.
-
-### Concurrency and safety
-
-- Workflow uses GitHub Actions concurrency group to prevent parallel runs.
-- VM-side lock (`/tmp/freshrss-restore.lock`) prevents overlapping destructive operations.
-
----
-
-## Manual Restore (Script-Driven)
-
-Run `restore.sh` from the repository root. The script handles preflight checks, download, decryption, volume recreation, restart, and health verification automatically.
+### 1. Navigate to FreshRSS
 
 ```bash
 cd knowledgeServices/freshrss
+```
+
+### 2. Run the restore script
+
+```bash
 ./restore.sh
 ```
 
-To use a non-default Dropbox path:
+The script prompts for the passphrase and confirmation before removing an
+existing FreshRSS container or clearing its volume. Alternatively, supply
+`PASSPHRASE` and `DROPBOX_PATH` as environment variables. For noninteractive
+restores, use `--force` to replace existing data, or `--if-missing` to skip an
+existing volume. `--if-missing` refuses to remove an existing FreshRSS container
+if the volume is absent.
+
+The script downloads and validates the latest matching `.tar.zst.gpg` archive
+before stopping anything, stops `filedata-backup` only if it was running, clears
+the existing volume in place, restores the archive, and waits up to 300 seconds
+for Docker Compose to report FreshRSS healthy. On success or failure, it
+attempts to restart `filedata-backup` if it was running. If restarting it fails,
+restart it manually; the script does not retain its prior state for the next attempt.
+
+The script does not lock against concurrent restores. Do not run it or the manual
+fallback while another restore is in progress. If an older version left a
+`freshrss-restore-backup-state` marker in `${TMPDIR:-/tmp}`, check and restore
+the backup container's state manually, then remove the marker.
+
+The [GCP restore workflow](../../.github/workflows/gcp-freshrss-restore.yml)
+runs after successful Terraform Apply, including no-op applies, and **forcibly
+replaces FreshRSS data** with the latest `/Apps/freshrss` backup. Back up
+current data and schedule downtime before applying. It runs only after the NPM
+restore succeeds; if NPM fails or is skipped, FreshRSS is skipped too.
+Manual dispatch skips an existing volume unless `force` is enabled. GitHub
+requires the workflow on the default branch for manual dispatch; the `prod`
+environment and OIDC trust policy must allow the selected branch. The separate
+restore job may require `prod` approval. Manual runs require a bootstrapped VM.
+
+The workflow uses `GCP_VM_NAME` (default `gcp-debian-free-tier-vm`), transfers
+the selected checkout's restore script and Compose file to a temporary VM
+directory, and installs `rclone` and `zstd` if needed. Credentials travel over
+SSH standard input; temporary files are removed on exit. The passphrase must be
+a single line. Avoid shell tracing. The workflow no longer accepts `vm_name`
+or `dropbox_path` inputs or sends Discord notifications. Use the script directly
+for an alternative Dropbox path. GCP service restore jobs share a GitHub Actions
+concurrency group, but direct transport helper, script, and manual fallback runs
+are not covered. Coordinate those manually to prevent overlapping restores and
+partial backups.
+
+### 3. Clear sensitive shell state
 
 ```bash
-DROPBOX_PATH=/Apps/freshrss-alt ./restore.sh
+unset PASSPHRASE
 ```
 
-To supply the passphrase non-interactively:
+## Verification
 
 ```bash
-PASSPHRASE=<gpg-passphrase> ./restore.sh
+docker compose ps
+docker inspect -f '{{.State.Health.Status}}' freshrss
+docker logs --tail 50 freshrss
 ```
 
-The script will:
-1. Verify `docker`, `rclone`, `gpg`, and `zstd` are available and the Dropbox remote is reachable.
-2. Prompt for the GPG passphrase (or read from `PASSPHRASE` env var).
-3. Select the latest archive at `dropbox:/Apps/freshrss` (`freshrss_YYYY-MM-DD_HH-MM-SS.tar.zst.gpg`).
-4. Download the archive, stop FreshRSS (with confirmation), wipe and recreate `freshrss_filedata` (with confirmation), and stream-extract the decrypted archive into the volume.
-5. Restart FreshRSS and poll `php /var/www/FreshRSS/cli/health.php` for up to 300 seconds to confirm a healthy start.
-6. Clean up all temporary files automatically on exit.
+Confirm that FreshRSS serves the expected data through Nginx Proxy Manager.
 
----
+## Troubleshooting
 
-## Rollback / Abort Procedure
+- If listing or downloading fails, verify the Dropbox remote, credentials and path.
+  No container is stopped before the download completes.
+- If the restore fails after `filedata-backup` is stopped, the script attempts to
+  return it to its prior running state. If that restart fails, inspect the logs,
+  and start `filedata-backup` manually.
+- If health checks fail, inspect `docker compose logs freshrss` and keep FreshRSS
+  stopped until the restored data has been checked.
 
-If restore fails after `freshrss_filedata` recreation:
+## Manual fallback
 
-1. Keep FreshRSS stopped to avoid writing partial state:
-  ```bash
-  docker compose -f knowledgeServices/freshrss/docker-compose.yml down
-  ```
-2. Inspect failure details:
-  - GitHub workflow logs (phase and selected backup path)
-  - VM diagnostics from workflow output
-  - If the restore succeeded but Discord delivery failed, treat that as an observability warning only; do not rerun the restore solely to recover the notification.
-3. Re-run workflow with corrected inputs (recommended), or re-run `./restore.sh` with a known-good backup.
-4. Start FreshRSS only after restore completes:
-  ```bash
-  docker compose -f knowledgeServices/freshrss/docker-compose.yml up -d
-  ```
+Run the following in Bash to validate the archive, stop FreshRSS and a running
+`filedata-backup`, and restore the existing volume:
 
----
+```bash
+(
+set -euo pipefail
+BACKUP=/path/to/backup.tar.zst.gpg
+read -r -s -p "GPG passphrase: " PASSPHRASE
+printf '\n'
+trap 'unset PASSPHRASE' EXIT
+gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$BACKUP" 3<<<"$PASSPHRASE" \
+  | zstd -d | tar -tf - >/dev/null
+if [[ ! -e /tmp/freshrss-restore.lock ]]; then
+  (umask 022; : >> /tmp/freshrss-restore.lock)
+fi
+exec 9</tmp/freshrss-restore.lock
+if ! flock -n 9; then
+  printf 'Another FreshRSS restore is already in progress.\n' >&2
+  exit 1
+fi
+BACKUP_WAS_RUNNING=false
+restore_backup_state() {
+  local exit_status=$?
+  trap - EXIT
+  if [[ "$BACKUP_WAS_RUNNING" == "true" ]] \
+    && [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" != "true" ]] \
+    && ! docker start filedata-backup >/dev/null; then
+    printf 'Could not restart filedata-backup.\n' >&2
+    exit_status=1
+  fi
+  unset PASSPHRASE
+  exit "$exit_status"
+}
+trap restore_backup_state EXIT
+if [[ "$(docker inspect -f '{{.State.Running}}' filedata-backup 2>/dev/null || true)" == "true" ]]; then
+  BACKUP_WAS_RUNNING=true
+  docker stop filedata-backup >/dev/null
+fi
+docker compose down
+docker volume inspect freshrss_filedata >/dev/null || docker volume create freshrss_filedata
+docker run --rm -v freshrss_filedata:/restore alpine \
+  sh -c 'find /restore -mindepth 1 -maxdepth 1 -exec rm -rf {} +'
+gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$BACKUP" 3<<<"$PASSPHRASE" \
+  | zstd -d | docker run --rm -i -v freshrss_filedata:/restore alpine \
+    sh -c 'cd /restore && tar -xf -'
+docker compose up -d
+)
+```
 
-## Operations Note: When To Use Which Path
-
-- Use workflow-driven restore when:
-  - Target is GCP VM
-  - You want audited, repeatable execution with guardrails
-  - You need deterministic latest-backup selection, backup-service coordination, and automated verification
-
-- Use script-driven restore (`restore.sh`) when:
-  - GitHub Actions is unavailable
-  - You are restoring in a non-GCP local environment
-  - You need a fast, automated local recovery
+The archive is decrypted and checked before `docker compose down` or volume
+cleanup. The lock prevents overlapping manual fallback runs but does not
+coordinate with `restore.sh`. With `set -euo pipefail`, a failed command or
+pipeline stops the sequence before FreshRSS is started. The subshell's EXIT trap
+clears the passphrase and restores `filedata-backup` if it was running.
