@@ -12,7 +12,8 @@ dated snapshot.
 - For the default restore mode, a running `filedata-backup` container with working `dropbox`,
   `gdrive`, and `gdrive-crypt` remotes. Configure the credentials in
   `backupServices/filedata/.env` and set
-  `PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless`. Paperless mode is set to `sync-crypt`
+  `PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless` in
+  `backupServices/filedata/path.local`. Paperless mode is set to `sync-crypt`
   in `backupServices/filedata/backup-volumes.conf`. Recreate the backup container after
   changing its configuration. Google OAuth client ID and secret are only needed when the tokens
   were issued for your own OAuth client.
@@ -76,6 +77,8 @@ The default remote names and relationship are:
 The filedata-backup configuration uses `PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless`. Its
 sync job appends `/current`, so the restore default is `gdrive-crypt:paperless/current/`. The
 `paperless` segment is a directory inside the crypt remote; `gdrive:` is its backing Drive root.
+If you customize the destination in the path file, set the corresponding
+`GDRIVE_CRYPT_REMOTE` and `GDRIVE_CRYPT_PATH` for the restore before proceeding.
 
 The script verifies remote access and a nonempty decrypted mirror before changing volumes.
 No interactive `rclone config` or host remotes are needed.
