@@ -129,13 +129,72 @@ docker compose -f docker-compose.yml up -d --force-recreate filedata-backup
 
 ### Compose Deployment Profiles
 
+`docker-compose.base.yml` is an incomplete base for the planned unified deployment.
+It has no backup sources or cron jobs and deliberately fails if started without an
+override. The startup script generates that override; the existing Compose files
+below remain available during migration.
+
+`backup-volumes.conf` records the intended volume selections for that future
+deployment. Each `|`-separated entry gives the backup name, Docker volume name,
+and comma-separated host profiles. A listed volume is expected on each named
+profile; an unlisted profile does not select it. Backup names also identify the
+source path (`/backup-sources/<name>`) and backup-script argument. The corresponding
+schedule variable is the uppercase backup name with hyphens replaced by
+underscores, followed by `_CRON_SCHEDULE`.
+
+Every entry includes `default`, which selects all configured backup volumes.
+The `local` and `prod` selections match the enabled mounts and jobs in their
+existing Compose files, excluding entries intentionally disabled in Local. Unlike
+the current default Compose file, the planned `default` selection also includes
+Hermes and RomM. Host selection is independent of the acceptance or production
+environment examples, which configure schedules, modes, and destinations. Check
+that the chosen environment provides settings for every selected backup,
+particularly RomM for Local and default. Existing deployments do not consume this
+configuration; changing it does not change any running backup.
+
+### Unified Startup
+
+From this directory, select the host profile explicitly:
+
+```bash
+./start-backup.sh local
+# Or: ./start-backup.sh prod
+# Or: ./start-backup.sh default
+```
+
+The `prod` name matches the GitHub environment name, but the profile is selected
+explicitly; GitHub environment selection does not automatically select it.
+Update existing filedata commands that used `remote` to use `prod`; the standalone
+filedata Compose file has likewise been renamed to `docker-compose.prod.yml`.
+The PostgreSQL remote Compose filename is unchanged.
+
+The script requires Docker Compose with `up --wait` support. It lists Docker
+volumes, warns for each missing expected volume, and generates a temporary Compose
+override with read-only mounts and jobs for the volumes present. It fails if Docker
+cannot be queried, no selected volumes exist, or a selected schedule is unset.
+The container validates that each schedule has five fields, and Compose waits for
+the cron process to become healthy. Backup output goes to
+`/var/log/cron_<backup-name>.log` inside the container.
+
+Re-run the script after adding a volume or changing the host configuration; it
+rebuilds and recreates the backup container. A volume created later is not picked
+up automatically. Review missing-volume warnings and verify jobs and logs after
+startup; a warning means that volume is not being backed up. The generated
+override is removed on exit, while Docker retains the created container for
+normal restart. For example:
+
+```bash
+docker logs filedata-backup
+docker exec filedata-backup crontab -l
+```
+
 Use the compose file that matches your target environment:
 
 | Environment | Compose File | Scope |
 |-------------|--------------|-------|
 | Default homelab | `docker-compose.yml` | Full filedata backup set, including OmniRoute |
-| Remote | `docker-compose.remote.yml` | `freshrss`, `npm`, `pihole`, `vaultwarden` |
-| Local | `docker-compose.local.yml` | `n8n`, `omniroute`, `openwebui`, `romm`, `paperless`, `radicale`, `immich`, `jackett`, `radarr`, `sonarr`, `transmission`, `npm` |
+| Prod | `docker-compose.prod.yml` | `freshrss`, `npm`, `pihole`, `vaultwarden` |
+| Local | `docker-compose.local.yml` | `hermes`, `n8n`, `omniroute`, `openwebui`, `romm`, `paperless`, `radicale`, `immich`, `npm` |
 
 OmniRoute's `omniroute_filedata` volume contains provider credentials and is
 included in the default and Local profiles only. Its archive backups use GPG
@@ -143,7 +202,7 @@ encryption; the GPG passphrase and `.env` credentials remain outside the
 tracked environment examples.
 
 Jellyfin configuration backups are enabled only in the default homelab profile.
-Local and Remote do not register its volume or schedule its backup job.
+Local and Prod do not register its volume or schedule its backup job.
 
 ### Compose And Crontab Ordering
 
@@ -171,8 +230,8 @@ Example startup commands:
 # Default environment
 docker compose -f docker-compose.yml up -d
 
-# Remote environment
-docker compose -f docker-compose.remote.yml up -d
+# Prod environment
+docker compose -f docker-compose.prod.yml up -d
 # Local environment
 docker compose -f docker-compose.local.yml up -d
 ```
@@ -196,25 +255,25 @@ docker inspect --format '{{range .Mounts}}{{println .Type .Destination}}{{end}}'
 docker exec filedata-backup pidof crond
 ```
 
-Use the corresponding Compose filename for default or Remote deployments. Rebuild and
+Use the corresponding Compose filename for default or Prod deployments. Rebuild and
 recreate after changing either script or its dependencies; `docker restart` alone
 does not pick up image changes. Leave the container running before reboot:
 `unless-stopped` intentionally preserves an explicit stop.
 
 ### Setting up your environment:
 
-**For Default/Production:**
+**For Default with production settings:**
 ```bash
 cp env.prd.example .env
 # Edit .env with your secrets
 docker compose -f docker-compose.yml up -d
 ```
 
-**For Remote:**
+**For Prod:**
 ```bash
 cp env.prd.example .env
 # Edit .env with your secrets
-docker compose -f docker-compose.remote.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 **For Local:**
@@ -280,14 +339,14 @@ FILEN_API_KEY=<key-from-filen-export-api-key>
 <SERVICE>_SYNC_CRYPT_REMOTE=<configured crypt remote>  # sync-crypt mode
 ```
 
-Radarr and Sonarr use archive mode with two-day retention. The default and Local profiles schedule Radarr at 04:20 and Sonarr at 04:25; their Dropbox destinations are `/Apps/radarr` and `/Apps/sonarr` in production and `/App_acc/radarr` and `/App_acc/sonarr` in acceptance. Their restore scripts default to the acceptance paths; set `DROPBOX_PATH` to the production path when restoring production archives. They are not registered in the Remote profile.
+Radarr and Sonarr use archive mode with two-day retention. The default and Local profiles schedule Radarr at 04:20 and Sonarr at 04:25; their Dropbox destinations are `/Apps/radarr` and `/Apps/sonarr` in production and `/App_acc/radarr` and `/App_acc/sonarr` in acceptance. Their restore scripts default to the acceptance paths; set `DROPBOX_PATH` to the production path when restoring production archives. They are not registered in the Prod profile.
 
 Jackett and Transmission use encrypted archive mode with seven-day retention in
 the default and Local profiles. Their jobs run at 04:30 and 04:35
 respectively, using `/Apps/<service>` in production and `/App_acc/<service>` in
 acceptance. Their restore scripts default to acceptance paths; set
 `DROPBOX_PATH` to the production path when restoring production archives. They
-are not registered in the Remote profile.
+are not registered in the Prod profile.
 
 At container startup, `configure-rclone.sh` creates one rclone configuration containing every
 provider whose credentials are present. Cron jobs only use that configuration and never rewrite it.
@@ -551,7 +610,7 @@ instead of relying on a Compose default or archive destination.
 docker compose -f docker-compose.yml up -d --force-recreate filedata-backup
 ```
 
-Use `docker-compose.local.yml` or `docker-compose.remote.yml` instead when updating
+Use `docker-compose.local.yml` or `docker-compose.prod.yml` instead when updating
 those deployments.
 
 ## Backup Schedule and Retention
