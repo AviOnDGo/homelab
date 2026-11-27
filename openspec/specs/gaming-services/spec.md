@@ -85,7 +85,7 @@ The `romm_postgresdata` volume SHALL be registered with the Local-scoped Postgre
 - **AND** a dedicated `ROMM_CRON_SCHEDULE` cron entry SHALL exist
 
 #### Scenario: RomM filedata backup is Local-only
-- **GIVEN** `backupServices/filedata/docker-compose.yml` and `backupServices/filedata/docker-compose.remote.yml` are inspected
+- **GIVEN** `backupServices/filedata/docker-compose.yml` and `backupServices/filedata/docker-compose.prod.yml` are inspected
 - **WHEN** reviewing their volumes and cron entries
 - **THEN** neither SHALL reference `romm_filedata`
 - **AND** `backupServices/filedata/docker-compose.local.yml` SHALL mount `romm_filedata` read-only
