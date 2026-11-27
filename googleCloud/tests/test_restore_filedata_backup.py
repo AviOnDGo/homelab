@@ -54,6 +54,7 @@ case "$1" in
   compose)
     cp "$3/docker-compose.yml" "$FIXTURE/compose.yml"
     cp "$3/workflow-input" "$FIXTURE/workflow-input"
+    cp "$3/path.prod" "$FIXTURE/path.prod"
     cp "$7" "$FIXTURE/override.yml"
     [[ "${FAIL_COMPOSE:-0}" != 1 ]] ;;
   *) exit 1 ;;

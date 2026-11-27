@@ -32,7 +32,7 @@ done
   done
   tar -C backupServices/filedata -cf - \
     Dockerfile .dockerignore docker-compose.yml backup-volumes.conf start-backup.sh \
-    filedata-backup-script.sh configure-rclone.sh .env.prod.example
+    filedata-backup-script.sh configure-rclone.sh path.prod
 } | gcloud compute ssh --quiet "$VM_NAME" \
   --project "$PROJECT_ID" --zone "$ZONE" \
   --command 'sudo bash -c '"'"'
@@ -59,7 +59,7 @@ done
         fi
         key="${name//-/_}"
         key="${key^^}"
-        if ! grep -Eq "^${key}_DROPBOX_PATH=.+" "$workdir/.env.prod.example"; then
+        if ! grep -Eq "^${key}_DROPBOX_PATH=.+" "$workdir/path.prod"; then
           echo "ERROR: Production Dropbox destination missing for $name." >&2
           exit 1
         fi
@@ -71,7 +71,7 @@ done
     done < "$workdir/backup-volumes.conf"
 
     # Use a private temporary env-file without changing an existing host configuration.
-    cp "$workdir/.env.prod.example" "$workdir/workflow-input"
+    : > "$workdir/workflow-input"
     for name in DROPBOX_AUTH_TOKEN DROPBOX_REFRESH_TOKEN GPG_PASSPHRASE DISCORD_WEBHOOK_URL; do
       value="${!name}"
       value="${value//\\/\\\\}"

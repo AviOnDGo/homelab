@@ -68,7 +68,8 @@ Execution behavior:
   the `prod` profile. A manual run is also available. Every production source
   volume must already exist; a missing volume fails the job rather than
   silently omitting its backups. The scheduler uses the production Dropbox
-  destinations and registry schedules, including remote retention cleanup.
+  destinations in `backupServices/filedata/path.prod` and registry schedules,
+  including remote retention cleanup.
   Review source data before a manual run. It does not restore application data.
 
 The seven GCP restore jobs share a GitHub Actions concurrency group, including
