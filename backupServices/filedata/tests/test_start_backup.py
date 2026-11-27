@@ -218,7 +218,7 @@ else:
         for profile in ("default", "local", "prod"):
             with self.subTest(profile=profile):
                 environment_file = ROOT / (
-                    "env.local.example" if profile == "local" else "env.prod.example"
+                    ".env.local.example" if profile == "local" else ".env.prod.example"
                 )
                 environment = {
                     "PATH": os.defpath,
