@@ -110,8 +110,8 @@ If Syncthing backup lanes cause operational issues, rollback with the following 
 1. Remove the Syncthing entry from:
   - `backupServices/filedata/backup-volumes.conf`
 2. Remove Syncthing lane variables from:
-  - `backupServices/filedata/env.local.example`
-  - `backupServices/filedata/env.prod.example`
+  - `backupServices/filedata/.env.local.example`
+  - `backupServices/filedata/.env.prod.example`
 3. Recreate filedata-backup container:
 
 ```bash
