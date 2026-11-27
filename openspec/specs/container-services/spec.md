@@ -99,8 +99,9 @@ The `firefox_filedata` volume SHALL be registered in the `backupServices/filedat
 
 #### Scenario: Backup environment variables defined
 - **GIVEN** the relevant container-services configuration and deployment state are available for inspection
-- **WHEN** `backupServices/filedata/.env` is inspected
-- **THEN** `FIREFOX_CRON_SCHEDULE`, `FIREFOX_DROPBOX_PATH`, and `FIREFOX_RETENTION_DAYS` SHALL be present
+- **WHEN** the registry and `backupServices/filedata/.env` are inspected
+- **THEN** the Firefox schedule and retention SHALL be present in the registry
+- **AND** `FIREFOX_DROPBOX_PATH` SHALL be present in the environment
 
 ### REQ-012: Service Documentation
 The Firefox service directory SHALL contain `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md`.
