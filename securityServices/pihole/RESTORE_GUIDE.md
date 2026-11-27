@@ -5,7 +5,7 @@
 Pi-hole stores persistent DNS state in the `pihole_filedata` volume. Use `restore.sh` as the primary recovery path.
 
 Run the commands below from the repository root. Set `WEB_PASSWORD` in the Pi-hole
-`.env` file before restoring.
+`.env` file or export it in the environment before restoring.
 
 ## Script-First Recovery
 
@@ -31,7 +31,7 @@ Safety behavior:
 ### 2. Verify recovery
 
 ```bash
-docker compose --env-file securityServices/pihole/.env -f securityServices/pihole/docker-compose.yml ps
+(cd securityServices/pihole && docker compose ps)
 docker exec pihole ls -lh /etc/pihole/gravity.db
 docker exec pihole ls -lh /etc/pihole/pihole-FTL.db
 nslookup google.com 127.0.0.1
@@ -44,7 +44,7 @@ Use this when scripted recovery cannot be used.
 ### 1. Stop service
 
 ```bash
-docker compose --env-file securityServices/pihole/.env -f securityServices/pihole/docker-compose.yml down
+(cd securityServices/pihole && docker compose down)
 ```
 
 ### 2. Download and restore latest backup
@@ -61,7 +61,7 @@ gpg --batch --yes --passphrase "$PASSPHRASE" -d <filename>.tar.zst.gpg | zstd -d
 ### 3. Start and verify
 
 ```bash
-docker compose --env-file securityServices/pihole/.env -f securityServices/pihole/docker-compose.yml up -d
+(cd securityServices/pihole && docker compose up -d)
 docker exec pihole ls -lh /etc/pihole/gravity.db
 docker exec pihole ls -lh /etc/pihole/pihole-FTL.db
 ```

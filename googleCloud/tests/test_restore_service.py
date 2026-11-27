@@ -315,6 +315,146 @@ esac""",
                     (ROOT / "financialServices" / "firefly" / name).read_bytes(),
                 )
 
+    def test_pihole_password_is_required_and_transported_over_stdin(self) -> None:
+        self.env["SERVICE"] = "pihole"
+        self.env.pop("PIHOLE_WEB_PASSWORD", None)
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PIHOLE_WEB_PASSWORD", result.stderr)
+        self.assertFalse(self.arguments.exists())
+
+        self.env["PIHOLE_WEB_PASSWORD"] = "pihole-$password-'fixture\n"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = self.arguments.read_text(encoding="utf-8")
+        self.assertIn(" _ --if-missing pihole", arguments)
+        self.assertNotIn(
+            self.env["PIHOLE_WEB_PASSWORD"].rstrip("\n"),
+            arguments + result.stdout + result.stderr,
+        )
+        lines = self.stream.read_bytes().split(b"\n", 4)
+        self.assertEqual(
+            base64.b64decode(lines[3]).decode(), self.env["PIHOLE_WEB_PASSWORD"]
+        )
+        with tarfile.open(fileobj=io.BytesIO(lines[4])) as archive:
+            self.assertEqual(set(archive.getnames()), {"restore.sh", "docker-compose.yml"})
+            for name in archive.getnames():
+                self.assertEqual(
+                    archive.extractfile(name).read(),
+                    (ROOT / "securityServices" / "pihole" / name).read_bytes(),
+                )
+
+    def test_pihole_remote_restore_modes_and_cleanup(self) -> None:
+        archive_path = self.work / "backup.tar"
+        with tarfile.open(archive_path, "w") as archive:
+            for name in ("gravity.db", "pihole-FTL.db"):
+                data = b"test data"
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        password = "pihole-$password-'fixture\n"
+        self.env.update(
+            SERVICE="pihole",
+            PIHOLE_WEB_PASSWORD=password,
+            EXPECTED_PIHOLE_PASSWORD=password,
+            ARCHIVE=str(archive_path),
+            TMPDIR=str(self.work),
+        )
+        for name, body in {
+            "gcloud": """
+for arg in "$@"; do command="$arg"; done
+unset WEB_PASSWORD PIHOLE_WEB_PASSWORD
+exec bash -c "$command"
+""",
+            "sudo": 'exec "$@"',
+            "docker": """
+echo "${COMPOSE_PROJECT_NAME:-} $*" >> "$ARGUMENTS"
+case "$1" in
+  info|exec) ;;
+  compose)
+    [[ "$WEB_PASSWORD" == "$EXPECTED_PIHOLE_PASSWORD" ]]
+    [[ "$2" == -f ]]
+    [[ "${FAIL_COMPOSE:-}" != 1 ]] ;;
+  volume)
+    if [[ "$2" == inspect ]]; then [[ "$FORCE" == false ]]; fi ;;
+  ps) ;;
+  inspect) echo false ;;
+  run) cat >/dev/null ;;
+  *) echo "Unexpected docker command: $*" >&2; exit 1 ;;
+esac
+""",
+            "rclone": """
+case "$1" in
+  lsd) ;;
+  lsf) echo pihole_2025-01-01_00-00-00.tar.zst.gpg ;;
+  copy) printf encrypted > "$3/${2##*/}" ;;
+  *) exit 1 ;;
+esac""",
+            "zstd": "cat",
+            "gpg": 'cat "$ARCHIVE"',
+            "jq": 'echo "{}"',
+            "sleep": "exit 0",
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        for force, fail in (("false", "0"), ("true", "0"), ("true", "1")):
+            with self.subTest(force=force, fail=fail):
+                self.arguments.unlink(missing_ok=True)
+                self.env.update(FORCE=force, FAIL_COMPOSE=fail)
+                result = self.invoke()
+                calls = self.arguments.read_text(encoding="utf-8")
+                self.assertEqual(result.returncode == 0, fail == "0", result.stderr)
+                self.assertNotIn(password.rstrip("\n"), calls + result.stdout + result.stderr)
+                if force == "false":
+                    self.assertIn("skipping automatic restore", result.stdout)
+                    self.assertNotIn(" compose ", calls)
+                else:
+                    self.assertIn("pihole compose -f", calls)
+                    compose_path = next(
+                        line.split(" -f ", 1)[1].split(" ", 1)[0]
+                        for line in calls.splitlines() if " compose " in line
+                    )
+                    self.assertFalse(Path(compose_path).parent.exists())
+                    self.assertEqual(" up -d" in calls, fail == "0")
+                self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+    def test_pihole_compose_receives_password_from_environment(self) -> None:
+        docker = shutil.which("docker")
+        if docker is None:
+            self.skipTest("Docker Compose is not available")
+        version = subprocess.run(
+            [docker, "compose", "version"], capture_output=True, check=False
+        )
+        if version.returncode:
+            self.skipTest("Docker Compose is not available")
+        compose_file = self.work / "docker-compose.yml"
+        shutil.copyfile(ROOT / "securityServices" / "pihole" / "docker-compose.yml", compose_file)
+        env = os.environ.copy()
+        env["WEB_PASSWORD"] = "pihole-$password-'fixture\n"
+        result = subprocess.run(
+            [
+                docker,
+                "compose",
+                "-f",
+                str(compose_file),
+                "config",
+                "--format",
+                "json",
+            ],
+            cwd=self.work,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = json.loads(result.stdout)["services"]["pihole"]["environment"]
+        # Compose escapes dollar signs when rendering its reusable configuration.
+        rendered_password = environment["FTLCONF_webserver_api_password"]
+        self.assertEqual(rendered_password.replace("$$", "$"), env["WEB_PASSWORD"])
+
     def test_firefly_remote_restore_modes_and_failure(self) -> None:
         self.env.update(
             SERVICE="firefly",

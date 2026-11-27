@@ -9,6 +9,7 @@ set -euo pipefail
 
 case "$SERVICE" in
   npm) service_dir=securityServices/npm ;;
+  pihole) service_dir=securityServices/pihole ;;
   freshrss) service_dir=knowledgeServices/freshrss ;;
   vaultwarden) service_dir=securityServices/vaultwarden ;;
   firefly) service_dir=financialServices/firefly ;;
@@ -60,6 +61,9 @@ if [[ "$SERVICE" == firefly ]]; then
   : "${FIREFLY_DB_PASSWORD:?Missing FIREFLY_DB_PASSWORD secret}"
   : "${FIREFLY_STATIC_CRON_TOKEN:?Missing FIREFLY_STATIC_CRON_TOKEN secret}"
 fi
+if [[ "$SERVICE" == pihole ]]; then
+  : "${PIHOLE_WEB_PASSWORD:?Missing PIHOLE_WEB_PASSWORD secret}"
+fi
 
 case "$FORCE" in
   false) mode=--if-missing ;;
@@ -80,6 +84,8 @@ fi
     printf '%s' "$FIREFLY_DB_USERNAME" | base64 -w0; echo
     printf '%s' "$FIREFLY_DB_PASSWORD" | base64 -w0; echo
     printf '%s' "$FIREFLY_STATIC_CRON_TOKEN" | base64 -w0; echo
+  elif [[ "$SERVICE" == pihole ]]; then
+    printf '%s' "$PIHOLE_WEB_PASSWORD" | base64 -w0; echo
   fi
   tar -C "$service_dir" -cf - restore.sh docker-compose.yml
 } | gcloud compute ssh --quiet "$VM_NAME" \
@@ -104,6 +110,11 @@ fi
       export APP_KEY="${APP_KEY%.}" DB_USERNAME="${DB_USERNAME%.}"
       export DB_PASSWORD="${DB_PASSWORD%.}" STATIC_CRON_TOKEN="${STATIC_CRON_TOKEN%.}"
       unset app_key64 db_username64 db_password64 cron_token64
+    elif [[ "$2" == pihole ]]; then
+      read -r web_password64
+      WEB_PASSWORD="$(printf %s "$web_password64" | base64 -d && printf .)"
+      export WEB_PASSWORD="${WEB_PASSWORD%.}"
+      unset web_password64
     fi
     workdir=$(mktemp -d /tmp/service-restore-workflow.XXXXXXXX)
     trap "rm -rf -- \"\$workdir\"" EXIT

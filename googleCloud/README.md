@@ -65,6 +65,11 @@ jobs are canceled when the queue is full. Scheduling order is not guaranteed.
 Direct transport helper, service script, and manual fallback runs are not
 covered by this group; coordinate them and older workflow versions manually.
 
+The direct `restore-service.sh` helper also supports `SERVICE=pihole`. In
+addition to the Dropbox and GPG credentials, supply `PIHOLE_WEB_PASSWORD` as a
+secret; the helper passes it to Compose as `WEB_PASSWORD` in the process
+environment. Pi-hole is not yet wired into a GCP workflow.
+
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
 - This reapplies the earlier Terraform state target declaratively.

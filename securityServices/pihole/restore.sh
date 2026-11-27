@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 VOLUME_NAME="pihole_filedata"
 CONTAINER_NAME="pihole"
@@ -76,7 +77,7 @@ if [[ "$MODE" == "--if-missing" ]] && docker volume inspect "$VOLUME_NAME" >/dev
   exit 0
 fi
 
-docker compose --env-file "${SCRIPT_DIR}/.env" -f "$COMPOSE_FILE" config --quiet
+docker compose -f "$COMPOSE_FILE" config --quiet
 
 if ! rclone lsd "${DROPBOX_REMOTE}:" >/dev/null 2>&1; then
   error "Cannot reach rclone remote '${DROPBOX_REMOTE}'."
@@ -186,7 +187,7 @@ gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 
 # 8. Bring up the service
 # --------------------------------------------------------------------------- #
 info "Starting Pi-hole service..."
-docker compose --env-file "${SCRIPT_DIR}/.env" -f "$COMPOSE_FILE" up -d
+docker compose -f "$COMPOSE_FILE" up -d
 
 # --------------------------------------------------------------------------- #
 # 9. Verify

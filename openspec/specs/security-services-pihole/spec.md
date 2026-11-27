@@ -13,12 +13,12 @@ Pi-hole SHALL provide DNS-based ad and tracker blocking for clients configured t
 - **AND** the query outcome SHALL be recorded in Pi-hole statistics
 
 ### REQ-002: Pi-hole admin password is not hardcoded
-Pi-hole admin credentials SHALL be sourced from `.env` using variable substitution and SHALL NOT be stored as plaintext literals in compose files.
+Pi-hole admin credentials SHALL be sourced from the environment or `.env` using variable substitution and SHALL NOT be stored as plaintext literals in compose files.
 
 #### Scenario: Password source is variable-backed
 - **GIVEN** `securityServices/pihole/docker-compose.yml` is inspected
 - **WHEN** `FTLCONF_webserver_api_password` is reviewed
-- **THEN** the value SHALL reference `WEB_PASSWORD` from the operator-managed `.env`
+- **THEN** the value SHALL reference the operator-managed `WEB_PASSWORD` variable
 - **AND** plaintext password values SHALL exist only in operator-managed secret inputs
 
 ### REQ-003: Pi-hole DNS ports are exposed and web UI is not directly exposed
