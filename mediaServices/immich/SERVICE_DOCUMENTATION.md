@@ -82,10 +82,11 @@ Retention for Immich sync-crypt deleted/replaced-file archive is set to 30 days 
    Set the database schedule before the file schedules (examples use 02:00
    versus 03:00, 03:15, and 03:30). Existing runtime configurations are not
    automatically updated when the examples change.
-4. Rebuild and recreate both Local backup containers:
+4. Rebuild and recreate the Local filedata backup container, and recreate the
+   Local PostgreSQL backup container:
 
    ```bash
-   docker compose -f ../../backupServices/filedata/docker-compose.local.yml up -d --build --force-recreate filedata-backup
+   ../../backupServices/filedata/start-backup.sh local
    docker compose -f ../../backupServices/postgres/docker-compose.local.yml up -d --build --force-recreate db-backup
    ```
 
