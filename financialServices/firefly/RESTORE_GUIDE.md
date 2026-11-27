@@ -44,6 +44,16 @@ other running users of the volume, clears the volume in place, imports the dump,
 and waits for the application health check. It uses the database container's
 configured PostgreSQL user and database name.
 
+For GCP, the **Restore Firefly on GCP VM** GitHub Actions workflow runs the
+same script. A manual run skips an existing database volume by default; enable
+`force` to replace it. The GCP deployment workflow forces a restore after every
+successful apply and NPM restore, even for a no-op apply. Before applying,
+schedule downtime and verify a current backup. Configure the required
+credentials and WIF trust as described in the
+[GCP deployment guide](../../googleCloud/README.md).
+Manual runs require `finance_network` to exist; the NPM deployment creates it.
+Workflow concurrency does not prevent direct restore or backup operations.
+
 ### 3. Clear sensitive shell state
 
 If you supplied the passphrase in your shell:
