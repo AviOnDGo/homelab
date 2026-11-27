@@ -72,10 +72,10 @@ Retention for Immich sync-crypt deleted/replaced-file archive is set to 30 days 
    network above, then start Immich. Confirm uploads work before enabling backups.
    If recovering existing data instead, follow `RESTORE_GUIDE.md` first: syncing
    empty volumes can overwrite existing remote mirrors.
-2. Configure `backupServices/filedata/.env` using `.env.local.example` or
-   `.env.prod.example`: set Mega credentials, both crypt passwords as applicable,
-   all three Immich modes to `sync-crypt`, and their Mega destinations and
-   schedules. Keep the crypt password and optional salt safe for recovery.
+2. Configure `backupServices/filedata/.env` using `.env.example`: set MEGA
+   credentials and both crypt passwords as applicable. Review the three Immich
+   destinations in `path.local` and their modes and schedules in
+   `backup-volumes.conf`. Keep the crypt password and optional salt safe for recovery.
 3. Configure `backupServices/postgres/.env` using its matching example. Set
    `IMMICH_DB_HOST=immich-db`, database credentials matching the Immich
    service, `IMMICH_BACKUP_NAME=immich`, a Dropbox path, and a GPG passphrase.
