@@ -55,6 +55,34 @@ class RestoreServiceTests(unittest.TestCase):
             check=False,
         )
 
+    def pihole_dns_stubs(self) -> dict[str, str]:
+        etc = self.work / "etc"
+        etc.mkdir()
+        resolver = etc / "resolv.conf"
+        runtime = self.work / "runtime-resolv.conf"
+        runtime.write_text("nameserver 169.254.169.254\nsearch example.internal\n")
+        resolver.symlink_to(runtime)
+        state = self.work / "resolver-state"
+        state.write_text("enabled active\n")
+        self.env.update(
+            TEST_RESOLVER=str(resolver),
+            TEST_RUNTIME_RESOLVER=str(runtime),
+            TEST_RESOLVER_STATE=str(state),
+        )
+        return {
+            "gcloud": """
+for arg in "$@"; do command="$arg"; done
+command="${command//\\/etc\\/resolv.conf/$TEST_RESOLVER}"
+unset WEB_PASSWORD PIHOLE_WEB_PASSWORD
+exec bash -c "$command"
+""",
+            "systemctl": """
+[[ "$*" == "disable --now systemd-resolved" ]]
+[[ "${FAIL_DISABLE:-0}" != 1 ]] || exit 1
+echo "disabled inactive" > "$TEST_RESOLVER_STATE"
+""",
+        }
+
     def test_allowed_restores_transport_secrets_and_service_files(self) -> None:
         for (service, directory), (force, mode) in itertools.product(
             (
@@ -362,11 +390,7 @@ esac""",
             TMPDIR=str(self.work),
         )
         for name, body in {
-            "gcloud": """
-for arg in "$@"; do command="$arg"; done
-unset WEB_PASSWORD PIHOLE_WEB_PASSWORD
-exec bash -c "$command"
-""",
+            **self.pihole_dns_stubs(),
             "sudo": 'exec "$@"',
             "docker": """
 echo "${COMPOSE_PROJECT_NAME:-} $*" >> "$ARGUMENTS"
@@ -450,6 +474,32 @@ esac""",
             "pihole_filedata:/restore", self.arguments.read_text(encoding="utf-8")
         )
         self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+    def test_pihole_copies_resolver_and_disables_service(self) -> None:
+        self.env.update(SERVICE="pihole", PIHOLE_WEB_PASSWORD="test-password")
+        for name, body in {
+            **self.pihole_dns_stubs(),
+            "sudo": 'exec "$@"',
+            "docker": 'case "$*" in "info"|"volume inspect pihole_filedata") exit 0 ;; *) exit 1 ;; esac',
+            "rclone": "exit 0",
+            "zstd": "exit 0",
+            "jq": 'echo "{}"',
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        resolver = Path(self.env["TEST_RESOLVER"])
+        runtime = Path(self.env["TEST_RUNTIME_RESOLVER"])
+        state = Path(self.env["TEST_RESOLVER_STATE"])
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(resolver.is_symlink())
+        self.assertEqual(resolver.read_text(), runtime.read_text())
+        self.assertEqual(state.read_text().strip(), "disabled inactive")
+        self.assertEqual(self.invoke().returncode, 0)
+        self.env["FAIL_DISABLE"] = "1"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
 
     def test_pihole_compose_receives_password_from_environment(self) -> None:
         docker = shutil.which("docker")
