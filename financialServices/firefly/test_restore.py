@@ -53,7 +53,16 @@ case "$(basename "$0"):$1" in
     if [[ "$*" == *" up -d --wait"* && "${FAIL_HEALTH:-}" == 1 ]]; then exit 1; fi ;;
   docker:run) [[ "${FAIL_CLEAR:-}" != 1 ]] ;;
   docker:exec)
-    if [[ "$*" == *ON_ERROR_STOP* ]]; then
+    if [[ "$*" == *pg_isready* && "${SIMULATE_INIT:-}" == 1 ]]; then
+      if [[ "$*" != *"pg_isready -h 127.0.0.1 "* ]]; then
+        exit 0
+      fi
+      if [[ "${NEVER_READY:-}" == 1 ]]; then exit 1; fi
+      if [[ ! -f "$STATE/tcp-ready" ]]; then
+        touch "$STATE/tcp-ready"
+        exit 1
+      fi
+    elif [[ "$*" == *ON_ERROR_STOP* ]]; then
       if [[ "$*" == *"SELECT 1 FROM"* ]]; then
         [[ "${FAIL_VERIFY:-}" != 1 ]]
       else
@@ -148,6 +157,24 @@ esac
         self.assertIn("docker start db-backup", calls)
         self.assertNotIn("test-passphrase", calls + result.stdout + result.stderr)
         self.assertFalse(list(self.root.glob("firefly-restore.*")))
+
+    def test_waits_for_tcp_server_after_socket_only_initialization(self) -> None:
+        self.env["SIMULATE_INIT"] = "1"
+        result = self.run_restore("--force")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        probes = [line for line in self.calls().splitlines() if "pg_isready" in line]
+        self.assertEqual(len(probes), 2)
+        self.assertTrue(all("pg_isready -h 127.0.0.1 " in line for line in probes))
+        self.assertIn("ON_ERROR_STOP=1", self.calls())
+
+    def test_tcp_readiness_timeout_does_not_import(self) -> None:
+        self.env.update(SIMULATE_INIT="1", NEVER_READY="1", BACKUP_RUNNING="1")
+        result = self.run_restore("--force")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PostgreSQL did not become ready", result.stderr)
+        self.assertIn("remains stopped", result.stderr)
+        self.assertNotIn("ON_ERROR_STOP=1", self.calls())
+        self.assertNotIn("docker start db-backup", self.calls())
 
     def test_failed_backup_stop_attempts_restart_without_stopping_firefly(self) -> None:
         self.env.update(BACKUP_RUNNING="1", FAIL_STOP="1")
