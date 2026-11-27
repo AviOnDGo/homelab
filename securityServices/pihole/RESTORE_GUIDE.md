@@ -43,10 +43,10 @@ concurrency does not protect direct restore or backup operations.
 After the workflow is available on the default branch, start a non-forced run
 with `gh workflow run gcp-pihole-restore.yml --ref main`.
 
-If a restore fails after clearing the volume, the script restarts a previously
-running `filedata-backup` even if the data is incomplete. Check the backup
-service and Pi-hole data before retrying; a non-forced run skips an existing
-volume.
+If a restore fails after volume replacement starts, a previously running
+`filedata-backup` remains stopped to protect the backup history. Recover and
+verify Pi-hole data before manually restarting it with
+`docker start filedata-backup`. A non-forced run skips an existing volume.
 
 ### 2. Verify recovery
 
