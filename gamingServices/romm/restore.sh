@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
 FILEDATA_DIR="${SCRIPT_DIR}/../../backupServices/filedata"
 FILEDATA_ENV="${FILEDATA_DIR}/.env"
+FILEDATA_PATH="${FILEDATA_DIR}/path.local"
 FILEDATA_STARTUP="${FILEDATA_DIR}/start-backup.sh"
 FILEDATA_IMAGE="homelab/filedata-backup:local"
 POSTGRES_VOLUME="romm_postgresdata"
@@ -151,11 +152,16 @@ if [[ ! -f "${FILEDATA_ENV}" ]]; then
   error "Missing ${FILEDATA_ENV}; configure Filen and rclone crypt credentials first."
   exit 1
 fi
+if [[ ! -f "${FILEDATA_PATH}" ]]; then
+  error "Missing ${FILEDATA_PATH}; configure the Local RomM backup destination first."
+  exit 1
+fi
 
 info "Building and validating the Filen restore image..."
 docker build --tag "${FILEDATA_IMAGE}" "${FILEDATA_DIR}"
 if ! docker run --rm \
   --env-file "${FILEDATA_ENV}" \
+  --env-file "${FILEDATA_PATH}" \
   --entrypoint /bin/bash \
   "${FILEDATA_IMAGE}" -ec '
     /usr/local/bin/configure-rclone.sh
@@ -229,6 +235,7 @@ fi
 info "Restoring RomM filedata from Filen..."
 if ! docker run --rm \
   --env-file "${FILEDATA_ENV}" \
+  --env-file "${FILEDATA_PATH}" \
   --mount "type=volume,source=${FILEDATA_VOLUME},target=/restore" \
   --entrypoint /bin/bash \
   "${FILEDATA_IMAGE}" -ec '
