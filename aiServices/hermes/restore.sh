@@ -145,17 +145,18 @@ gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 
   3<<<"$PASSPHRASE" | zstd -d | tar -tf - >/dev/null
 
 # --------------------------------------------------------------------------- #
-# 5. Stop Hermes and pause filedata-backup if running
+# 5. Confirm replacement before stopping services
 # --------------------------------------------------------------------------- #
+HERMES_EXISTS=false
 if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' \
   | grep -Fxq "$CONTAINER_NAME"; then
+  HERMES_EXISTS=true
   warn "The '${CONTAINER_NAME}' container exists."
   warn "This restore will stop Hermes and replace all data in '${VOLUME_NAME}'."
   if ! confirm "Stop Hermes and proceed with restore?"; then
     info "Aborted by operator."
     exit 0
   fi
-  docker compose -f "$COMPOSE_FILE" down
 fi
 
 if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
@@ -169,6 +170,10 @@ fi
 # --------------------------------------------------------------------------- #
 # 6. Prepare volume
 # --------------------------------------------------------------------------- #
+if [[ "$HERMES_EXISTS" == "true" ]]; then
+  docker compose -f "$COMPOSE_FILE" down
+fi
+
 if [[ "$(docker inspect -f '{{.State.Running}}' "$BACKUP_CONTAINER_NAME" 2>/dev/null || true)" == "true" ]]; then
   BACKUP_WAS_RUNNING=true
   info "Stopping ${BACKUP_CONTAINER_NAME} while restoring..."
@@ -195,21 +200,22 @@ gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 
       sh -c 'cd /restore && tar -xf -'
 
 # --------------------------------------------------------------------------- #
-# 8. Bring up the service
+# 8. Verify restored data and bring up the service
 # --------------------------------------------------------------------------- #
-info "Starting Hermes..."
-docker compose -f "$COMPOSE_FILE" up -d
-
-# --------------------------------------------------------------------------- #
-# 9. Verify
-# --------------------------------------------------------------------------- #
-info "Verifying restored data and container..."
+info "Verifying restored data..."
 if ! docker run --rm -v "${VOLUME_NAME}:/restore:ro" alpine \
   sh -c 'test -n "$(find /restore -mindepth 1 -maxdepth 1 -print -quit)"'; then
   error "Verification failed: '${VOLUME_NAME}' is empty."
   exit 1
 fi
 
+info "Starting Hermes..."
+docker compose -f "$COMPOSE_FILE" up -d
+
+# --------------------------------------------------------------------------- #
+# 9. Verify
+# --------------------------------------------------------------------------- #
+info "Verifying Hermes container..."
 if ! docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.Names}}' \
   | grep -Fxq "$CONTAINER_NAME"; then
   error "Verification failed: Hermes is not running."
