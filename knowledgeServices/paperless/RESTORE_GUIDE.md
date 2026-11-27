@@ -11,9 +11,10 @@ dated snapshot.
 - Existing external `knowledge_network` and `ai_network` Docker networks.
 - For the default restore mode, a running `filedata-backup` container with working `dropbox`,
   `gdrive`, and `gdrive-crypt` remotes. Configure the credentials in
-  `backupServices/filedata/.env` and set `PAPERLESS_BACKUP_MODE=sync-crypt` and
-  `PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless`. Recreate the backup container after
-  changing its environment. Google OAuth client ID and secret are only needed when the tokens
+  `backupServices/filedata/.env` and set
+  `PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless`. Paperless mode is set to `sync-crypt`
+  in `backupServices/filedata/backup-volumes.conf`. Recreate the backup container after
+  changing its configuration. Google OAuth client ID and secret are only needed when the tokens
   were issued for your own OAuth client.
 - If restoring from a PostgreSQL dump in production, set `DROPBOX_PATH=/Apps/paperless`; the
   default path is `/App_acc/paperless`.

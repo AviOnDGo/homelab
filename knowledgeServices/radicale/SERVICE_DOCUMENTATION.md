@@ -107,6 +107,6 @@ Configure a proxy host in Nginx Proxy Manager:
 Radicale is registered in `backupServices/filedata` under the `archive` backup mode.
 
 - **Source Volume**: `radicale_filedata`
-- **Backup Schedule**: Configurable via `RADICALE_CRON_SCHEDULE` (Default: `0 3 * * *`)
-- **Retention Period**: Configurable via `RADICALE_RETENTION_DAYS` (Default: `7` days)
+- **Backup Schedule**: Configured in `backup-volumes.conf` (default: `0 3 * * *`)
+- **Retention Period**: Configured in `backup-volumes.conf` (default: `7` days)
 - **Encryption**: GPG AES256 symmetric encryption
