@@ -59,7 +59,7 @@ Tracked `.env.backup` files are not allowed.
 
 For backup services, keep the existing dual-template model:
 
-1. Filedata backups: `env.local.example` and `env.prod.example`
+1. Filedata backups: `.env.local.example` and `.env.prod.example`
 2. Other backup services: `.env.acc.example` and `.env.prd.example`
 
 Secret-bearing keys in tracked templates must use placeholders or variable references
@@ -74,7 +74,7 @@ restore content while keeping approved naming:
 	`git show <commit>:<old-path>`
 2. Apply restored content into the approved file name:
 	non-backup services use `.env.example`; filedata backups use
-	`env.local.example` and `env.prod.example`; other backup services use
+	`.env.local.example` and `.env.prod.example`; other backup services use
 	`.env.acc.example` and `.env.prd.example`.
 3. Re-run local secret scan hooks and replace any literal credentials with
 	placeholders before committing.

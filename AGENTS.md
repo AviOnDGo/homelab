@@ -660,8 +660,8 @@ All spec files in `openspec/specs/` SHALL follow this format. Apply it when crea
 - `.env.example`
 - `.env.acc.example`
 - `.env.prd.example`
-- `env.local.example`
-- `env.prod.example`
+- `.env.local.example`
+- `.env.prod.example`
 - Any file matching `*.example` — these contain only placeholders, no real credentials
 
 **Enforcement rules:**
