@@ -91,7 +91,7 @@ volumes:
 
 secrets:
   firefly_cron_token:
-    file: ${FIREFLY_CRON_TOKEN_FILE:-/run/secrets/firefly_cron_token}
+    environment: STATIC_CRON_TOKEN
 
 networks:
   default:
