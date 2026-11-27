@@ -45,12 +45,17 @@ jobs:
           ZONE: ${{ vars.GCP_ZONE }}
         run: |
           gcloud compute ssh "$VM_NAME" \
+            --quiet \
             --project "$PROJECT_ID" \
             --zone "$ZONE" \
             --command "sudo bash -s" <<'EOF'
           set -euo pipefail
           if ! command -v tailscale >/dev/null 2>&1; then
             curl -fsSL https://tailscale.com/install.sh | sh
+          fi
+          if ! command -v tailscale >/dev/null 2>&1; then
+            echo "Tailscale installation did not provide the tailscale command" >&2
+            exit 1
           fi
           systemctl enable --now tailscaled
           EOF
@@ -146,6 +151,7 @@ jobs:
           echo "::add-mask::$auth_key"
 
           printf '%s\n' "$auth_key" | gcloud compute ssh "$VM_NAME" \
+            --quiet \
             --project "$PROJECT_ID" \
             --zone "$ZONE" \
             --command "sudo tailscale up --authkey=file:/dev/stdin --ssh --accept-dns=false --advertise-tags=tag:server"
