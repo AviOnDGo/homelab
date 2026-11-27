@@ -61,9 +61,10 @@ After encryption or sync preparation, each backup run SHALL upload or synchroniz
   namespace
 - **AND** the job SHALL NOT create a GPG archive or a deleted-file retention namespace
 
-### REQ-004: Retention is enforced per service via configurable environment variable
-Each service registered with a backup service SHALL have a dedicated
-`{SERVICE}_RETENTION_DAYS` environment variable. Old local backup files SHALL be
+### REQ-004: Retention is enforced per service
+Each filedata service SHALL have a retention value in the registry, passed to the
+backup container through its dedicated `{SERVICE}_RETENTION_DAYS` environment
+variable. Database retention SHALL remain environment-configured. Old local backup files SHALL be
 deleted after this many days using `find ... -mtime +{days} -delete`.
 
 #### Scenario: Old local backups are pruned
@@ -90,8 +91,9 @@ hostname.
 
 ### REQ-006: Backup schedules use per-service cron variables, not a single shared schedule
 Neither `filedata-backup` nor `db-backup` SHALL use a single `CRON_SCHEDULE` variable
-shared across all services. Each service SHALL have its own
-`{SERVICE}_CRON_SCHEDULE` environment variable.
+shared across all services. Each filedata schedule SHALL be configured in its
+registry entry and passed as a dedicated `{SERVICE}_CRON_SCHEDULE` environment
+variable; database schedules SHALL remain environment-configured.
 
 #### Scenario: Per-service schedule variables are declared
 - **GIVEN** a `docker-compose.yml` command block for a backup service is inspected
@@ -107,7 +109,7 @@ minimum 5-minute intervals. Postgres backup cron entries SHALL start no earlier 
 
 #### Scenario: Default filedata schedules are staggered from 02:00
 - **GIVEN** the filedata backup service is deployed with default schedule values
-- **WHEN** all per-service cron schedules are read from `.env.local.example`
+- **WHEN** all per-service cron schedules are read from `backup-volumes.conf`
 - **THEN** no two services SHALL share the same cron time
 - **AND** the earliest entry SHALL be at 02:00 or later
 
@@ -155,9 +157,8 @@ whose database it backs up. It SHALL NOT rely on host-mode or IP addresses.
 
 ### REQ-011: Vaultwarden volume is registered with filedata-backup
 The `vaultwarden_filedata` volume SHALL be mounted read-only in the `filedata-backup`
-container at `/backup-sources/vaultwarden`. A `VAULTWARDEN_CRON_SCHEDULE` and
-`VAULTWARDEN_RETENTION_DAYS` SHALL be declared in `.env.local.example` and
-`.env.prod.example`.
+container at `/backup-sources/vaultwarden`. The registry SHALL declare its
+schedule and retention.
 
 #### Scenario: Vaultwarden backup runs on its own schedule
 - **GIVEN** `VAULTWARDEN_CRON_SCHEDULE` fires
@@ -183,7 +184,7 @@ The `paperless_postgresdata` volume SHALL be mounted read-only in `db-backup`. A
 - **THEN** it SHALL authenticate using the existing database credentials
 
 ### REQ-013: Immich photo volumes are registered with filedata-backup
-The three Immich photo volumes (`immich_library`, `immich_profile`, `immich_upload`) SHALL each be mounted read-only in `filedata-backup` at `/backup-sources/immich-library`, `/backup-sources/immich-profile`, and `/backup-sources/immich-upload` respectively. Each volume SHALL define its own cron schedule, backup mode, destination, and retention variables. The ML model cache volume is ephemeral and SHALL NOT be included.
+The three Immich photo volumes (`immich_library`, `immich_profile`, `immich_upload`) SHALL each be mounted read-only in `filedata-backup` at `/backup-sources/immich-library`, `/backup-sources/immich-profile`, and `/backup-sources/immich-upload` respectively. Each volume SHALL define its own destination variable and its mode, schedule, and retention in the registry. The ML model cache volume is ephemeral and SHALL NOT be included.
 
 #### Scenario: Each Immich photo volume is backed up independently
 - **GIVEN** each Immich volume cron schedule fires
@@ -316,7 +317,7 @@ only services deployed to that profile and SHALL NOT enable unrelated jobs.
 - **AND** other host profiles SHALL retain their configured service sets
 
 ### REQ-022: Paperless retained documents are registered with filedata-backup
-The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile. The filedata backup service SHALL declare Paperless-specific schedule, Dropbox path, and retention variables in both `.env.local.example` and `.env.prod.example`.
+The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile, with its schedule and retention. The filedata backup service SHALL declare Paperless destination variables in both `.env.local.example` and `.env.prod.example`.
 
 #### Scenario: Backup profiles preserve configuration during the category move
 - **GIVEN** Paperless backup configuration exists before the move to Knowledge Services
@@ -331,10 +332,11 @@ The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for
 - **THEN** `paperless_filedata` SHALL map to the `paperless` backup name
 - **AND** every configured Paperless host profile SHALL include `default`
 
-#### Scenario: Paperless backup schedule variables are documented
+#### Scenario: Paperless backup configuration is documented
 - **GIVEN** `backupServices/filedata/.env.local.example` and `.env.prod.example` are inspected
 - **WHEN** Paperless entries are reviewed
-- **THEN** `PAPERLESS_CRON_SCHEDULE`, `PAPERLESS_DROPBOX_PATH`, and `PAPERLESS_RETENTION_DAYS` SHALL be present in both files
+- **THEN** `PAPERLESS_DROPBOX_PATH` and `PAPERLESS_SYNC_CRYPT_REMOTE` SHALL be present in both files
+- **AND** the Paperless schedule and retention SHALL be present in the registry
 - **AND** the Dropbox paths SHALL follow the account-specific example-file convention used by the repo
 
 ### REQ-023: Paperless retained-file backups exclude derived media artifacts
@@ -417,12 +419,12 @@ backup lane for the `syncthing_filedata` configuration volume.
 ### REQ-028: Syncthing Backup Uses Archive Mode With Daily Retention
 The Syncthing filedata backup lane SHALL use `archive` backup mode, run daily, and retain backups for 7 days.
 
-#### Scenario: Environment configuration enforces Syncthing archive policy
-- **GIVEN** the tracked filedata backup environment examples are inspected
-- **WHEN** Syncthing backup variables are reviewed
-- **THEN** `SYNCTHING_BACKUP_MODE` SHALL be `archive`
-- **AND** `SYNCTHING_CRON_SCHEDULE` SHALL declare a daily schedule
-- **AND** `SYNCTHING_RETENTION_DAYS` SHALL be `7`
+#### Scenario: Configuration enforces Syncthing archive policy
+- **GIVEN** the filedata backup registry and environment examples are inspected
+- **WHEN** Syncthing backup configuration is reviewed
+- **THEN** Syncthing's registered backup mode SHALL be `archive`
+- **AND** the registered Syncthing schedule SHALL be daily
+- **AND** its registered retention SHALL be `7` days
 - **AND** no `SECONDBRAIN_*` backup variables SHALL be present
 
 ### REQ-029: Syncthing Backup Scope Is Default And Local Only
@@ -466,24 +468,23 @@ secrets mounts SHALL follow grouped source volumes.
 - **AND** adding the service SHALL NOT enable unrelated commented entries
 - **AND** declaration order SHALL NOT change configured cron execution times
 
-### REQ-031: Filedata Backup Modes Come From The Container Environment
-Filedata compose profiles SHALL load per-volume backup modes through
-`env_file: .env` and SHALL NOT duplicate them with startup `export` commands.
-The backup script SHALL use `archive` when a mode is unset or empty.
+### REQ-031: Filedata Backup Modes Come From The Registry
+Each filedata registry entry SHALL specify `archive` or `sync-crypt`. The startup
+script SHALL reject missing or invalid modes and pass selected modes to the
+container in the generated Compose override, taking precedence over `env_file`.
 Volumes requiring `sync-crypt`, including Immich and Paperless, SHALL have that
-mode explicitly configured in the environment.
+mode explicitly configured in the registry.
 
 #### Scenario: Explicit mode is resolved by volume identifier
-- **GIVEN** `IMMICH_LIBRARY_BACKUP_MODE=sync-crypt` is supplied to the container
+- **GIVEN** `immich-library` is registered with `sync-crypt` mode
 - **WHEN** the backup script runs for `immich-library`
 - **THEN** the script SHALL resolve the normalized environment key and select
-  `sync-crypt` without a Compose startup export
+  `sync-crypt` from the generated Compose environment
 
-#### Scenario: Missing mode uses the script fallback
-- **GIVEN** a volume's backup mode is unset or empty
-- **WHEN** its filedata backup job runs
-- **THEN** the script SHALL select `archive`
-- **AND** the Compose command SHALL NOT supply an implicit `sync-crypt` default
+#### Scenario: Missing or invalid registry mode prevents startup
+- **GIVEN** a volume's registry entry has a missing or unsupported backup mode
+- **WHEN** the startup script reads the registry
+- **THEN** it SHALL report an error and SHALL NOT start the backup container
 
 ### REQ-032: Backup Containers Start Without Host Script Mounts Or Package Downloads
 Both backup services SHALL build local images from digest-pinned base images in
@@ -571,3 +572,21 @@ mount point before starting an archive or synchronizing a remote destination.
 - **GIVEN** the backup source directory is a mount point
 - **WHEN** the backup is started
 - **THEN** the backup SHALL continue with the existing mode-specific validation and processing
+
+### REQ-037: Filedata Retention And Schedules Come From The Registry
+Each filedata registry entry SHALL specify non-negative retention in days and a
+five-field cron schedule. The startup script SHALL reject missing or malformed
+retention, schedules without five fields, and schedules containing unsafe
+characters, and pass selected policies to the container in the generated Compose
+override, taking precedence over `env_file`.
+
+#### Scenario: Registered policies control scheduled backups
+- **GIVEN** a selected volume has a schedule and retention in the registry
+- **WHEN** the startup script generates its Compose configuration
+- **THEN** the container SHALL receive the registered schedule and retention
+- **AND** legacy environment-file values SHALL NOT override them
+
+#### Scenario: Invalid policy prevents deployment
+- **GIVEN** a registry entry has missing or malformed retention, a schedule without five fields, or unsafe schedule characters
+- **WHEN** the startup script reads the registry
+- **THEN** it SHALL report an error and SHALL NOT start the backup container
