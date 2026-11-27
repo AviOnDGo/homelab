@@ -179,7 +179,7 @@ unset PASSPHRASE
   Recreate the Local backup container to regenerate its rclone configuration:
 
   ```bash
-  docker compose -f ../../backupServices/filedata/docker-compose.local.yml up -d --force-recreate filedata-backup
+  ../../backupServices/filedata/start-backup.sh local
   ./restore.sh --check-only
   ```
 
