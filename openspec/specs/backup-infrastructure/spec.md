@@ -200,15 +200,15 @@ The Immich file-lane restore workflow SHALL use the existing `filedata-backup` c
 - **THEN** each of `immich_library`, `immich_profile`, and `immich_upload` SHALL be restorable using the `filedata-backup` container's rclone
 - **AND** the restore flow SHALL read from the configured `mega-crypt` `current/` paths
 
-### REQ-020: Remote Backup Profile — Scoped Volume Set
+### REQ-020: Prod Backup Profile — Scoped Volume Set
 When deployed to a remote host, the `filedata-backup` service SHALL protect only the
-four remote-profile source volumes plus `gpg-secrets` using
-`backupServices/filedata/docker-compose.remote.yml`. The canonical
+four prod-profile source volumes plus `gpg-secrets` using
+`backupServices/filedata/docker-compose.prod.yml`. The canonical
 `docker-compose.yml` SHALL retain the full homelab backup set.
 
-#### Scenario: Remote backup volumes are exactly the active service set
-- **GIVEN** the Remote filedata backup profile is selected
-- **WHEN** `backupServices/filedata/docker-compose.remote.yml` is inspected
+#### Scenario: Prod backup volumes are exactly the active service set
+- **GIVEN** the Prod filedata backup profile is selected
+- **WHEN** `backupServices/filedata/docker-compose.prod.yml` is inspected
 - **THEN** the `volumes:` mount list of the `filedata-backup` service SHALL
   contain source volumes `freshrss_filedata`, `npm_filedata`, `pihole_filedata`,
   and `vaultwarden_filedata`, followed by `gpg-secrets`, in that order
@@ -291,7 +291,7 @@ The `firefox_filedata` Docker volume SHALL be registered in `backupServices/file
 - **AND** `FIREFOX_CRON_SCHEDULE` SHALL be `10 4 * * *` (staggered at least 5 minutes after FreshRSS at `0 4 * * *`)
 
 ### REQ-023: Backup Profiles Preserve The Shared Ordering Contract
-All default, Local, and Remote backup compose profiles SHALL follow the category,
+All default, Local, Remote PostgreSQL, and Prod filedata backup compose profiles SHALL follow the category,
 service, volume-suffix, network, and crontab-comment ordering contract defined
 in `backup-services` REQ-030 and the repository's backup Compose instructions.
 
