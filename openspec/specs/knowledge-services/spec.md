@@ -100,10 +100,11 @@ The FreshRSS container SHALL use `restart: unless-stopped`.
 The `freshrss_filedata` volume SHALL be registered with `backupServices/filedata` before the FreshRSS deployment is considered production-ready.
 
 #### Scenario: Backup registration is present
-- **GIVEN** `backupServices/filedata/docker-compose.yml` is inspected
+- **GIVEN** `backupServices/filedata/backup-volumes.conf` is inspected
 - **WHEN** the volumes and cron configuration are reviewed
-- **THEN** `freshrss_filedata` SHALL be listed as an external volume mounted at `/backup-sources/freshrss:ro`
-- **AND** a cron entry for FreshRSS backup SHALL be present
+- **THEN** `freshrss_filedata` SHALL be selected for `default` and `prod`
+- **AND** the generated mount SHALL be read-only at `/backup-sources/freshrss`
+- **AND** a cron entry for FreshRSS backup SHALL be generated
 
 ### REQ-027: Radicale CalDAV/CardDAV Synchronization Service
 The knowledge services stack SHALL provide a self-hosted CalDAV and CardDAV calendar and contact synchronization server through a Radicale container named `radicale` deployed at `knowledgeServices/radicale/`.
@@ -128,8 +129,9 @@ The knowledge services stack SHALL provide a self-hosted CalDAV and CardDAV cale
 
 #### Scenario: Radicale volume registered with backup services
 - **GIVEN** Radicale holds persistent state in `radicale_filedata`
-- **WHEN** `backupServices/filedata/docker-compose.yml` is inspected
-- **THEN** `radicale_filedata` SHALL be mounted at `/backup-sources/radicale:ro`
+- **WHEN** `backupServices/filedata/backup-volumes.conf` is inspected
+- **THEN** `radicale_filedata` SHALL be selected for `default` and `local`
+- **AND** its generated mount SHALL be `/backup-sources/radicale:ro`
 - **AND** a dedicated `${RADICALE_CRON_SCHEDULE}` cron job SHALL execute automated backups
 
 ### REQ-028: Paperless Credentials via env_file

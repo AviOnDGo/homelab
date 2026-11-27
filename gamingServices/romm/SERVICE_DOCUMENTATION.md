@@ -55,9 +55,10 @@ docker inspect --format='{{.State.Health.Status}}' romm-db
 ## Backup & Restore
 
 - `romm_postgresdata` is registered with the **Local** Postgres backup profile only (`backupServices/postgres/docker-compose.local.yml`), backed up to Dropbox at `/App_acc/romm` by `db-backup`.
-- `romm_filedata` is registered with the **Local** filedata backup profile only (`backupServices/filedata/docker-compose.local.yml`). It syncs daily to `filen-crypt:/Romm` with 30-day retention; the Filen backend and rclone crypt layer both encrypt data.
+- `romm_filedata` is registered in `backupServices/filedata/backup-volumes.conf` for the **default** and **Local** host profiles. It syncs daily to `filen-crypt:/Romm` with 30-day retention; the Filen backend and rclone crypt layer both encrypt data.
 - The sync runs one-way from the volume to Filen under `/Romm/current/`. Any files left at `/Romm` by the previous Filen CLI sync remain untouched and can be removed after the new backup is verified.
 - Configure `FILEN_EMAIL`, `FILEN_PASSWORD`, `FILEN_API_KEY`, and `RCLONE_CRYPT_PASSWORD` in `backupServices/filedata/.env`. Generate the API key with `filen export-api-key` using the Filen CLI; the key is sensitive.
+- Configure the RomM destination in `backupServices/filedata/path.local`.
 - See [`RESTORE_GUIDE.md`](RESTORE_GUIDE.md) and [`restore.sh`](restore.sh) for recovery steps.
 - Run `./restore.sh` from this directory for coordinated filedata and database
   recovery. The script prompts before replacing existing data and restarts RomM

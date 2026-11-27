@@ -1,0 +1,92 @@
+# ============================================================
+# filedata-backup — LOCAL destinations
+# Dropbox root: /App_acc
+# This file is tracked. Do not put credentials here.
+# ============================================================
+
+# --- Per-service backup configuration ---
+# Backup modes, retention, and schedules are configured in backup-volumes.conf.
+
+# Pi-hole
+PIHOLE_DROPBOX_PATH=/App_acc/pihole
+PIHOLE_SYNC_CRYPT_REMOTE=
+
+# Nginx Proxy Manager
+NPM_DROPBOX_PATH=/App_acc/npm
+NPM_SYNC_CRYPT_REMOTE=
+
+# Vaultwarden
+VAULTWARDEN_DROPBOX_PATH=/App_acc/vaultwarden
+VAULTWARDEN_SYNC_CRYPT_REMOTE=
+
+# Hermes
+HERMES_DROPBOX_PATH=/App_acc/hermes
+HERMES_SYNC_CRYPT_REMOTE=
+
+# n8n
+N8N_DROPBOX_PATH=/App_acc/n8n
+N8N_SYNC_CRYPT_REMOTE=
+
+# OmniRoute (contains provider credentials; backup artifacts are GPG-encrypted)
+OMNIROUTE_DROPBOX_PATH=/App_acc/omniroute
+OMNIROUTE_SYNC_CRYPT_REMOTE=
+
+# Open WebUI
+OPENWEBUI_DROPBOX_PATH=/App_acc/openwebui
+OPENWEBUI_SYNC_CRYPT_REMOTE=
+
+# FreshRSS
+FRESHRSS_DROPBOX_PATH=/App_acc/freshrss
+FRESHRSS_SYNC_CRYPT_REMOTE=
+
+# Immich — photo library (sync-crypt lane)
+IMMICH_LIBRARY_DROPBOX_PATH=
+IMMICH_LIBRARY_SYNC_CRYPT_REMOTE=mega-crypt:/App_acc/immich-library
+
+# Immich — user profiles (sync-crypt lane)
+IMMICH_PROFILE_DROPBOX_PATH=
+IMMICH_PROFILE_SYNC_CRYPT_REMOTE=mega-crypt:/App_acc/immich-profile
+
+# Immich — raw uploads (sync-crypt lane)
+IMMICH_UPLOAD_DROPBOX_PATH=
+IMMICH_UPLOAD_SYNC_CRYPT_REMOTE=mega-crypt:/App_acc/immich-upload
+
+# Firefox
+FIREFOX_DROPBOX_PATH=/App_acc/firefox
+FIREFOX_SYNC_CRYPT_REMOTE=
+
+# Syncthing config
+SYNCTHING_DROPBOX_PATH=/App_acc/syncthing
+SYNCTHING_SYNC_CRYPT_REMOTE=
+
+# Jellyfin configuration only
+JELLYFIN_DROPBOX_PATH=/App_acc/jellyfin
+JELLYFIN_SYNC_CRYPT_REMOTE=
+
+# Paperless (Knowledge Services) — pure encrypted mirror (excludes thumbnails and media.lock)
+PAPERLESS_DROPBOX_PATH=
+PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless
+
+# Jackett configuration
+JACKETT_DROPBOX_PATH=/App_acc/jackett
+JACKETT_SYNC_CRYPT_REMOTE=
+
+# Radarr configuration
+RADARR_DROPBOX_PATH=/App_acc/radarr
+RADARR_SYNC_CRYPT_REMOTE=
+
+# Sonarr configuration
+SONARR_DROPBOX_PATH=/App_acc/sonarr
+SONARR_SYNC_CRYPT_REMOTE=
+
+# Transmission configuration
+TRANSMISSION_DROPBOX_PATH=/App_acc/transmission
+TRANSMISSION_SYNC_CRYPT_REMOTE=
+
+# Radicale
+RADICALE_DROPBOX_PATH=/App_acc/radicale
+RADICALE_SYNC_CRYPT_REMOTE=
+
+# RomM (Gaming Services; Local profile only)
+ROMM_DROPBOX_PATH=
+ROMM_SYNC_CRYPT_REMOTE=filen-crypt:/Romm

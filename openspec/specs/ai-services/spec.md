@@ -298,13 +298,13 @@ The Ollama service SHALL allow operators to configure a Docker memory limit via 
 The AI services backup policy SHALL include `openwebui_filedata` in automated filedata backups and SHALL NOT include `ollama_data` in automated filedata backups.
 
 #### Scenario: Open WebUI volume is included in backup service
-- **GIVEN** `backupServices/filedata/docker-compose.yml` defines mounted backup source volumes
-- **WHEN** the filedata-backup service configuration is inspected
+- **GIVEN** `backupServices/filedata/backup-volumes.conf` defines the host selections
+- **WHEN** the default and Local selections are inspected
 - **THEN** `openwebui_filedata` SHALL be mounted read-only for backup processing
-- **AND** scheduled backup variables for Open WebUI SHALL be defined in backup environment configuration
+- **AND** Open WebUI's schedule SHALL be defined in the backup registry
 
 #### Scenario: Ollama model volume is excluded from backup service
-- **GIVEN** `backupServices/filedata/docker-compose.yml` defines mounted backup source volumes
+- **GIVEN** `backupServices/filedata/backup-volumes.conf` defines registered backup sources
 - **WHEN** the filedata-backup service configuration is inspected
 - **THEN** `ollama_data` SHALL NOT be mounted as a backup source
 - **AND** no automated backup schedule for `ollama_data` SHALL be required

@@ -1,0 +1,92 @@
+# ============================================================
+# filedata-backup — PRODUCTION destinations
+# Dropbox root: /Apps
+# This file is tracked. Do not put credentials here.
+# ============================================================
+
+# --- Per-service backup configuration ---
+# Backup modes, retention, and schedules are configured in backup-volumes.conf.
+
+# Pi-hole
+PIHOLE_DROPBOX_PATH=/Apps/pihole
+PIHOLE_SYNC_CRYPT_REMOTE=
+
+# Nginx Proxy Manager
+NPM_DROPBOX_PATH=/Apps/npm
+NPM_SYNC_CRYPT_REMOTE=
+
+# Vaultwarden
+VAULTWARDEN_DROPBOX_PATH=/Apps/vaultwarden
+VAULTWARDEN_SYNC_CRYPT_REMOTE=
+
+# Hermes
+HERMES_DROPBOX_PATH=/Apps/hermes
+HERMES_SYNC_CRYPT_REMOTE=
+
+# n8n
+N8N_DROPBOX_PATH=/Apps/n8n
+N8N_SYNC_CRYPT_REMOTE=
+
+# OmniRoute (contains provider credentials; backup artifacts are GPG-encrypted)
+OMNIROUTE_DROPBOX_PATH=/Apps/omniroute
+OMNIROUTE_SYNC_CRYPT_REMOTE=
+
+# Open WebUI
+OPENWEBUI_DROPBOX_PATH=/Apps/openwebui
+OPENWEBUI_SYNC_CRYPT_REMOTE=
+
+# FreshRSS
+FRESHRSS_DROPBOX_PATH=/Apps/freshrss
+FRESHRSS_SYNC_CRYPT_REMOTE=
+
+# Jellyfin configuration only
+JELLYFIN_DROPBOX_PATH=/Apps/jellyfin
+JELLYFIN_SYNC_CRYPT_REMOTE=
+
+# Immich — photo library (sync-crypt lane)
+IMMICH_LIBRARY_DROPBOX_PATH=
+IMMICH_LIBRARY_SYNC_CRYPT_REMOTE=mega-crypt:/Apps/immich-library
+
+# Immich — user profiles (sync-crypt lane)
+IMMICH_PROFILE_DROPBOX_PATH=
+IMMICH_PROFILE_SYNC_CRYPT_REMOTE=mega-crypt:/Apps/immich-profile
+
+# Immich — raw uploads (sync-crypt lane)
+IMMICH_UPLOAD_DROPBOX_PATH=
+IMMICH_UPLOAD_SYNC_CRYPT_REMOTE=mega-crypt:/Apps/immich-upload
+
+# Firefox
+FIREFOX_DROPBOX_PATH=/Apps/firefox
+FIREFOX_SYNC_CRYPT_REMOTE=
+
+# Syncthing config
+SYNCTHING_DROPBOX_PATH=/Apps/syncthing
+SYNCTHING_SYNC_CRYPT_REMOTE=
+
+# Paperless (Knowledge Services) — pure encrypted mirror (excludes thumbnails and media.lock)
+PAPERLESS_DROPBOX_PATH=
+PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless
+
+# Jackett configuration
+JACKETT_DROPBOX_PATH=/Apps/jackett
+JACKETT_SYNC_CRYPT_REMOTE=
+
+# Radarr configuration
+RADARR_DROPBOX_PATH=/Apps/radarr
+RADARR_SYNC_CRYPT_REMOTE=
+
+# Sonarr configuration
+SONARR_DROPBOX_PATH=/Apps/sonarr
+SONARR_SYNC_CRYPT_REMOTE=
+
+# Transmission configuration
+TRANSMISSION_DROPBOX_PATH=/Apps/transmission
+TRANSMISSION_SYNC_CRYPT_REMOTE=
+
+# Radicale
+RADICALE_DROPBOX_PATH=/Apps/radicale
+RADICALE_SYNC_CRYPT_REMOTE=
+
+# RomM (used only when romm_filedata is present on this host)
+ROMM_DROPBOX_PATH=
+ROMM_SYNC_CRYPT_REMOTE=filen-crypt:/Romm

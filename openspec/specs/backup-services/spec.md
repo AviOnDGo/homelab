@@ -61,9 +61,10 @@ After encryption or sync preparation, each backup run SHALL upload or synchroniz
   namespace
 - **AND** the job SHALL NOT create a GPG archive or a deleted-file retention namespace
 
-### REQ-004: Retention is enforced per service via configurable environment variable
-Each service registered with a backup service SHALL have a dedicated
-`{SERVICE}_RETENTION_DAYS` environment variable. Old local backup files SHALL be
+### REQ-004: Retention is enforced per service
+Each filedata service SHALL have a retention value in the registry, passed to the
+backup container through its dedicated `{SERVICE}_RETENTION_DAYS` environment
+variable. Database retention SHALL remain environment-configured. Old local backup files SHALL be
 deleted after this many days using `find ... -mtime +{days} -delete`.
 
 #### Scenario: Old local backups are pruned
@@ -90,8 +91,9 @@ hostname.
 
 ### REQ-006: Backup schedules use per-service cron variables, not a single shared schedule
 Neither `filedata-backup` nor `db-backup` SHALL use a single `CRON_SCHEDULE` variable
-shared across all services. Each service SHALL have its own
-`{SERVICE}_CRON_SCHEDULE` environment variable.
+shared across all services. Each filedata schedule SHALL be configured in its
+registry entry and passed as a dedicated `{SERVICE}_CRON_SCHEDULE` environment
+variable; database schedules SHALL remain environment-configured.
 
 #### Scenario: Per-service schedule variables are declared
 - **GIVEN** a `docker-compose.yml` command block for a backup service is inspected
@@ -100,16 +102,16 @@ shared across all services. Each service SHALL have its own
   (e.g., `PIHOLE_CRON_SCHEDULE`, `NPM_CRON_SCHEDULE`, `VAULTWARDEN_CRON_SCHEDULE`)
 - **AND** a single `CRON_SCHEDULE` shared across services SHALL NOT exist
 
-### REQ-007: Backup schedules are staggered — filedata starts 02:00, postgres starts 03:00
-Filedata backup cron entries SHALL start no earlier than 02:00 and be staggered at
-minimum 5-minute intervals. Postgres backup cron entries SHALL start no earlier than
-03:00 and be staggered at minimum 5 minutes apart.
+### REQ-007: Backup schedule timing
+Filedata backup cron entries SHALL use their registered schedules without a global
+earliest start time or uniqueness requirement. Postgres backup cron entries SHALL
+start no earlier than 03:00 and be staggered at minimum 5 minutes apart.
 
-#### Scenario: Default filedata schedules are staggered from 02:00
-- **GIVEN** the filedata backup service is deployed with default schedule values
-- **WHEN** all per-service cron schedules are read from `env.acc.example`
-- **THEN** no two services SHALL share the same cron time
-- **AND** the earliest entry SHALL be at 02:00 or later
+#### Scenario: Filedata schedules follow the registry
+- **GIVEN** `backup-volumes.conf` contains the registered filedata schedules
+- **WHEN** the default filedata schedules are inspected
+- **THEN** Syncthing SHALL be scheduled at 01:15 and Jellyfin at 01:20
+- **AND** Radicale and Immich library SHALL both be scheduled at 03:00
 
 #### Scenario: Default postgres schedules are staggered from 03:00
 - **GIVEN** the postgres backup service is deployed with default schedule values
@@ -155,8 +157,8 @@ whose database it backs up. It SHALL NOT rely on host-mode or IP addresses.
 
 ### REQ-011: Vaultwarden volume is registered with filedata-backup
 The `vaultwarden_filedata` volume SHALL be mounted read-only in the `filedata-backup`
-container at `/backup-sources/vaultwarden`. A `VAULTWARDEN_CRON_SCHEDULE` and
-`VAULTWARDEN_RETENTION_DAYS` SHALL be declared in `env.acc.example` and `env.prd.example`.
+container at `/backup-sources/vaultwarden`. The registry SHALL declare its
+schedule and retention.
 
 #### Scenario: Vaultwarden backup runs on its own schedule
 - **GIVEN** `VAULTWARDEN_CRON_SCHEDULE` fires
@@ -182,7 +184,7 @@ The `paperless_postgresdata` volume SHALL be mounted read-only in `db-backup`. A
 - **THEN** it SHALL authenticate using the existing database credentials
 
 ### REQ-013: Immich photo volumes are registered with filedata-backup
-The three Immich photo volumes (`immich_library`, `immich_profile`, `immich_upload`) SHALL each be mounted read-only in `filedata-backup` at `/backup-sources/immich-library`, `/backup-sources/immich-profile`, and `/backup-sources/immich-upload` respectively. Each volume SHALL define its own cron schedule, backup mode, destination, and retention variables. The ML model cache volume is ephemeral and SHALL NOT be included.
+The three Immich photo volumes (`immich_library`, `immich_profile`, `immich_upload`) SHALL each be mounted read-only in `filedata-backup` at `/backup-sources/immich-library`, `/backup-sources/immich-profile`, and `/backup-sources/immich-upload` respectively. Each volume SHALL define its own destination variable and its mode, schedule, and retention in the registry. The ML model cache volume is ephemeral and SHALL NOT be included.
 
 #### Scenario: Each Immich photo volume is backed up independently
 - **GIVEN** each Immich volume cron schedule fires
@@ -226,13 +228,23 @@ these two standard files and removed.
 - **THEN** both `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md` SHALL be present
 - **AND** `IMPLEMENTATION_DETAILS.md` and `QUICKSTART_GUIDE.md` SHALL NOT exist
 
-### REQ-016: Both backup services have env.acc.example and env.prd.example
-Both `backupServices/filedata/` and `backupServices/postgres/` SHALL provide `env.acc.example` and `env.prd.example`. Both files SHALL declare exactly the same variable names per service domain. Provider-specific path values SHALL be permitted to differ by environment and mode, and are not restricted to Dropbox for filedata services.
+### REQ-016: Backup services provide credential and destination configuration
+`backupServices/filedata/` SHALL provide a credentials-only `.env.example` and
+destination files `path.local` and `path.prod`; `backupServices/postgres/` SHALL
+provide `.env.acc.example` and `.env.prd.example`. The filedata path files and
+the PostgreSQL examples SHALL each declare matching variable names per pair.
+Filedata destinations SHALL be permitted to differ by environment and mode.
 
-#### Scenario: env examples cover all registered services
-- **GIVEN** `env.acc.example` and `env.prd.example` are compared for a backup service
+#### Scenario: Filedata path files cover all registered services
+- **GIVEN** `path.local` and `path.prod` are compared
 - **WHEN** checking variable names
-- **THEN** both files SHALL declare identical variable names for that backup service
+- **THEN** both files SHALL declare identical destination variable names
+- **AND** `.env.example` SHALL contain credentials rather than destination paths
+
+#### Scenario: PostgreSQL examples cover all registered services
+- **GIVEN** `.env.acc.example` and `.env.prd.example` are compared for PostgreSQL backups
+- **WHEN** checking variable names
+- **THEN** both files SHALL declare identical variable names
 - **AND** value differences SHALL be limited to environment-specific paths, schedules, or provider targets
 
 ### REQ-017: Backup health is verified on a three-tier schedule
@@ -252,10 +264,10 @@ to verify files exist), monthly (full test-restore to a non-production environme
 - **THEN** database row counts SHALL match known baselines
 - **AND** Vaultwarden vault SHALL unlock successfully from the restored data
 
-### REQ-018: Remote backup services SHALL be deployed from dedicated remote-scoped compose files
+### REQ-018: Remote backup services SHALL be deployed from dedicated scoped compose files
 When deploying backup services to a remote host, the operator SHALL use
-`docker-compose.remote.yml` instead of `docker-compose.yml` for both
-`backupServices/postgres/` and `backupServices/filedata/`.
+`backupServices/postgres/docker-compose.remote.yml` for PostgreSQL and
+`backupServices/filedata/start-backup.sh prod` for filedata.
 
 #### Scenario: Remote postgres backup deployed with correct scope
 - **GIVEN** a remote host is configured for the remote PostgreSQL backup profile
@@ -265,67 +277,66 @@ When deploying backup services to a remote host, the operator SHALL use
 - **AND** only `finance_network` and `security_network` SHALL be joined
 - **AND** `firefly` and `firefoxsync` SHALL each have a scheduled backup job
 
-#### Scenario: Remote filedata backup deployed with correct scope
-- **GIVEN** a remote host is configured for the remote filedata backup profile
+#### Scenario: Prod filedata backup deployed with correct scope
+- **GIVEN** a remote host is configured for the prod filedata backup profile
 - **WHEN** the operator starts the filedata backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.remote.yml up -d`
+- **THEN** the command SHALL be `./start-backup.sh prod`
 - **AND** only `pihole_filedata`, `npm_filedata`, `vaultwarden_filedata`, and
   `freshrss_filedata` volumes SHALL be mounted
 
-### REQ-019: Remote-scoped compose files SHALL be self-contained and tracked on main
-Each `docker-compose.remote.yml` file SHALL be a fully valid, standalone Docker Compose
-file that does not use `extends:` or `include:` to reference `docker-compose.yml`.
-Both files SHALL remain versioned on the `main` branch.
+### REQ-019: Filedata Backup Uses One Generated Compose Configuration
+The filedata backup service SHALL use one canonical `docker-compose.yml` together
+with `backup-volumes.conf` and `start-backup.sh`. The startup script SHALL generate
+a temporary override for the selected host profile and SHALL remove it on exit.
 
-#### Scenario: Remote compose files exist on main
-- **GIVEN** the `main` branch
-- **WHEN** the paths `backupServices/postgres/docker-compose.remote.yml` and
-  `backupServices/filedata/docker-compose.remote.yml` are checked
-- **THEN** both files SHALL exist and be valid Docker Compose Specification
-  documents
-- **AND** neither file SHALL reference `extends:` or `include:` directives
+#### Scenario: Filedata profile renders from the canonical base
+- **GIVEN** a host profile and its required schedule variables are configured
+- **WHEN** `start-backup.sh` starts the filedata service
+- **THEN** the generated override SHALL be merged with the canonical `docker-compose.yml`
+- **AND** the service SHALL receive only the source volumes selected by that profile
+- **AND** no persistent Local or Prod filedata Compose profile SHALL be required
 
-### REQ-020: Remote backup profiles SHALL validate independently
-Each remote backup profile SHALL render successfully with `docker compose
-config` without requiring the canonical default profile.
+### REQ-020: Generated Filedata Profiles SHALL Validate Independently
+Each generated filedata profile SHALL render successfully with Docker Compose
+without requiring a separate profile Compose file.
 
-#### Scenario: Remote compose configuration is independently valid
-- **GIVEN** the operator is in a backup service directory
-- **WHEN** `docker compose -f docker-compose.remote.yml config` is run
+#### Scenario: Generated filedata configuration is valid
+- **GIVEN** Docker volumes and schedules are configured for a supported host profile
+- **WHEN** the startup script generates and renders the Compose configuration
 - **THEN** the command SHALL produce a valid Compose model
-- **AND** it SHALL NOT require `docker-compose.yml` to be present or included
 
-### REQ-021: Remote backup profile changes SHALL remain deployment-scoped
-Changes to a remote-scoped backup profile SHALL affect only services deployed
-to that remote profile and SHALL NOT enable default or Local profile jobs.
+### REQ-021: Scoped backup profile changes SHALL remain deployment-scoped
+Changes to a remote PostgreSQL profile or a filedata host selection SHALL affect
+only services deployed to that profile and SHALL NOT enable unrelated jobs.
 
-#### Scenario: Remote profile addition preserves default and Local scope
-- **GIVEN** a backup job is added to the remote profile
-- **WHEN** all backup profile Compose files are inspected
-- **THEN** the remote profile SHALL contain only that profile's deployed jobs
-- **AND** the default and Local profiles SHALL retain their documented service sets
+#### Scenario: Scoped profile addition preserves default and Local scope
+- **GIVEN** a backup job is added to the remote PostgreSQL profile or filedata registry
+- **WHEN** the relevant backup configuration is inspected
+- **THEN** the changed profile SHALL contain only that profile's deployed jobs
+- **AND** other host profiles SHALL retain their configured service sets
 
 ### REQ-022: Paperless retained documents are registered with filedata-backup
-The `paperless_filedata` volume SHALL be mounted read-only in `filedata-backup` at `/backup-sources/paperless`. The filedata backup service SHALL declare Paperless-specific schedule, Dropbox path, and retention variables in both `env.acc.example` and `env.prd.example`.
+The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile, with its schedule and retention. The filedata backup service SHALL declare Paperless destination variables in both `path.local` and `path.prod`.
 
 #### Scenario: Backup profiles preserve configuration during the category move
 - **GIVEN** Paperless backup configuration exists before the move to Knowledge Services
-- **WHEN** the default, Local, and Remote database and filedata profiles are reviewed after the move
+- **WHEN** the default, Local, Remote PostgreSQL, and Prod filedata profiles are reviewed after the move
 - **THEN** the default and Local profiles SHALL group Paperless entries under Knowledge Services
 - **AND** existing Paperless backup modes, schedules, and remote destinations SHALL remain unchanged
-- **AND** the Remote profiles SHALL NOT enable Paperless jobs
+- **AND** the Remote PostgreSQL and Prod filedata profiles SHALL NOT enable Paperless jobs
 
 #### Scenario: Paperless media volume is mounted in filedata-backup
-- **GIVEN** `backupServices/filedata/docker-compose.yml` is inspected
-- **WHEN** the `filedata-backup` service volume mounts are reviewed
-- **THEN** `paperless_filedata:/backup-sources/paperless:ro` SHALL be present
-- **AND** the top-level `volumes:` block SHALL declare `paperless_filedata` with the standard named-volume pattern
+- **GIVEN** `backupServices/filedata/backup-volumes.conf` is inspected
+- **WHEN** Paperless host-profile entries are reviewed
+- **THEN** `paperless_filedata` SHALL map to the `paperless` backup name
+- **AND** every configured Paperless host profile SHALL include `default`
 
-#### Scenario: Paperless backup schedule variables are documented
-- **GIVEN** `backupServices/filedata/env.acc.example` and `env.prd.example` are inspected
+#### Scenario: Paperless backup configuration is documented
+- **GIVEN** `backupServices/filedata/path.local` and `path.prod` are inspected
 - **WHEN** Paperless entries are reviewed
-- **THEN** `PAPERLESS_CRON_SCHEDULE`, `PAPERLESS_DROPBOX_PATH`, and `PAPERLESS_RETENTION_DAYS` SHALL be present in both files
-- **AND** the Dropbox paths SHALL follow the account-specific example-file convention used by the repo
+- **THEN** `PAPERLESS_DROPBOX_PATH` and `PAPERLESS_SYNC_CRYPT_REMOTE` SHALL be present in both files
+- **AND** the Paperless schedule and retention SHALL be present in the registry
+- **AND** the paths SHALL follow the selected destination-file convention
 
 ### REQ-023: Paperless retained-file backups exclude derived media artifacts
 The `filedata-backup` pipeline SHALL back up only the canonical retained Paperless document paths from `paperless_filedata`. It SHALL include `documents/originals/**` and `documents/archive/**`, and it SHALL exclude `documents/thumbnails/**` plus runtime lock artifacts.
@@ -344,8 +355,7 @@ The `filedata-backup` pipeline SHALL back up only the canonical retained Paperle
 
 ### REQ-024: Local backup services SHALL be deployed from dedicated local-scoped compose files
 When deploying backup services to the Local environment, the operator SHALL use
-`docker-compose.local.yml` instead of `docker-compose.yml` for both
-`backupServices/postgres/` and `backupServices/filedata/`.
+`docker-compose.local.yml` for PostgreSQL and `start-backup.sh local` for filedata.
 
 #### Scenario: Local postgres backup deployed with correct scope
 - **GIVEN** the Local environment is configured
@@ -358,21 +368,16 @@ When deploying backup services to the Local environment, the operator SHALL use
 #### Scenario: Local filedata backup deployed with correct scope
 - **GIVEN** the Local environment is configured
 - **WHEN** the operator starts the filedata backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.local.yml up -d`
-- **AND** the source volumes SHALL be `openwebui_filedata`, `romm_filedata`,
-  `paperless_filedata`, `radicale_filedata`, `immich_library`, `immich_profile`,
-  `immich_upload`, `jackett_filedata`, `radarr_filedata`, `sonarr_filedata`,
-  `transmission_filedata`, and `npm_filedata`, in that order
-- **AND** commented n8n and Syncthing mounts SHALL remain disabled
+- **THEN** the command SHALL be `./start-backup.sh local`
+- **AND** its active source volumes SHALL be determined by `backup-volumes.conf`
 - **AND** the RomM source volume SHALL be read-only and its schedule SHALL use
   `ROMM_CRON_SCHEDULE`
 
-#### Scenario: Local compose files exist and are self-contained
-- **GIVEN** the `main` branch is inspected
-- **WHEN** the paths `backupServices/postgres/docker-compose.local.yml` and
-  `backupServices/filedata/docker-compose.local.yml` are checked
-- **THEN** both files SHALL exist as valid standalone Docker Compose documents
-- **AND** neither file SHALL reference `extends:` or `include:` directives
+#### Scenario: Local filedata profile uses the canonical compose base
+- **GIVEN** the Local filedata backup profile is selected
+- **WHEN** its Compose configuration is generated
+- **THEN** the generated override SHALL use the canonical `docker-compose.yml`
+- **AND** the Local selection SHALL be defined in `backup-volumes.conf`
 
 ### REQ-025: OpenWebUI Tier C Selective Filedata Backup
 The `backupServices/filedata/filedata-backup-script.sh` workflow SHALL apply an OpenWebUI-specific selective backup policy that preserves SQLite state files and uploads while excluding rebuildable cache and vector index paths.
@@ -399,50 +404,51 @@ Any compose profile that schedules OpenWebUI filedata backups SHALL apply the sa
 - **AND** operators SHALL not need per-environment policy exceptions for OpenWebUI Tier C backup
 
 ### REQ-027: Syncthing Config Is Registered In Filedata Archive Backups
-The filedata backup service SHALL register a single Syncthing archive backup lane for the `syncthing_filedata` configuration volume.
+The default filedata host profile SHALL register a single Syncthing archive
+backup lane for the `syncthing_filedata` configuration volume.
 
-#### Scenario: Filedata compose includes Syncthing config lane
-- **GIVEN** `backupServices/filedata/docker-compose.yml` is inspected
-- **WHEN** the filedata-backup service volume mounts and cron command are reviewed
-- **THEN** `syncthing_filedata` SHALL be mounted read-only at `/backup-sources/syncthing`
-- **AND** a cron invocation for `/usr/local/bin/backup-script.sh syncthing` SHALL exist
+#### Scenario: Default filedata registry includes Syncthing config lane
+- **GIVEN** `backup-volumes.conf` is inspected
+- **WHEN** the Syncthing registration is reviewed
+- **THEN** `syncthing_filedata` SHALL be selected by the default host profile
+- **AND** the generated mount SHALL be read-only at `/backup-sources/syncthing`
+- **AND** the generated cron invocation SHALL run `/usr/local/bin/backup-script.sh syncthing`
 - **AND** no `secondbrain` backup source or cron invocation SHALL be registered
 
 ### REQ-028: Syncthing Backup Uses Archive Mode With Daily Retention
 The Syncthing filedata backup lane SHALL use `archive` backup mode, run daily, and retain backups for 7 days.
 
-#### Scenario: Environment configuration enforces Syncthing archive policy
-- **GIVEN** the tracked filedata backup environment examples are inspected
-- **WHEN** Syncthing backup variables are reviewed
-- **THEN** `SYNCTHING_BACKUP_MODE` SHALL be `archive`
-- **AND** `SYNCTHING_CRON_SCHEDULE` SHALL declare a daily schedule
-- **AND** `SYNCTHING_RETENTION_DAYS` SHALL be `7`
+#### Scenario: Configuration enforces Syncthing archive policy
+- **GIVEN** the filedata backup registry and path files are inspected
+- **WHEN** Syncthing backup configuration is reviewed
+- **THEN** Syncthing's registered backup mode SHALL be `archive`
+- **AND** the registered Syncthing schedule SHALL be daily
+- **AND** its registered retention SHALL be `7` days
 - **AND** no `SECONDBRAIN_*` backup variables SHALL be present
 
 ### REQ-029: Syncthing Backup Scope Is Default And Local Only
-Syncthing backup registration SHALL be enabled in the default filedata profile,
-retained as commented configuration in the Local profile, and absent from Remote.
+Syncthing backup registration SHALL be enabled in the default filedata profile
+and SHALL NOT be selected by Local or Prod.
 
 #### Scenario: Profile scope matches Syncthing backup deployment
-- **GIVEN** filedata compose profile files are compared
-- **WHEN** Syncthing backup registration is reviewed
-- **THEN** the Syncthing config lane SHALL be enabled in `docker-compose.yml`
-- **AND** the Local Syncthing mount and volume declaration SHALL remain commented
-- **AND** the Local profile SHALL NOT schedule Syncthing while its registration is disabled
-- **AND** the Syncthing config lane SHALL be absent from `docker-compose.remote.yml`
+- **GIVEN** the filedata volume registry is inspected
+- **WHEN** the Syncthing entry in `backup-volumes.conf` is reviewed
+- **THEN** its selected profiles SHALL include `default`
+- **AND** its selected profiles SHALL exclude `local` and `prod`
 
 ### REQ-030: Backup Compose Entries Follow Category And Service Order
-Both backup services SHALL group source-volume mounts, top-level source-volume
+Backup services SHALL group source-volume mounts, top-level source-volume
 declarations, and cron jobs alphabetically by service category, then by service
-name. Multiple volumes of one service SHALL be sorted by purpose suffix. This
-layout SHALL apply to default, Local, and Remote compose files, including disabled
-entries. Network references and declarations SHALL be sorted by network name.
-Shared secrets mounts SHALL follow the grouped source volumes.
+name. Multiple volumes of one service SHALL be sorted by purpose suffix. The
+filedata registry and its generated override SHALL preserve this ordering.
+PostgreSQL Compose profiles SHALL preserve the ordering in their source files.
+Network references and declarations SHALL be sorted by network name. Shared
+secrets mounts SHALL follow grouped source volumes.
 
-#### Scenario: Compose groups and generated crontab use matching categories
-- **GIVEN** a backup compose profile contains enabled source-volume mounts and jobs
-- **WHEN** its volume sections and generated crontab are inspected
-- **THEN** volume sections SHALL use `## <Category> Services` comments
+#### Scenario: Generated filedata mounts and crontab use matching categories
+- **GIVEN** a filedata host profile selects source-volume mounts and jobs
+- **WHEN** its generated override and crontab are inspected
+- **THEN** volume sections SHALL use category comments
 - **AND** cron jobs SHALL use matching `# <Category> Services` comment lines
 - **AND** category labels SHALL match the owning service directory
 - **AND** the crontab SHALL begin with `# Crontab for database backups` or
@@ -456,29 +462,28 @@ Shared secrets mounts SHALL follow the grouped source volumes.
 - **THEN** its mounts, volume declarations, and cron jobs SHALL be inserted at
   the category and service-name position in every profile that deploys it
 - **AND** required networks SHALL be inserted in network-name order
-- **AND** environment examples, scripts where required, specs, and operator
+- **AND** destination files, credential examples, scripts where required, specs, and operator
   documentation SHALL be updated together
 - **AND** adding the service SHALL NOT enable unrelated commented entries
 - **AND** declaration order SHALL NOT change configured cron execution times
 
-### REQ-031: Filedata Backup Modes Come From The Container Environment
-Filedata compose profiles SHALL load per-volume backup modes through
-`env_file: .env` and SHALL NOT duplicate them with startup `export` commands.
-The backup script SHALL use `archive` when a mode is unset or empty.
+### REQ-031: Filedata Backup Modes Come From The Registry
+Each filedata registry entry SHALL specify `archive` or `sync-crypt`. The startup
+script SHALL reject missing or invalid modes and pass selected modes to the
+container in the generated Compose override, taking precedence over `env_file`.
 Volumes requiring `sync-crypt`, including Immich and Paperless, SHALL have that
-mode explicitly configured in the environment.
+mode explicitly configured in the registry.
 
 #### Scenario: Explicit mode is resolved by volume identifier
-- **GIVEN** `IMMICH_LIBRARY_BACKUP_MODE=sync-crypt` is supplied to the container
+- **GIVEN** `immich-library` is registered with `sync-crypt` mode
 - **WHEN** the backup script runs for `immich-library`
 - **THEN** the script SHALL resolve the normalized environment key and select
-  `sync-crypt` without a Compose startup export
+  `sync-crypt` from the generated Compose environment
 
-#### Scenario: Missing mode uses the script fallback
-- **GIVEN** a volume's backup mode is unset or empty
-- **WHEN** its filedata backup job runs
-- **THEN** the script SHALL select `archive`
-- **AND** the Compose command SHALL NOT supply an implicit `sync-crypt` default
+#### Scenario: Missing or invalid registry mode prevents startup
+- **GIVEN** a volume's registry entry has a missing or unsupported backup mode
+- **WHEN** the startup script reads the registry
+- **THEN** it SHALL report an error and SHALL NOT start the backup container
 
 ### REQ-032: Backup Containers Start Without Host Script Mounts Or Package Downloads
 Both backup services SHALL build local images from digest-pinned base images in
@@ -504,7 +509,7 @@ Both services SHALL retain the `unless-stopped` restart policy.
 - **THEN** the container SHALL execute the updated image-bundled script
 
 ### REQ-033: Jackett and Transmission Configuration Are Backed Up
-The default and Local filedata backup profiles SHALL mount `jackett_filedata` and `transmission_filedata` read-only and SHALL schedule separate encrypted archive jobs for each volume. The Remote profile SHALL NOT register either volume.
+The default and Local filedata backup profiles SHALL mount `jackett_filedata` and `transmission_filedata` read-only and SHALL schedule separate encrypted archive jobs for each volume. The Prod profile SHALL NOT select either volume.
 
 #### Scenario: Applicable profiles back up Jackett and Transmission
 - **GIVEN** the default or Local filedata backup profile is deployed
@@ -513,23 +518,23 @@ The default and Local filedata backup profiles SHALL mount `jackett_filedata` an
 - **AND** `transmission_filedata` SHALL be mounted at `/backup-sources/transmission` and scheduled for archive backup
 - **AND** the profile SHALL use the corresponding production or acceptance Dropbox paths from its environment example
 
-#### Scenario: Remote profile excludes Jackett and Transmission
-- **GIVEN** the Remote filedata backup profile is inspected
+#### Scenario: Prod profile excludes Jackett and Transmission
+- **GIVEN** the Prod filedata backup profile is inspected
 - **WHEN** media volume sources and jobs are reviewed
 - **THEN** neither `jackett_filedata` nor `transmission_filedata` SHALL be registered
 
 ### REQ-034: Jellyfin Backup Covers Configuration Only
-The default filedata backup profile SHALL register `jellyfin_filedata` as a read-only source at `/backup-sources/jellyfin` and SHALL back it up using the existing encrypted archive workflow. The profile SHALL NOT back up Jellyfin media-library bind mounts, downloads, transcodes, or cache. Jellyfin SHALL NOT be registered in Local or Remote filedata backup profiles unless those profiles deploy Jellyfin.
+The default filedata backup profile SHALL select `jellyfin_filedata` as a read-only source at `/backup-sources/jellyfin` and SHALL back it up using the existing encrypted archive workflow. The profile SHALL NOT back up Jellyfin media-library bind mounts, downloads, transcodes, or cache. Jellyfin SHALL NOT be selected in Local or Prod filedata backup profiles unless those profiles deploy Jellyfin.
 
 #### Scenario: Default filedata profile backs up Jellyfin configuration
-- **GIVEN** the default filedata backup compose file and production environment example are inspected
+- **GIVEN** the default filedata registry selection and production path file are inspected
 - **WHEN** Jellyfin backup configuration is reviewed
 - **THEN** `jellyfin_filedata` SHALL be mounted read-only at `/backup-sources/jellyfin`
 - **AND** a dedicated Jellyfin cron job and archive destination SHALL be configured
 - **AND** no Jellyfin media-library source SHALL be registered
 
-#### Scenario: Local and Remote exclude Jellyfin backups
-- **GIVEN** the Local and Remote filedata backup profiles do not deploy Jellyfin
+#### Scenario: Local and Prod exclude Jellyfin backups
+- **GIVEN** the Local and Prod filedata backup profiles do not deploy Jellyfin
 - **WHEN** their source mounts, volume declarations, and cron jobs are inspected
 - **THEN** neither profile SHALL register `jellyfin_filedata`
 - **AND** neither profile SHALL schedule a Jellyfin backup job
@@ -542,12 +547,64 @@ The default filedata backup profile SHALL register `jellyfin_filedata` as a read
 - **AND** it SHALL NOT modify or restore the Movies, TVSeries, Music, or downloads host paths
 
 ### REQ-035: OpenCode Is Excluded From Filedata Backups
-Filedata backup profiles SHALL NOT register or schedule backups for OpenCode.
+Filedata backup profiles SHALL NOT select or schedule backups for OpenCode.
 The OpenCode service SHALL NOT require OpenCode-specific backup settings in
-the filedata environment examples.
+the filedata destination files.
 
 #### Scenario: OpenCode has no filedata backup entry
-- **GIVEN** the default, Local, and Remote filedata backup profiles are inspected
-- **WHEN** their AI Services entries and environment examples are reviewed
+- **GIVEN** the default, Local, and Prod filedata backup profiles are inspected
+- **WHEN** their AI Services entries and destination files are reviewed
 - **THEN** no profile SHALL mount or schedule an OpenCode data backup
-- **AND** the environment examples SHALL NOT define OpenCode backup settings
+- **AND** the destination files SHALL NOT define OpenCode backup settings
+
+### REQ-036: Filedata Backup Verifies Its Source Mount
+Each filedata backup run SHALL verify that its source directory is an actual
+mount point before starting an archive or synchronizing a remote destination.
+
+#### Scenario: An existing source directory is not mounted
+- **GIVEN** the backup source directory exists but is not a mount point
+- **WHEN** an archive or sync-crypt backup is started
+- **THEN** the backup SHALL exit with an error before creating an archive or modifying the remote
+- **AND** the backup SHALL send a source-validation failure notification when Discord is configured
+
+#### Scenario: A mounted source is available
+- **GIVEN** the backup source directory is a mount point
+- **WHEN** the backup is started
+- **THEN** the backup SHALL continue with the existing mode-specific validation and processing
+
+### REQ-037: Filedata Retention And Schedules Come From The Registry
+Each filedata registry entry SHALL specify non-negative retention in days and a
+five-field cron schedule. The startup script SHALL reject missing or malformed
+retention, schedules without five fields, and schedules containing unsafe
+characters, and pass selected policies to the container in the generated Compose
+override, taking precedence over `env_file`.
+
+#### Scenario: Registered policies control scheduled backups
+- **GIVEN** a selected volume has a schedule and retention in the registry
+- **WHEN** the startup script generates its Compose configuration
+- **THEN** the container SHALL receive the registered schedule and retention
+- **AND** legacy environment-file values SHALL NOT override them
+
+#### Scenario: Invalid policy prevents deployment
+- **GIVEN** a registry entry has missing or malformed retention, a schedule without five fields, or unsafe schedule characters
+- **WHEN** the startup script reads the registry
+- **THEN** it SHALL report an error and SHALL NOT start the backup container
+
+### REQ-038: Filedata destinations are selected independently of credentials
+Filedata backup SHALL load destinations from the selected tracked path file
+after the credentials file so that path-file values override legacy environment
+entries. Local and prod host profiles SHALL select their matching path files;
+the default host profile SHALL require an explicit local or prod path selection.
+The startup script SHALL reject missing, duplicate, or ambiguous destination
+entries before starting the container.
+
+#### Scenario: Default profile requires an explicit destination
+- **GIVEN** all registered volumes are selected with the default profile
+- **WHEN** the operator omits the local or prod destination argument
+- **THEN** startup SHALL fail without starting the backup container
+
+#### Scenario: Selected path file overrides legacy destinations
+- **GIVEN** an existing credentials file contains a legacy destination value
+- **WHEN** a host profile starts with a configured destination in its selected path file
+- **THEN** the container SHALL receive the selected path-file value
+- **AND** the credentials SHALL remain supplied by the credentials file

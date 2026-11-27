@@ -146,7 +146,8 @@ Keep pre-change backup artifacts until at least one successful Tier C restore dr
 
 ## Backup Schedule Reference
 
-Open WebUI data is backed up by the filedata backup service on the schedule defined by `OPENWEBUI_CRON_SCHEDULE` in `backupServices/filedata/.env`. Backups are retained for `OPENWEBUI_RETENTION_DAYS` days (default: 14).
+Open WebUI's backup schedule and retention are defined in
+`backupServices/filedata/backup-volumes.conf` (retention: 14 days).
 
 To trigger a manual backup immediately:
 

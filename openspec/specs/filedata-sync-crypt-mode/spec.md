@@ -5,7 +5,7 @@ crypt remotes, incremental sync with optional deleted-file retention, and namesp
 ## Requirements
 
 ### REQ-001: Filedata backup supports per-service backup modes
-The `filedata-backup` service SHALL support per-service execution modes with at least `archive` and `sync-crypt` values, selected by environment-driven configuration.
+The `filedata-backup` service SHALL support per-service execution modes with at least `archive` and `sync-crypt` values, selected in the backup volume registry.
 
 #### Scenario: Service runs in archive mode
 - **GIVEN** a registered filedata service is configured with mode `archive`

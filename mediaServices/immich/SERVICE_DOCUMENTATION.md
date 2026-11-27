@@ -64,7 +64,9 @@ Immich uses a split-lane backup policy:
 - File lane (`immich_library`, `immich_profile`, `immich_upload`): `filedata-backup` runs `sync-crypt` mode to `mega-crypt` with `current/` plus dated `deleted-archive/` retention buckets.
 - Database lane (`immich_postgresdata`): `db-backup` runs the standard encrypted `pg_dump` flow and uploads to Dropbox.
 
-Retention for Immich sync-crypt deleted/replaced-file archive is set to 30 days via filedata backup environment configuration.
+Retention for Immich sync-crypt deleted/replaced-file archives is set to 30 days
+in the three Immich entries in
+[`backup-volumes.conf`](../../backupServices/filedata/backup-volumes.conf).
 
 ### Fresh Local installation and backup setup
 
@@ -72,20 +74,21 @@ Retention for Immich sync-crypt deleted/replaced-file archive is set to 30 days 
    network above, then start Immich. Confirm uploads work before enabling backups.
    If recovering existing data instead, follow `RESTORE_GUIDE.md` first: syncing
    empty volumes can overwrite existing remote mirrors.
-2. Configure `backupServices/filedata/.env` using `env.acc.example` or
-   `env.prd.example`: set Mega credentials, both crypt passwords as applicable,
-   all three Immich modes to `sync-crypt`, and their Mega destinations and
-   schedules. Keep the crypt password and optional salt safe for recovery.
+2. Configure `backupServices/filedata/.env` using `.env.example`: set MEGA
+   credentials and both crypt passwords as applicable. Review the three Immich
+   destinations in `path.local` and their modes and schedules in
+   `backup-volumes.conf`. Keep the crypt password and optional salt safe for recovery.
 3. Configure `backupServices/postgres/.env` using its matching example. Set
    `IMMICH_DB_HOST=immich-db`, database credentials matching the Immich
    service, `IMMICH_BACKUP_NAME=immich`, a Dropbox path, and a GPG passphrase.
    Set the database schedule before the file schedules (examples use 02:00
    versus 03:00, 03:15, and 03:30). Existing runtime configurations are not
    automatically updated when the examples change.
-4. Rebuild and recreate both Local backup containers:
+4. Rebuild and recreate the Local filedata backup container, and recreate the
+   Local PostgreSQL backup container:
 
    ```bash
-   docker compose -f ../../backupServices/filedata/docker-compose.local.yml up -d --build --force-recreate filedata-backup
+   ../../backupServices/filedata/start-backup.sh local
    docker compose -f ../../backupServices/postgres/docker-compose.local.yml up -d --build --force-recreate db-backup
    ```
 

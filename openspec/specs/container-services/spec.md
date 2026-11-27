@@ -85,21 +85,23 @@ audio support and SHALL NOT use an `env_file:` directive.
 ### REQ-011: Backup Integration
 The `firefox_filedata` volume SHALL be registered in the `backupServices/filedata` backup pipeline to ensure the Firefox browser profile is protected.
 
-#### Scenario: Volume mounted in backup service
+#### Scenario: Volume selected in backup service
 - **GIVEN** the relevant container-services configuration and deployment state are available for inspection
-- **WHEN** `backupServices/filedata/docker-compose.yml` is inspected
-- **THEN** `firefox_filedata` SHALL appear in the `filedata-backup` service's `volumes:` list as `/backup-sources/firefox:ro`
-- **AND** `firefox_filedata` SHALL appear in the top-level `volumes:` block as an external volume
+- **WHEN** `backupServices/filedata/backup-volumes.conf` is inspected
+- **THEN** `firefox_filedata` SHALL be selected for the default profile
+- **AND** its generated mount SHALL be `/backup-sources/firefox:ro`
 
 #### Scenario: Cron entry present
 - **GIVEN** the relevant container-services configuration and deployment state are available for inspection
-- **WHEN** the `filedata-backup` container's cron schedule is inspected
-- **THEN** an entry matching `${FIREFOX_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh firefox` SHALL be present
+- **WHEN** the default profile's generated crontab is inspected
+- **THEN** an entry using `${FIREFOX_CRON_SCHEDULE}` SHALL invoke
+  `/usr/local/bin/backup-script.sh firefox`
 
 #### Scenario: Backup environment variables defined
 - **GIVEN** the relevant container-services configuration and deployment state are available for inspection
-- **WHEN** `backupServices/filedata/.env` is inspected
-- **THEN** `FIREFOX_CRON_SCHEDULE`, `FIREFOX_DROPBOX_PATH`, and `FIREFOX_RETENTION_DAYS` SHALL be present
+- **WHEN** the registry and filedata path files are inspected
+- **THEN** the Firefox schedule and retention SHALL be present in the registry
+- **AND** `FIREFOX_DROPBOX_PATH` SHALL be present in the environment
 
 ### REQ-012: Service Documentation
 The Firefox service directory SHALL contain `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md`.

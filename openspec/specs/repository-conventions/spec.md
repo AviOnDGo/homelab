@@ -12,7 +12,9 @@ operator-managed runtime configuration outside version control.
 #### Scenario: opsx change targets environment configuration
 - **GIVEN** an opsx change or task involves environment variable configuration
 - **WHEN** the change is implemented
-- **THEN** tasks for backup services SHALL only create or modify `.env.acc.example` and `.env.prd.example`
+- **THEN** tasks for filedata credentials SHALL only create or modify `.env.example`
+- **AND** filedata destination settings SHALL be maintained in `path.local` and `path.prod`
+- **AND** tasks for other backup services SHALL only create or modify `.env.acc.example` and `.env.prd.example`
 - **AND** tasks for all other services SHALL only create or modify `.env.example`
 - **AND** tasks SHALL NOT create, overwrite, or patch `.env` files
 - **AND** tasks SHALL NOT include shell commands that write to `.env`
@@ -20,9 +22,10 @@ operator-managed runtime configuration outside version control.
 #### Scenario: New service added via an opsx change
 - **GIVEN** an opsx change adds a backup service with configurable environment variables
 - **WHEN** creating environment variable documentation
-- **THEN** the change SHALL add the new variables to both `.env.acc.example` and `.env.prd.example`
+- **THEN** the change SHALL add new variables to the example files required for that backup service by REQ-002
 - **AND** the operator is responsible for running `cp .env.acc.example .env` or
-  `cp .env.prd.example .env` to apply configuration
+  `cp .env.prd.example .env` for PostgreSQL, or `cp .env.example .env` for
+  filedata backups, to apply credentials
 
 #### Scenario: New non-backup service added via an opsx change
 - **GIVEN** an opsx change adds a non-backup service with configurable environment variables
@@ -31,18 +34,28 @@ operator-managed runtime configuration outside version control.
 - **AND** the operator is responsible for running `cp .env.example .env` to apply configuration
 
 ### REQ-002: Environment example file naming convention
-Backup services (under `backupServices/`) that require operator-supplied environment variables SHALL
-provide two tracked example files (`.env.acc.example` and `.env.prd.example`) that communicate their
-target environment through their filename. All other services with operator-supplied environment
-variables SHALL provide a single `.env.example` file. All example file names SHALL use a leading dot.
+Filedata backup SHALL provide one credentials-only `.env.example` and separate
+`path.local` and `path.prod` destination files.
+Other backup services (under `backupServices/`) that require operator-supplied
+environment variables SHALL provide two tracked example files
+(`.env.acc.example` and `.env.prd.example`). All other services with
+operator-supplied environment variables SHALL provide a single `.env.example`
+file. Every tracked template file name SHALL start with a dot and end in
+`.example`.
 
-#### Scenario: Backup service has two env example files
-- **GIVEN** a service directory under `backupServices/` with configurable environment variables is inspected
+#### Scenario: Filedata backup separates credentials and destinations
+- **GIVEN** `backupServices/filedata/` is inspected
 - **WHEN** listing tracked files
-- **THEN** the directory SHALL contain `.env.acc.example` for the acceptance/staging environment
-- **AND** the directory SHALL contain `.env.prd.example` for the production environment
-- **AND** the directory SHALL NOT contain a plain `.env.example`
+- **THEN** the directory SHALL contain a credentials-only `.env.example`
+- **AND** the directory SHALL contain `path.local` and `path.prod` for destinations
+- **AND** the directory SHALL NOT contain `.env.local.example` or `.env.prod.example`
 - **AND** the directory SHALL NOT contain `.env.backup`
+
+#### Scenario: Other backup service has two env example files
+- **GIVEN** a backup service other than filedata with configurable environment variables is inspected
+- **WHEN** listing tracked files
+- **THEN** the directory SHALL contain `.env.acc.example` and `.env.prd.example`
+- **AND** the directory SHALL NOT contain a plain `.env.example` or `.env.backup`
 
 #### Scenario: Non-backup service has a single env example file
 - **GIVEN** a service directory outside `backupServices/` with configurable environment variables is inspected
@@ -57,8 +70,8 @@ variables SHALL provide a single `.env.example` file. All example file names SHA
 - **THEN** all environment-specific values SHALL be pre-populated
 - **AND** the operator only needs to fill in secret credentials to complete setup
 
-#### Scenario: Both backup examples have identical variable sets
-- **GIVEN** `.env.acc.example` and `.env.prd.example` for the same backup service are compared
+#### Scenario: Both PostgreSQL backup examples have identical variable sets
+- **GIVEN** the two environment examples for the PostgreSQL backup service are compared
 - **WHEN** checking which variable names are defined
 - **THEN** both files SHALL declare exactly the same set of variable names
 - **AND** the only permitted differences are environment-specific values (e.g., Dropbox path prefix)

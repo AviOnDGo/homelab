@@ -5,131 +5,15 @@ services:
     container_name: filedata-backup
     env_file:
       - .env
+    environment:
+      TZ: UTC
     volumes:
-      # Mount volumes to backup (read-only for safety)
-      ## AI Services
-      - n8n_filedata:/backup-sources/n8n:ro
-      - omniroute_filedata:/backup-sources/omniroute:ro
-      - openwebui_filedata:/backup-sources/openwebui:ro
-      ## Container Services
-      - firefox_filedata:/backup-sources/firefox:ro
-      - syncthing_filedata:/backup-sources/syncthing:ro
-      ## Knowledge Services
-      - freshrss_filedata:/backup-sources/freshrss:ro
-      - paperless_filedata:/backup-sources/paperless:ro
-      - radicale_filedata:/backup-sources/radicale:ro
-      ## Media Services
-      - immich_library:/backup-sources/immich-library:ro
-      - immich_profile:/backup-sources/immich-profile:ro
-      - immich_upload:/backup-sources/immich-upload:ro
-      - jackett_filedata:/backup-sources/jackett:ro
-      - jellyfin_filedata:/backup-sources/jellyfin:ro
-      - radarr_filedata:/backup-sources/radarr:ro
-      - sonarr_filedata:/backup-sources/sonarr:ro
-      - transmission_filedata:/backup-sources/transmission:ro
-      ## Security Services
-      - npm_filedata:/backup-sources/npm:ro
-      - pihole_filedata:/backup-sources/pihole:ro
-      - vaultwarden_filedata:/backup-sources/vaultwarden:ro
-      # GPG secrets
       - gpg-secrets:/run/secrets:ro
     command: >
-      sh -c "
-      /usr/local/bin/configure-rclone.sh &&
-      echo '# Crontab for filedata backups' > /etc/crontabs/root &&
-      echo '# AI Services' >> /etc/crontabs/root &&
-      echo '${N8N_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh n8n >> /var/log/cron_n8n.log 2>&1' >> /etc/crontabs/root &&
-      echo '${OMNIROUTE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh omniroute >> /var/log/cron_omniroute.log 2>&1' >> /etc/crontabs/root &&
-      echo '${OPENWEBUI_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh openwebui >> /var/log/cron_openwebui.log 2>&1' >> /etc/crontabs/root &&
-      echo '# Container Services' >> /etc/crontabs/root &&
-      echo '${FIREFOX_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh firefox >> /var/log/cron_firefox.log 2>&1' >> /etc/crontabs/root &&
-      echo '${SYNCTHING_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh syncthing >> /var/log/cron_syncthing.log 2>&1' >> /etc/crontabs/root &&
-      echo '# Knowledge Services' >> /etc/crontabs/root &&
-      echo '${FRESHRSS_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh freshrss >> /var/log/cron_freshrss.log 2>&1' >> /etc/crontabs/root &&
-      echo '${PAPERLESS_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh paperless >> /var/log/cron_paperless.log 2>&1' >> /etc/crontabs/root &&
-      echo '${RADICALE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh radicale >> /var/log/cron_radicale.log 2>&1' >> /etc/crontabs/root &&
-      echo '# Media Services' >> /etc/crontabs/root &&
-      echo '${IMMICH_LIBRARY_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh immich-library >> /var/log/cron_immich-library.log 2>&1' >> /etc/crontabs/root &&
-      echo '${IMMICH_PROFILE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh immich-profile >> /var/log/cron_immich-profile.log 2>&1' >> /etc/crontabs/root &&
-      echo '${IMMICH_UPLOAD_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh immich-upload >> /var/log/cron_immich-upload.log 2>&1' >> /etc/crontabs/root &&
-      echo '${JACKETT_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh jackett >> /var/log/cron_jackett.log 2>&1' >> /etc/crontabs/root &&
-      echo '${JELLYFIN_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh jellyfin >> /var/log/cron_jellyfin.log 2>&1' >> /etc/crontabs/root &&
-      echo '${RADARR_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh radarr >> /var/log/cron_radarr.log 2>&1' >> /etc/crontabs/root &&
-      echo '${SONARR_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh sonarr >> /var/log/cron_sonarr.log 2>&1' >> /etc/crontabs/root &&
-      echo '${TRANSMISSION_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh transmission >> /var/log/cron_transmission.log 2>&1' >> /etc/crontabs/root &&
-      echo '# Security Services' >> /etc/crontabs/root &&
-      echo '${NPM_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh npm >> /var/log/cron_npm.log 2>&1' >> /etc/crontabs/root &&
-      echo '${PIHOLE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh pihole >> /var/log/cron_pihole.log 2>&1' >> /etc/crontabs/root &&
-      echo '${VAULTWARDEN_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh vaultwarden >> /var/log/cron_vaultwarden.log 2>&1' >> /etc/crontabs/root &&
-      touch /var/log/cron.log &&
-      crond -L /var/log/cron.log &&
-      tail -f /var/log/cron.log
-      "
+      sh -c "echo 'ERROR: Run ./start-backup.sh with a host profile' >&2; exit 1"
     network_mode: bridge
     restart: unless-stopped
 
 volumes:
-  ## AI Services
-  n8n_filedata:
-    external: true
-    name: n8n_filedata
-  omniroute_filedata:
-    external: true
-    name: omniroute_filedata
-  openwebui_filedata:
-    external: true
-    name: openwebui_filedata
-  ## Container Services
-  firefox_filedata:
-    external: true
-    name: firefox_filedata
-  syncthing_filedata:
-    external: true
-    name: syncthing_filedata
-  ## Knowledge Services
-  freshrss_filedata:
-    external: true
-    name: freshrss_filedata
-  paperless_filedata:
-    external: true
-    name: paperless_filedata
-  radicale_filedata:
-    external: true
-    name: radicale_filedata
-  ## Media Services
-  immich_library:
-    external: true
-    name: immich_library
-  immich_profile:
-    external: true
-    name: immich_profile
-  immich_upload:
-    external: true
-    name: immich_upload
-  jackett_filedata:
-    external: true
-    name: jackett_filedata
-  jellyfin_filedata:
-    external: true
-    name: jellyfin_filedata
-  radarr_filedata:
-    external: true
-    name: radarr_filedata
-  sonarr_filedata:
-    external: true
-    name: sonarr_filedata
-  transmission_filedata:
-    external: true
-    name: transmission_filedata
-  ## Security Services
-  npm_filedata:
-    name: npm_filedata
-    external: true
-  pihole_filedata:
-    external: true
-    name: pihole_filedata
-  vaultwarden_filedata:
-    external: true
-    name: vaultwarden_filedata
   gpg-secrets:
     driver: local

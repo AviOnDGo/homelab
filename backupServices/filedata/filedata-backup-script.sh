@@ -219,7 +219,7 @@ run_archive_backup() {
 
   # Phase 2: GPG Encryption
   echo "[2/5] Encrypting with GPG (AES256)..."
-  echo "$GPG_PASSPHRASE" | gpg --symmetric --cipher-algo AES256 \
+  printf '%s\n' "$GPG_PASSPHRASE" | gpg --symmetric --cipher-algo AES256 \
       --batch --yes --passphrase-fd 0 \
       -o "$BACKUP_FILE_GPG" "$BACKUP_FILE"
 
@@ -332,6 +332,14 @@ echo "=================================================="
 if [ ! -d "$SOURCE_DIR" ]; then
     echo "ERROR: Source directory not found: $SOURCE_DIR"
     send_discord_failure "Source validation" "Source directory not found: $SOURCE_DIR"
+    exit 1
+fi
+
+# A directory alone can be an empty container path rather than the intended volume.
+if ! awk -v source="$SOURCE_DIR" \
+    '$5 == source { found = 1 } END { exit !found }' /proc/self/mountinfo; then
+    echo "ERROR: Source directory is not a mount point: $SOURCE_DIR"
+    send_discord_failure "Source validation" "Source directory is not a mount point: $SOURCE_DIR"
     exit 1
 fi
 

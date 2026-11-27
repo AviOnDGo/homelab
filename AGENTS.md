@@ -360,8 +360,11 @@ command: >
 This pattern runs scheduled tasks within the container without external cron daemons.
 
 ### Backup Compose Ordering (Mandatory)
-For both `backupServices/postgres/` and `backupServices/filedata/`, maintain this layout in
-`docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml`:
+For `backupServices/postgres/`, maintain the layout in
+`docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml`.
+For `backupServices/filedata/`, keep one canonical `docker-compose.yml` and use
+`backup-volumes.conf` plus `start-backup.sh` to generate host-specific mounts,
+volume declarations, and cron jobs:
 - Group source-volume mounts, top-level volume declarations, and cron jobs alphabetically by
   service category, then alphabetically by service name within each category. Sort multiple
   volumes for the same service by their purpose suffix. Apply the same order to disabled entries.
@@ -376,13 +379,20 @@ For both `backupServices/postgres/` and `backupServices/filedata/`, maintain thi
   name, keeping disabled network entries in the same order. Preserve each profile's networking.
 - Keep shared secrets and script mounts after the grouped source volumes; keep `gpg-secrets`
   after the grouped top-level source-volume declarations.
-- When adding a stateful service, insert its mounts, volume declarations, networks where needed,
-  and cron jobs into the correct category and name position in every applicable profile.
-  Update environment examples, backup scripts where needed, specs, and operator documentation
-  together. Do not enable a service in a profile where it is not deployed.
-- Filedata backup modes come from `env_file: .env`; do not duplicate them with startup exports.
-  The script defaults unset or empty modes to `archive`, so configure `sync-crypt` explicitly
-  for every volume that requires it, including Immich and Paperless.
+- When adding a stateful service, register its backup name, volume name, host profiles, mode,
+  retention, and schedule in
+  `backupServices/filedata/backup-volumes.conf`. The `default` profile SHALL be included;
+  include `local` or `prod` when deployed there. The generator includes only existing volumes.
+  Update `path.local` and `path.prod` with destination settings, the credentials-only
+  `.env.example` if needed, backup scripts, specs, and operator documentation together.
+  Do not enable a service in a profile where it is not deployed.
+- Filedata backup modes, retention, and schedules come from `backup-volumes.conf` and are passed
+  to the container by the generated Compose override. Specify `sync-crypt` for every volume
+  that requires it, including Immich and Paperless; do not configure these policies in the
+  environment examples.
+- Filedata destination settings come from `path.local` or `path.prod`, which override legacy
+  destination values in `.env`. The `local` and `prod` host profiles select their matching
+  destination file; `default` requires an explicit `local` or `prod` destination argument.
 
 ### Host and Service Setup Scripts
 
@@ -479,7 +489,8 @@ Authoring rules:
 ### Multi-Cloud Strategy
 - Dropbox primary cloud target; Invidious/Firefly use `/Apps/invidious`, `/Apps/firefly` paths
 - Rclone remotes configurable via environment (Google Drive/OneDrive as fallbacks)
-- Retention days per service: `{SERVICE}_RETENTION_DAYS={days}` in .env
+- Filedata retention days per service are in `backupServices/filedata/backup-volumes.conf`;
+  database retention is configured through environment variables.
 
 ---
 
@@ -656,6 +667,8 @@ All spec files in `openspec/specs/` SHALL follow this format. Apply it when crea
 - `.env.example`
 - `.env.acc.example`
 - `.env.prd.example`
+- `.env.local.example`
+- `.env.prod.example`
 - Any file matching `*.example` — these contain only placeholders, no real credentials
 
 **Enforcement rules:**

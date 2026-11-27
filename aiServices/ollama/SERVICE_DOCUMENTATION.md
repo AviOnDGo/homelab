@@ -130,15 +130,19 @@ docker exec ollama ollama list
 
 The `ollama_data` volume is **intentionally excluded** from automated filedata backups. Model weights are large (2+ GB each) and freely re-downloadable from the Ollama model registry, so backing them up wastes storage quota.
 
-If you still want to include it, add it to `backupServices/filedata/docker-compose.yml`:
+If you still want to include it, register it in
+`backupServices/filedata/backup-volumes.conf` with its mode, retention, and
+schedule:
 
-```yaml
-# In backupServices/filedata/docker-compose.yml, add to the filedata-backup service:
-volumes:
-  - ollama_data:/data/ollama_data:ro
+```text
+ollama|ollama_data|default|archive|7|0 5 * * *
 ```
 
-Also add `OLLAMA_RETENTION_DAYS=7` to `backupServices/filedata/.env`.
+Add `local` and/or `prod` to the profile list when Ollama is deployed on those
+hosts. Configure `OLLAMA_DROPBOX_PATH` in both
+[`path.local`](../../backupServices/filedata/path.local) and
+[`path.prod`](../../backupServices/filedata/path.prod) for the corresponding
+backup destinations.
 
 The exclusion is intentional: Open WebUI stores user-owned state that should be recoverable,
 while Ollama model files are large, reproducible artifacts that can be pulled again.

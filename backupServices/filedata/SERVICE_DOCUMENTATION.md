@@ -7,11 +7,11 @@ The filedata backup service provides automated backups of Docker volumes for the
 - `archive`: tar + zstd + GPG + Dropbox upload (legacy/default mode)
 - `sync-crypt`: `rclone sync` to a configured crypt remote, with optional dated retention for replaced/deleted files
 
-Immich and RomM filedata use `sync-crypt` mode, while most other services remain on `archive` mode.
+Immich, Paperless, and RomM filedata use `sync-crypt` mode; the other registered services use `archive` mode.
 
 **Key Features:**
 - Automated daily backups via cron scheduling
-- Per-service mode selection via environment variables
+- Per-service mode selection via the backup volume registry
 - GPG AES256 encryption for archive-mode artifacts
 - rclone crypt encryption for sync-crypt remotes
 - Multi-cloud support (Dropbox, MEGA, Google Drive, and Filen)
@@ -102,11 +102,12 @@ All services now use standardized `filedata` volume naming (e.g., `pihole_fileda
 The service uses bridge networking to allow rclone transfers to configured remotes (for example Dropbox archive uploads, MEGA and Google Drive crypt mirrors, and Filen).
 
 The rclone configuration is generated before cron starts. Archive jobs validate the `dropbox:`
-remote before uploading, while sync-crypt jobs validate the configured crypt remote. After changing
-credentials or remote settings, recreate the container so `configure-rclone.sh` runs again:
+remote before uploading, while sync-crypt jobs validate the configured crypt remote. After changing credentials or remote settings, recreate the container so
+`configure-rclone.sh` runs again:
 
 ```bash
-docker compose -f docker-compose.yml up -d --force-recreate filedata-backup
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax below.
+./start-backup.sh "$HOST_PROFILE"
 ```
 
 ### Dependencies
@@ -129,21 +130,80 @@ docker compose -f docker-compose.yml up -d --force-recreate filedata-backup
 
 ### Compose Deployment Profiles
 
-Use the compose file that matches your target environment:
+`docker-compose.yml` is the single base Compose file. It deliberately fails if
+started directly; use `start-backup.sh` to generate host-specific mounts and cron
+jobs before Compose starts the container.
 
-| Environment | Compose File | Scope |
-|-------------|--------------|-------|
-| Default homelab | `docker-compose.yml` | Full filedata backup set, including OmniRoute |
-| Remote | `docker-compose.remote.yml` | `freshrss`, `npm`, `pihole`, `vaultwarden` |
-| Local | `docker-compose.local.yml` | `n8n`, `omniroute`, `openwebui`, `romm`, `paperless`, `radicale`, `immich`, `jackett`, `radarr`, `sonarr`, `transmission`, `npm` |
+`backup-volumes.conf` is the backup registry. Each `|`-separated entry gives the
+backup name, Docker volume name, comma-separated host profiles, backup mode
+(`archive` or `sync-crypt`), retention in days, and five-field cron schedule.
+Every volume includes `default`; `local` and `prod` add host-specific subsets.
+Backup names identify the source path (`/backup-sources/<name>`), backup-script
+argument, and generated environment keys (uppercase with hyphens replaced by
+underscores).
+
+The `default` profile selects all registered volumes, while `local` and `prod`
+select the volumes listed for those hosts. `path.local` and `path.prod` contain
+the destinations; `local` and `prod` select their matching file. The `default`
+profile requires an explicit `local` or `prod` destination choice. A registry
+entry applies the same mode, retention, and schedule to every selected host profile.
+
+### Unified Startup
+
+From this directory, select the host profile explicitly. Use `default` when the
+host should back up every registered volume:
+
+```bash
+./start-backup.sh default local  # Or: default prod
+./start-backup.sh local
+./start-backup.sh prod
+```
+
+The `prod` name matches the GitHub environment name, but the profile is selected
+explicitly; GitHub environment selection does not automatically select it. The
+PostgreSQL backup service continues to use its own Compose files.
+
+On the GCP VM, the GitHub Actions filedata backup restore workflow starts the
+`prod` profile after the source services are restored, or by manual dispatch.
+See the [GCP deployment guide](../../googleCloud/README.md#workflow) for
+credentials, prerequisites, and verification.
+
+The script requires Docker Compose with `up --wait` support. It lists Docker
+volumes, warns for each missing expected volume, and generates a temporary Compose
+override with read-only mounts and jobs for the volumes present. It fails if Docker
+cannot be queried, no selected volumes exist, or a selected schedule or
+destination is missing or invalid.
+The container validates that each schedule has five fields, and Compose waits for
+the cron process to become healthy. Backup output goes to
+`/var/log/cron_<backup-name>.log` inside the container.
+
+Re-run the script after adding a volume or changing the host configuration; it
+rebuilds and recreates the backup container. A volume created later is not picked
+up automatically. Review missing-volume warnings and verify jobs and logs after
+startup; a warning means that volume is not being backed up. The generated
+override is removed on exit, while Docker retains the created container for
+normal restart. For example:
+
+```bash
+docker logs filedata-backup
+docker exec filedata-backup crontab -l
+```
+
+The host profiles select these volumes:
+
+| Profile | Scope |
+|---------|-------|
+| Default | Every registered volume |
+| Prod | `freshrss`, `npm`, `pihole`, `vaultwarden` |
+| Local | `hermes`, `n8n`, `omniroute`, `openwebui`, `romm`, `paperless`, `radicale`, `immich`, `npm` |
 
 OmniRoute's `omniroute_filedata` volume contains provider credentials and is
-included in the default and Local profiles only. Its archive backups use GPG
+included in the default and Local profiles. Its archive backups use GPG
 encryption; the GPG passphrase and `.env` credentials remain outside the
 tracked environment examples.
 
-Jellyfin configuration backups are enabled only in the default homelab profile.
-Local and Remote do not register its volume or schedule its backup job.
+Jellyfin configuration backups are enabled only in the default profile.
+Local and Prod do not select its volume or schedule its backup job.
 
 ### Compose And Crontab Ordering
 
@@ -152,29 +212,22 @@ jobs are grouped there in the default and Local profiles. The move to
 `knowledgeServices/paperless/` does not change `paperless_filedata`, the backup
 schedule, or the `gdrive-crypt:paperless/current/` mirror destination.
 
-All three profiles group source mounts, top-level volumes, and cron jobs by
-category, then service name: AI, Container, Gaming, Knowledge, Media, and
-Security Services when those services are enabled. Multiple volumes for one
-service are ordered by purpose suffix.
-Disabled Local entries stay in their sorted category without being enabled.
-Shared secrets follow source volumes; `gpg-secrets` follows
-the top-level source-volume declarations.
+The registry is grouped by service category and service name. The startup script
+generates the source mounts, volume declarations, and cron jobs for only the
+selected volumes that exist on the host. Shared secrets remain in the base
+Compose file.
 
-Compose volume sections use `## <Category> Services` comments. The generated
-crontab starts with `# Crontab for filedata backups` using `>`, then appends
-category comments and jobs with `>>`. This presentation order does not change
-the execution times supplied by per-volume cron variables.
+The generated Compose override keeps mount and job ordering consistent. Its
+crontab starts with `# Crontab for filedata backups`, then appends category
+comments and jobs. This ordering does not change the execution times supplied
+by per-volume cron variables.
 
 Example startup commands:
 
 ```bash
-# Default environment
-docker compose -f docker-compose.yml up -d
-
-# Remote environment
-docker compose -f docker-compose.remote.yml up -d
-# Local environment
-docker compose -f docker-compose.local.yml up -d
+./start-backup.sh default prod  # Or: default local
+./start-backup.sh prod
+./start-backup.sh local
 ```
 
 ### Image Builds And Reboot Safety
@@ -187,57 +240,72 @@ scripts into the build context; credentials and other local files are excluded.
 Compose still needs `.env` when creating or recreating a container, but Docker
 does not reread it when restarting an existing container after a reboot.
 
-Run from this directory to migrate an existing Local deployment or apply script changes:
+Run from this directory to migrate an existing deployment or apply script changes:
 
 ```bash
-docker compose -f docker-compose.local.yml up -d --build --force-recreate filedata-backup
+./start-backup.sh local
 docker inspect --format '{{.State.Status}} {{.HostConfig.RestartPolicy.Name}}' filedata-backup
 docker inspect --format '{{range .Mounts}}{{println .Type .Destination}}{{end}}' filedata-backup
 docker exec filedata-backup pidof crond
 ```
 
-Use the corresponding Compose filename for default or Remote deployments. Rebuild and
-recreate after changing either script or its dependencies; `docker restart` alone
-does not pick up image changes. Leave the container running before reboot:
+Use `default local`, `default prod`, or `prod` for those hosts. Rebuild and recreate after changing the
+script or its dependencies; `docker restart` alone does not pick up image changes.
+Leave the container running before reboot:
 `unless-stopped` intentionally preserves an explicit stop.
 
 ### Setting up your environment:
 
-**For Default/Production:**
 ```bash
-cp env.prd.example .env
+cp .env.example .env
 # Edit .env with your secrets
-docker compose -f docker-compose.yml up -d
-```
-
-**For Remote:**
-```bash
-cp env.prd.example .env
-# Edit .env with your secrets
-docker compose -f docker-compose.remote.yml up -d
-```
-
-**For Local:**
-```bash
-cp env.acc.example .env
-# Edit .env with your secrets
-docker compose -f docker-compose.local.yml up -d
+./start-backup.sh local  # Or: prod, default local, default prod
 ```
 
 ### Environment Variables
 
-Configuration is managed via `.env` file in `backupServices/filedata/`.
+Credentials are managed via `.env` in `backupServices/filedata/`. The selected
+tracked `path.local` or `path.prod` supplies destinations and takes precedence
+over legacy destination entries in `.env`; credentials must not be put in
+either path file. Path entries use unquoted `KEY=value` syntax. Duplicate keys,
+quotes, backslashes, dollar signs, `#`, tabs, and leading or trailing spaces in
+values are rejected to prevent Compose interpolation or ambiguous parsing.
 
-`env_file: .env` supplies backup modes directly to the container and its cron
-jobs; the Compose startup command does not export mode defaults. The script
-uses `archive` when `{SERVICE}_BACKUP_MODE` is unset or empty. Set
-`IMMICH_LIBRARY_BACKUP_MODE`, `IMMICH_PROFILE_BACKUP_MODE`,
-`IMMICH_UPLOAD_BACKUP_MODE`, `PAPERLESS_BACKUP_MODE`, and the Local profile's
-`ROMM_BACKUP_MODE` explicitly to
-`sync-crypt` wherever those volumes use encrypted synchronization. The tracked
-environment examples include these settings. Hyphenated job names use
-uppercase underscore environment keys, such as `immich-library` mapping to
-`IMMICH_LIBRARY_BACKUP_MODE`.
+**Migration:** Before recreating an existing container, privately compare its
+custom destination entries with the selected path file. Move any custom paths to
+that file, review every destination and retention policy, and remove the old
+destination entries from `.env`. Otherwise the tracked path file overrides
+them, potentially targeting a different remote. Path files are tracked; do not
+add private or secret values to them. Docker retains the old configuration
+until the container is recreated. For rollback, restore the previous scripts and
+your previous destination settings and recreate the container.
+
+Backup modes, retention, and schedules are set in `backup-volumes.conf` and
+passed to the container by the generated Compose override. Immich, Paperless,
+and RomM use `sync-crypt`; the other registered volumes use `archive`. To change
+these settings, edit the registry and recreate the container using
+`start-backup.sh`.
+
+When migrating an existing installation, compare any custom `{SERVICE}_BACKUP_MODE`,
+`{SERVICE}_RETENTION_DAYS`, and `{SERVICE}_CRON_SCHEDULE` settings in your `.env`
+with the registry and update the registry if necessary. Remove the old entries
+from `.env`: the generated Compose settings take precedence over them. Verify the
+destination and retention for each selected mode before starting a backup,
+especially for sync-crypt mirrors. The registry does not provide per-profile
+policy overrides; host-specific values require separately configured registries.
+
+Before any archive or sync-crypt backup, the script checks that the source
+directory exists and is an actual mount point. If either check fails, the job
+stops before creating an archive or modifying a remote and sends a Discord
+failure notification when configured. This applies to scheduled and manual
+backups in all profiles. Rebuild and recreate the backup container to apply
+the updated script.
+
+The mount check does not verify the volume's identity or contents. An existing
+but empty volume can still cause sync-crypt to remove remote files, especially
+when retention is zero. Verify the source volume and its contents before
+enabling a sync job or replacing a volume.
+
 RomM filedata is enabled in the Local profile only and uses the Filen backend
 wrapped by rclone crypt at `filen-crypt:/Romm`.
 Before the RomM `sync-crypt` job runs, the script verifies that both `library/`
@@ -272,40 +340,36 @@ FILEN_EMAIL=<email>
 FILEN_PASSWORD=<password>
 FILEN_API_KEY=<key-from-filen-export-api-key>
 
+```
+
+In the selected `path.local` or `path.prod`:
+```bash
 # Volume-Specific Configuration
-<SERVICE>_BACKUP_MODE=archive|sync-crypt
-<SERVICE>_CRON_SCHEDULE=<cron expression>
-<SERVICE>_RETENTION_DAYS=<days>
 <SERVICE>_DROPBOX_PATH=<dropbox path>            # archive mode (no rclone crypt)
 <SERVICE>_SYNC_CRYPT_REMOTE=<configured crypt remote>  # sync-crypt mode
 ```
 
-Radarr and Sonarr use archive mode with two-day retention. The default and Local profiles schedule Radarr at 04:20 and Sonarr at 04:25; their Dropbox destinations are `/Apps/radarr` and `/Apps/sonarr` in production and `/App_acc/radarr` and `/App_acc/sonarr` in acceptance. Their restore scripts default to the acceptance paths; set `DROPBOX_PATH` to the production path when restoring production archives. They are not registered in the Remote profile.
+Radarr and Sonarr use archive mode with two-day retention. The default and Local profiles schedule Radarr at 04:20 and Sonarr at 04:25; their Dropbox destinations are `/Apps/radarr` and `/Apps/sonarr` in production and `/App_acc/radarr` and `/App_acc/sonarr` in acceptance. Their restore scripts default to the acceptance paths; set `DROPBOX_PATH` to the production path when restoring production archives. They are not registered in the Prod profile.
 
 Jackett and Transmission use encrypted archive mode with seven-day retention in
 the default and Local profiles. Their jobs run at 04:30 and 04:35
 respectively, using `/Apps/<service>` in production and `/App_acc/<service>` in
 acceptance. Their restore scripts default to acceptance paths; set
 `DROPBOX_PATH` to the production path when restoring production archives. They
-are not registered in the Remote profile.
+are not registered in the Prod profile.
 
 At container startup, `configure-rclone.sh` creates one rclone configuration containing every
 provider whose credentials are present. Cron jobs only use that configuration and never rewrite it.
-Set `{SERVICE}_RETENTION_DAYS=0` for a pure mirror under `current/`; deletions then propagate
+Set a service's registry retention to `0` for a pure mirror under `current/`; deletions then propagate
 without a `deleted-archive` copy. Positive retention values preserve the existing dated archive
 behavior.
 
 Example Google Drive and Immich sync-crypt values:
 
 ```bash
-IMMICH_UPLOAD_BACKUP_MODE=sync-crypt
 IMMICH_UPLOAD_SYNC_CRYPT_REMOTE=mega-crypt:/Apps/immich-upload
-IMMICH_UPLOAD_RETENTION_DAYS=30
-IMMICH_UPLOAD_CRON_SCHEDULE=30 3 * * *
 
-PAPERLESS_BACKUP_MODE=sync-crypt
 PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless
-PAPERLESS_RETENTION_DAYS=0
 ```
 
 Filen's rclone backend requires rclone 1.73 or newer. Generate `FILEN_API_KEY`
@@ -318,30 +382,27 @@ changes, export a new API key and update all three `FILEN_*` values.
 The Local RomM lane is configured as:
 
 ```bash
-ROMM_BACKUP_MODE=sync-crypt
 ROMM_SYNC_CRYPT_REMOTE=filen-crypt:/Romm
-ROMM_RETENTION_DAYS=30
-ROMM_CRON_SCHEDULE=0 5 * * *
 ```
 
 ### RomM Filen setup
 
-The RomM filedata lane is Local-only. Generate a Filen API key with
+The RomM filedata lane is enabled on the Local profile. Generate a Filen API key with
 `filen export-api-key` using the Filen CLI, then set `FILEN_EMAIL`,
 `FILEN_PASSWORD`, and `FILEN_API_KEY` in `backupServices/filedata/.env`. Set
-`RCLONE_CRYPT_PASSWORD` and the `ROMM_*` settings from `env.acc.example`, then
-start/recreate the Local backup container:
+`RCLONE_CRYPT_PASSWORD` in `.env`, review `ROMM_SYNC_CRYPT_REMOTE` in
+`path.local`, then start/recreate the Local backup container:
 
 ```bash
 cd backupServices/filedata
-docker compose -f docker-compose.local.yml up -d --build --force-recreate filedata-backup
+./start-backup.sh local
 ```
 
 **Optional Variables:**
 
 ```bash
 # Discord Notifications
-DISCORD_WEBHOOK_URI=<webhook>  # Discord webhook URL for notifications
+DISCORD_WEBHOOK_URL=<webhook>  # Discord webhook URL for notifications
 ```
 
 If a Google Drive sync fails with `unauthorized_client` while refreshing its token,
@@ -378,7 +439,9 @@ GPG passphrase can be stored in two ways:
 
 ### Cron Schedule Format
 
-The `CRON_SCHEDULE` variable uses standard cron syntax:
+The registry schedule uses standard five-field cron syntax (UTC):
+Separate fields with single spaces. Startup validates the field count and
+allowed characters, but not cron field ranges; verify schedules after changes.
 
 ```
 * * * * *
@@ -400,26 +463,25 @@ The `CRON_SCHEDULE` variable uses standard cron syntax:
 
 ### Initial Setup
 
-**Step 1:** Run the setup script
+**Step 1:** Create the environment file for this host
 ```bash
 cd /path/to/homelab/backupServices/filedata
-chmod +x setup-backup.sh
-./setup-backup.sh
+cp .env.example .env
 ```
 
-The script will prompt for:
-- Dropbox tokens (access + refresh)
-- Discord webhook (optional)
-- GPG passphrase (with confirmation)
-- Volume configuration
-- Backup schedule and timezone
+Set the required credentials in `.env`, review destinations in the selected
+path file, and review modes and schedules in the registry.
 
-**Step 2:** Start the service
+**Step 2:** Provision the GPG passphrase in the `gpg-secrets` volume as described
+in [Secrets Management](#secrets-management).
+
+**Step 3:** Start the service
 ```bash
-docker compose -f docker-compose.yml up -d
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
+./start-backup.sh "$HOST_PROFILE"
 ```
 
-**Step 3:** Verify service is running
+**Step 4:** Verify service is running
 ```bash
 docker ps | grep filedata-backup
 docker logs filedata-backup
@@ -430,19 +492,18 @@ docker logs filedata-backup
 **Start service:**
 ```bash
 cd /path/to/homelab/backupServices/filedata
-docker compose -f docker-compose.yml up -d
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
+./start-backup.sh "$HOST_PROFILE"
 ```
 
 **Stop service:**
 ```bash
-cd /path/to/homelab/backupServices/filedata
-docker compose -f docker-compose.yml down
+docker stop filedata-backup
 ```
 
 **Restart service:**
 ```bash
-cd /path/to/homelab/backupServices/filedata
-docker compose -f docker-compose.yml restart
+docker restart filedata-backup
 ```
 
 **View logs:**
@@ -487,19 +548,8 @@ ls -lht backups/npm/ | head -10
 
 **Remote backups (Dropbox):**
 ```bash
-cd /path/to/homelab/backupServices/filedata
-source .env
-
-# Use rclone via container
-docker run --rm -e DROPBOX_AUTH_TOKEN -e DROPBOX_REFRESH_TOKEN -e PIHOLE_DROPBOX_PATH alpine sh -c "\
-  apk add --no-cache rclone && \
-  mkdir -p /root/.config/rclone && \
-  cat > /root/.config/rclone/rclone.conf <<EOF
-[dropbox]
-type = dropbox
-token = {\"access_token\":\"\${DROPBOX_AUTH_TOKEN}\",\"refresh_token\":\"\${DROPBOX_REFRESH_TOKEN}\"}
-EOF
-  rclone ls dropbox:\${PIHOLE_DROPBOX_PATH}/"
+# Use the running container's configured Dropbox remote.
+docker exec filedata-backup rclone ls dropbox:/Apps/pihole/
 ```
 
 ### Updating Configuration
@@ -507,52 +557,38 @@ EOF
 **Modify backup schedule or retention:**
 ```bash
 cd /path/to/homelab/backupServices/filedata
-nano .env
-# Edit CRON_SCHEDULE or RETENTION_DAYS variables
-docker compose -f docker-compose.yml restart
+nano backup-volumes.conf
+# Edit the retention or cron schedule for the service
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
+./start-backup.sh "$HOST_PROFILE"
 ```
 
 **Add new volume to backup:**
 
-1. In every profile that deploys the service, insert its read-only mount and
-top-level external volume declaration into the correct category and service-name
-position. Keep shared resources last and unrelated disabled entries commented:
-```yaml
-volumes:
-  ## Knowledge Services
-  - newservice_filedata:/backup-sources/newservice:ro
-```
-
-Declare `newservice_filedata` with `external: true` and
-`name: newservice_filedata` under the top-level `volumes:` block as well.
-
-2. Insert its job under the matching category in the command, using its own
-schedule variable and the mounted script path. Only the crontab header uses `>`;
-category comments and all jobs use `>>`:
+1. Add the volume to `backup-volumes.conf` under the correct category in
+service-name order. Include `default`, applicable host profiles, mode, retention,
+and an appropriately staggered schedule:
 ```bash
-echo '${NEWSERVICE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh newservice >> /var/log/cron_newservice.log 2>&1' >> /etc/crontabs/root &&
+newservice|newservice_filedata|default,local|archive|7|0 5 * * *
 ```
 
-3. Add configuration to both tracked environment examples and configure it
-locally in `.env`. Use an appropriately staggered schedule. Update the backup
+2. Add destination configuration to both tracked path files. Update the backup
 specs and service documentation in the same change:
 ```bash
-NEWSERVICE_BACKUP_MODE=archive
-NEWSERVICE_CRON_SCHEDULE=0 5 * * *
 NEWSERVICE_DROPBOX_PATH=/Apps/newservice
-NEWSERVICE_RETENTION_DAYS=7
 ```
 
-For `sync-crypt`, explicitly set the mode and `NEWSERVICE_SYNC_CRYPT_REMOTE`
-instead of relying on a Compose default or archive destination.
+For `sync-crypt`, set that mode in the registry and configure
+`NEWSERVICE_SYNC_CRYPT_REMOTE` instead of an archive destination.
 
-4. Recreate the affected profile to apply its command and environment changes:
+3. Run the startup script for each host profile that selects the volume:
 ```bash
-docker compose -f docker-compose.yml up -d --force-recreate filedata-backup
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
+./start-backup.sh "$HOST_PROFILE"
 ```
 
-Use `docker-compose.local.yml` or `docker-compose.remote.yml` instead when updating
-those deployments.
+The startup script regenerates mounts and cron jobs from the registry; no
+per-profile Compose edits are needed.
 
 ## Backup Schedule and Retention
 
@@ -560,12 +596,11 @@ those deployments.
 
 | Volume | Schedule | Retention | Destination |
 |--------|----------|-----------|-------------|
-| Pi-hole | Per `CRON_SCHEDULE` | `PIHOLE_RETENTION_DAYS` | `$PIHOLE_DROPBOX_PATH` |
-| NPM | Per `CRON_SCHEDULE` | `NPM_RETENTION_DAYS` | `$NPM_DROPBOX_PATH` |
-| RomM (Local) | `0 5 * * *` | `ROMM_RETENTION_DAYS` | `filen-crypt:/Romm` |
+| Pi-hole | `0 2 */10 * *` | 61 days | `$PIHOLE_DROPBOX_PATH` |
+| NPM | `10 2 */7 * *` | 57 days | `$NPM_DROPBOX_PATH` |
+| RomM (Local) | `0 5 * * *` | 30 days | `filen-crypt:/Romm` |
 
-Default schedule: `0 2 * * *` (2:00 AM daily)  
-Default retention: 7 days
+See `backup-volumes.conf` for every registered schedule and retention.
 
 ### Retention Policy
 
@@ -600,9 +635,9 @@ docker logs filedata-backup
 ```
 
 **Common issues:**
-- Missing .env file → Run setup-backup.sh
-- Invalid cron schedule → Verify CRON_SCHEDULE format
-- Volume mount errors → Check docker-compose.yml volume names
+- Missing `.env` file → Copy the appropriate environment example and configure it
+- Invalid cron schedule → Verify each selected volume's registry entry
+- Volume mount errors → Check `backup-volumes.conf` and host volume availability
 
 ### Backups Not Running
 
@@ -619,7 +654,7 @@ docker exec filedata-backup ps aux | grep crond
 **Check container time/timezone:**
 ```bash
 docker exec filedata-backup date
-# Should match your TZ setting
+# The container timezone is UTC.
 ```
 
 **Manual test:**
@@ -682,9 +717,10 @@ cd /path/to/homelab/backupServices/filedata
 # Remove backups older than 7 days
 find backups/*/backup_*.tar.zst.gpg -mtime +7 -delete
 
-# Or reduce retention in .env
-nano .env  # Set RETENTION_DAYS to lower value
-docker compose restart
+# Or reduce retention in the registry
+nano backup-volumes.conf
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
+./start-backup.sh "$HOST_PROFILE"
 ```
 
 ### Discord Notifications Not Sending
@@ -792,7 +828,6 @@ gpg --batch --yes --passphrase "your-passphrase" -d backup.tar.zst.gpg | zstd -d
 **Backup Storage:** `backupServices/filedata/backups/<volume>/`  
 **Scripts:**
 - `filedata-backup-script.sh` - Main backup script
-- `setup-backup.sh` - Initial setup script
 
 **Related Documentation:**
 - [NPM Restore Guide](../../securityServices/npm/RESTORE_GUIDE.md) - NPM-specific restore procedures
