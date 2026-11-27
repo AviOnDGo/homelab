@@ -299,6 +299,9 @@ esac""",
         arguments = self.arguments.read_text(encoding="utf-8")
         for name in secret_names:
             self.assertNotIn(self.env[name], arguments + result.stdout + result.stderr)
+            self.assertNotIn(
+                self.env[name].rstrip("\n"), arguments + result.stdout + result.stderr
+            )
         lines = self.stream.read_bytes().split(b"\n", 7)
         self.assertEqual(
             [base64.b64decode(value).decode() for value in lines[3:7]],
@@ -371,6 +374,9 @@ esac""",
                     "FIREFLY_DB_PASSWORD", "FIREFLY_STATIC_CRON_TOKEN",
                 ):
                     self.assertNotIn(self.env[secret], calls + result.stdout + result.stderr)
+                    self.assertNotIn(
+                        self.env[secret].rstrip("\n"), calls + result.stdout + result.stderr
+                    )
                 if force == "false":
                     self.assertIn("skipping automatic restore", result.stdout)
                     self.assertNotIn(" compose ", calls)
