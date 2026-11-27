@@ -102,16 +102,16 @@ variable; database schedules SHALL remain environment-configured.
   (e.g., `PIHOLE_CRON_SCHEDULE`, `NPM_CRON_SCHEDULE`, `VAULTWARDEN_CRON_SCHEDULE`)
 - **AND** a single `CRON_SCHEDULE` shared across services SHALL NOT exist
 
-### REQ-007: Backup schedules are staggered — filedata starts 02:00, postgres starts 03:00
-Filedata backup cron entries SHALL start no earlier than 02:00 and be staggered at
-minimum 5-minute intervals. Postgres backup cron entries SHALL start no earlier than
-03:00 and be staggered at minimum 5 minutes apart.
+### REQ-007: Backup schedule timing
+Filedata backup cron entries SHALL use their registered schedules without a global
+earliest start time or uniqueness requirement. Postgres backup cron entries SHALL
+start no earlier than 03:00 and be staggered at minimum 5 minutes apart.
 
-#### Scenario: Default filedata schedules are staggered from 02:00
-- **GIVEN** the filedata backup service is deployed with default schedule values
-- **WHEN** all per-service cron schedules are read from `backup-volumes.conf`
-- **THEN** no two services SHALL share the same cron time
-- **AND** the earliest entry SHALL be at 02:00 or later
+#### Scenario: Filedata schedules follow the registry
+- **GIVEN** `backup-volumes.conf` contains the registered filedata schedules
+- **WHEN** the default filedata schedules are inspected
+- **THEN** Syncthing SHALL be scheduled at 01:15 and Jellyfin at 01:20
+- **AND** Radicale and Immich library SHALL both be scheduled at 03:00
 
 #### Scenario: Default postgres schedules are staggered from 03:00
 - **GIVEN** the postgres backup service is deployed with default schedule values
