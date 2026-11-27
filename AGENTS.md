@@ -360,8 +360,11 @@ command: >
 This pattern runs scheduled tasks within the container without external cron daemons.
 
 ### Backup Compose Ordering (Mandatory)
-For both `backupServices/postgres/` and `backupServices/filedata/`, maintain this layout in
-`docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml`:
+For `backupServices/postgres/`, maintain the layout in
+`docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml`.
+For `backupServices/filedata/`, keep one canonical `docker-compose.yml` and use
+`backup-volumes.conf` plus `start-backup.sh` to generate host-specific mounts,
+volume declarations, and cron jobs:
 - Group source-volume mounts, top-level volume declarations, and cron jobs alphabetically by
   service category, then alphabetically by service name within each category. Sort multiple
   volumes for the same service by their purpose suffix. Apply the same order to disabled entries.
@@ -376,8 +379,9 @@ For both `backupServices/postgres/` and `backupServices/filedata/`, maintain thi
   name, keeping disabled network entries in the same order. Preserve each profile's networking.
 - Keep shared secrets and script mounts after the grouped source volumes; keep `gpg-secrets`
   after the grouped top-level source-volume declarations.
-- When adding a stateful service, insert its mounts, volume declarations, networks where needed,
-  and cron jobs into the correct category and name position in every applicable profile.
+- When adding a stateful service, register its backup name, volume name, and host profiles in
+  `backupServices/filedata/backup-volumes.conf`. The `default` profile SHALL be included;
+  include `local` or `prod` when deployed there. The generator includes only existing volumes.
   Update environment examples, backup scripts where needed, specs, and operator documentation
   together. Do not enable a service in a profile where it is not deployed.
 - Filedata backup modes come from `env_file: .env`; do not duplicate them with startup exports.
