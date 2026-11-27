@@ -259,7 +259,7 @@ esac""",
         self.assertIn("      force: true\n", job)
 
     def test_restore_jobs_share_a_queued_concurrency_group(self) -> None:
-        for service in ("npm", "freshrss", "vaultwarden", "watchtower"):
+        for service in ("npm", "freshrss", "vaultwarden", "firefly", "watchtower"):
             with self.subTest(service=service):
                 workflow = (
                     ROOT / ".github" / "workflows" / f"gcp-{service}-restore.yml"
@@ -271,6 +271,154 @@ esac""",
                     "      queue: max\n",
                     job,
                 )
+
+    def test_firefly_credentials_are_required_and_transported_over_stdin(self) -> None:
+        self.env.update(
+            SERVICE="firefly",
+            FIREFLY_APP_KEY="app-$key-'fixture",
+            FIREFLY_DB_USERNAME="firefly-user",
+            FIREFLY_DB_PASSWORD="password-$fixture-'value\n",
+            FIREFLY_STATIC_CRON_TOKEN="cron-token-fixture",
+        )
+        secret_names = (
+            "FIREFLY_APP_KEY",
+            "FIREFLY_DB_USERNAME",
+            "FIREFLY_DB_PASSWORD",
+            "FIREFLY_STATIC_CRON_TOKEN",
+        )
+        for name in secret_names:
+            with self.subTest(missing=name):
+                value = self.env.pop(name)
+                result = self.invoke()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(name, result.stderr)
+                self.assertFalse(self.arguments.exists())
+                self.env[name] = value
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = self.arguments.read_text(encoding="utf-8")
+        for name in secret_names:
+            self.assertNotIn(self.env[name], arguments + result.stdout + result.stderr)
+        lines = self.stream.read_bytes().split(b"\n", 7)
+        self.assertEqual(
+            [base64.b64decode(value).decode() for value in lines[3:7]],
+            [self.env[name] for name in secret_names],
+        )
+        with tarfile.open(fileobj=io.BytesIO(lines[7])) as archive:
+            self.assertEqual(set(archive.getnames()), {"restore.sh", "docker-compose.yml"})
+            for name in archive.getnames():
+                self.assertEqual(
+                    archive.extractfile(name).read(),
+                    (ROOT / "financialServices" / "firefly" / name).read_bytes(),
+                )
+
+    def test_firefly_remote_restore_modes_and_failure(self) -> None:
+        self.env.update(
+            SERVICE="firefly",
+            FIREFLY_APP_KEY="app-$key-'fixture",
+            FIREFLY_DB_USERNAME="firefly-user",
+            FIREFLY_DB_PASSWORD="password-$fixture-'value\n",
+            FIREFLY_STATIC_CRON_TOKEN="cron-token-fixture",
+            TMPDIR=str(self.work),
+        )
+        for name, body in {
+            "gcloud": 'for arg in "$@"; do command="$arg"; done\nexec bash -c "$command"',
+            "sudo": 'exec "$@"',
+            "docker": """
+echo "${COMPOSE_PROJECT_NAME:-} $*" >> "$ARGUMENTS"
+case "$1" in
+  info|stop|start|run) ;;
+  volume) [[ "$2" != ls ]] || echo firefly_postgresdata ;;
+  ps) [[ "$*" != *"db-backup"* ]] || echo 'db-backup running' ;;
+  compose)
+    [[ "$APP_KEY" == "$FIREFLY_APP_KEY" ]]
+    [[ "$DB_USERNAME" == "$FIREFLY_DB_USERNAME" ]]
+    [[ "$DB_PASSWORD" == "$FIREFLY_DB_PASSWORD" ]]
+    [[ "$STATIC_CRON_TOKEN" == "$FIREFLY_STATIC_CRON_TOKEN" ]] ;;
+  exec)
+    if [[ "$*" == *"ON_ERROR_STOP"* && "$*" != *"SELECT 1 FROM"* ]]; then
+      cat >/dev/null
+      [[ "${FAIL_IMPORT:-}" != 1 ]]
+    fi ;;
+  *) exit 1 ;;
+esac
+""",
+            "rclone": """
+case "$1" in
+  lsd) ;;
+  lsf) echo firefly_2025-01-01_00-00-00.sql.zst.gpg ;;
+  copy) printf encrypted > "$3/${2##*/}" ;;
+  *) exit 1 ;;
+esac""",
+            "zstd": "cat",
+            "gpg": """printf '%s\\n' '-- PostgreSQL database dump' 'SELECT 1;' \\
+  '-- PostgreSQL database dump complete'""",
+            "jq": 'echo "{}"',
+            "sleep": "exit 0",
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        for force, fail in (("false", "0"), ("true", "0"), ("true", "1")):
+            with self.subTest(force=force, fail=fail):
+                self.arguments.unlink(missing_ok=True)
+                self.env.update(FORCE=force, FAIL_IMPORT=fail)
+                result = self.invoke()
+                calls = self.arguments.read_text(encoding="utf-8")
+                self.assertEqual(result.returncode == 0, fail == "0", result.stderr)
+                for secret in (
+                    "FIREFLY_APP_KEY", "FIREFLY_DB_USERNAME",
+                    "FIREFLY_DB_PASSWORD", "FIREFLY_STATIC_CRON_TOKEN",
+                ):
+                    self.assertNotIn(self.env[secret], calls + result.stdout + result.stderr)
+                if force == "false":
+                    self.assertIn("skipping automatic restore", result.stdout)
+                    self.assertNotIn(" compose ", calls)
+                else:
+                    self.assertIn("firefly compose", calls)
+                    self.assertIn("firefly stop db-backup", calls)
+                    self.assertEqual("firefly start db-backup" in calls, fail == "0")
+                    compose_path = next(
+                        line.split(" -f ", 1)[1].split(" ", 1)[0]
+                        for line in calls.splitlines() if " compose -f " in line
+                    )
+                    self.assertFalse(Path(compose_path).parent.exists())
+                self.assertFalse(list(self.work.glob("firefly-restore.*")))
+
+    def test_firefly_workflow_wires_restore_credentials(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-firefly-restore.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("  workflow_call:\n", workflow)
+        self.assertIn("  workflow_dispatch:\n", workflow)
+        self.assertIn("    environment: prod\n", workflow)
+        self.assertIn("          SERVICE: firefly\n", workflow)
+        self.assertIn("        run: ./googleCloud/restore-service.sh\n", workflow)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "FIREFLY_APP_KEY", "FIREFLY_DB_USERNAME", "FIREFLY_DB_PASSWORD",
+            "FIREFLY_STATIC_CRON_TOKEN",
+        ):
+            self.assertIn(f"      {name}:\n", workflow)
+            self.assertIn(f"          {name}: ${{{{ secrets.{name} }}}}\n", workflow)
+            self.assertIn(f'          : "${{{name}:?', workflow)
+
+    def test_deployment_runs_firefly_after_npm(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        job = workflow.split("\n  restore-firefly:\n", 1)[1].split(
+            "\n  restore-watchtower:", 1
+        )[0]
+        self.assertIn("    needs: [apply, restore-npm]\n", job)
+        self.assertIn("    uses: ./.github/workflows/gcp-firefly-restore.yml\n", job)
+        self.assertIn("      force: true\n", job)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "FIREFLY_APP_KEY", "FIREFLY_DB_USERNAME", "FIREFLY_DB_PASSWORD",
+            "FIREFLY_STATIC_CRON_TOKEN",
+        ):
+            self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
 
     def test_deployment_requires_successful_npm_restore(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
