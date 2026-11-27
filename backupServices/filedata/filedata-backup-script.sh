@@ -335,6 +335,14 @@ if [ ! -d "$SOURCE_DIR" ]; then
     exit 1
 fi
 
+# A directory alone can be an empty container path rather than the intended volume.
+if ! awk -v source="$SOURCE_DIR" \
+    '$5 == source { found = 1 } END { exit !found }' /proc/self/mountinfo; then
+    echo "ERROR: Source directory is not a mount point: $SOURCE_DIR"
+    send_discord_failure "Source validation" "Source directory is not a mount point: $SOURCE_DIR"
+    exit 1
+fi
+
 configure_volume_excludes
 validate_romm_sync_source
 
