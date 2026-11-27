@@ -27,12 +27,16 @@ class RestoreDatabaseTests(unittest.TestCase):
 set -eu
 echo "$(basename "$0") $*" >> "$CALLS"
 case "$(basename "$0"):$1" in
-  docker:info|docker:stop|docker:start|docker:rm) ;;
+  docker:info|docker:stop) ;;
+  docker:start) [[ "${FAILURE:-}" != restart ]] ;;
+  docker:rm) [[ "${FAILURE:-}" != remove ]] ;;
   docker:compose)
-    if [[ "$*" == *"config --images pihole"* ]]; then echo pihole/pihole:latest; fi ;;
-  docker:volume) ;;
+    if [[ "$*" == *"config --images pihole"* ]]; then echo pihole/pihole:latest; fi
+    if [[ "$*" == *" up -d" ]]; then [[ "${FAILURE:-}" != startup ]]; fi ;;
+  docker:volume)
+    if [[ "$2" == create ]]; then [[ "${FAILURE:-}" != create ]]; fi ;;
   docker:ps) echo pihole ;;
-  docker:inspect) echo true ;;
+  docker:inspect) echo "${BACKUP_RUNNING:-true}" ;;
   docker:run)
     if [[ "$*" == *" --entrypoint pihole-FTL "* ]]; then
       if [[ -n "${REAL_DOCKER:-}" ]]; then exec "$REAL_DOCKER" "$@"; fi
@@ -47,6 +51,9 @@ case "$(basename "$0"):$1" in
       python3 -c 'import sqlite3, sys; db = sqlite3.connect(sys.argv[1]); print("\\n".join(row[0] for row in db.execute("PRAGMA integrity_check"))) ' "$staged/$database"
     elif [[ "$*" == *" -i "* ]]; then
       cat >/dev/null
+      [[ "${FAILURE:-}" != extract ]]
+    else
+      [[ "${FAILURE:-}" != wipe ]]
     fi ;;
   docker:exec)
     if [[ "$3" == pihole-FTL ]]; then
@@ -187,6 +194,48 @@ esac
         result = self.invoke()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Could not check the integrity of pihole-FTL.db", result.stderr)
+
+    def test_backup_restart_depends_on_restore_safety(self) -> None:
+        self.make_archive()
+        cases = (
+            ("remove", True),
+            ("wipe", False),
+            ("create", False),
+            ("extract", False),
+            ("startup", False),
+            ("verify", False),
+            ("", True),
+        )
+        for failure, restarted in cases:
+            with self.subTest(failure=failure):
+                self.calls.unlink(missing_ok=True)
+                self.env["FAILURE"] = failure
+                self.env["INVALID_RESTORED"] = "gravity.db" if failure == "verify" else ""
+                result = self.invoke()
+                calls = self.calls.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(result.returncode == 0, not failure, result.stderr)
+                self.assertIn("docker stop filedata-backup", calls)
+                self.assertEqual("docker start filedata-backup" in calls, restarted)
+                if failure and not restarted:
+                    self.assertIn("filedata-backup remains stopped", result.stderr)
+                    self.assertIn("Recover Pi-hole data before manually restarting", result.stderr)
+                self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+    def test_previously_stopped_backup_is_not_started(self) -> None:
+        self.make_archive()
+        self.env["BACKUP_RUNNING"] = "false"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls.read_text(encoding="utf-8")
+        self.assertNotIn("docker stop filedata-backup", calls)
+        self.assertNotIn("docker start filedata-backup", calls)
+
+    def test_backup_restart_failure_is_reported(self) -> None:
+        self.make_archive()
+        self.env["FAILURE"] = "restart"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not restart filedata-backup", result.stderr)
 
     def make_wal_archive(self) -> None:
         gravity = self.work / "gravity.db"

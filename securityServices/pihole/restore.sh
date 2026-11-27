@@ -14,15 +14,21 @@ DROPBOX_PATH="${DROPBOX_PATH:-/Apps/pihole}"
 MODE="${1:-}"
 TMP_DIR=""
 BACKUP_WAS_RUNNING=false
+RESTORE_UNSAFE=false
 
 # --------------------------------------------------------------------------- #
 # Cleanup trap - runs on any exit (success or failure)
 # --------------------------------------------------------------------------- #
 cleanup() {
   local status=$?
-  if [[ "$BACKUP_WAS_RUNNING" == "true" ]] && ! docker start filedata-backup >/dev/null; then
-    echo "[ERROR] Could not restart filedata-backup." >&2
-    status=1
+  if [[ "$BACKUP_WAS_RUNNING" == "true" ]]; then
+    if [[ "$RESTORE_UNSAFE" == "true" ]]; then
+      echo "[ERROR] Pi-hole restore is incomplete; filedata-backup remains stopped." >&2
+      echo "[ERROR] Recover Pi-hole data before manually restarting filedata-backup." >&2
+    elif ! docker start filedata-backup >/dev/null; then
+      echo "[ERROR] Could not restart filedata-backup." >&2
+      status=1
+    fi
   fi
   if [[ -n "$TMP_DIR" ]]; then
     rm -rf "$TMP_DIR"
@@ -196,6 +202,7 @@ if printf '%s\n' "$CONTAINERS" | grep -qx "$CONTAINER_NAME"; then
   docker rm -f "$CONTAINER_NAME"
 fi
 
+RESTORE_UNSAFE=true
 if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
   info "Clearing existing volume..."
   docker run --rm -v "${VOLUME_NAME}:/restore" alpine \
@@ -243,6 +250,7 @@ for database in gravity.db pihole-FTL.db; do
   fi
 done
 
+RESTORE_UNSAFE=false
 echo
 echo "=============================================="
 echo " Pi-hole restore completed successfully"
