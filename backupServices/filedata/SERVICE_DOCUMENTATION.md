@@ -106,7 +106,7 @@ remote before uploading, while sync-crypt jobs validate the configured crypt rem
 `configure-rclone.sh` runs again:
 
 ```bash
-HOST_PROFILE=local # Change to default or prod as appropriate.
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax below.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
@@ -143,10 +143,10 @@ argument, and generated environment keys (uppercase with hyphens replaced by
 underscores).
 
 The `default` profile selects all registered volumes, while `local` and `prod`
-select the volumes listed for those hosts. Host selection is independent of the
-acceptance or production `.env` settings, which configure destinations. A
-registry entry applies the same mode, retention, and schedule to every selected
-host profile.
+select the volumes listed for those hosts. `path.local` and `path.prod` contain
+the destinations; `local` and `prod` select their matching file. The `default`
+profile requires an explicit `local` or `prod` destination choice. A registry
+entry applies the same mode, retention, and schedule to every selected host profile.
 
 ### Unified Startup
 
@@ -154,7 +154,7 @@ From this directory, select the host profile explicitly. Use `default` when the
 host should back up every registered volume:
 
 ```bash
-./start-backup.sh default
+./start-backup.sh default local  # Or: default prod
 ./start-backup.sh local
 ./start-backup.sh prod
 ```
@@ -171,7 +171,8 @@ credentials, prerequisites, and verification.
 The script requires Docker Compose with `up --wait` support. It lists Docker
 volumes, warns for each missing expected volume, and generates a temporary Compose
 override with read-only mounts and jobs for the volumes present. It fails if Docker
-cannot be queried, no selected volumes exist, or a selected schedule is unset.
+cannot be queried, no selected volumes exist, or a selected schedule or
+destination is missing or invalid.
 The container validates that each schedule has five fields, and Compose waits for
 the cron process to become healthy. Backup output goes to
 `/var/log/cron_<backup-name>.log` inside the container.
@@ -224,7 +225,7 @@ by per-volume cron variables.
 Example startup commands:
 
 ```bash
-./start-backup.sh default
+./start-backup.sh default prod  # Or: default local
 ./start-backup.sh prod
 ./start-backup.sh local
 ```
@@ -248,31 +249,36 @@ docker inspect --format '{{range .Mounts}}{{println .Type .Destination}}{{end}}'
 docker exec filedata-backup pidof crond
 ```
 
-Use `default` or `prod` for those hosts. Rebuild and recreate after changing the
+Use `default local`, `default prod`, or `prod` for those hosts. Rebuild and recreate after changing the
 script or its dependencies; `docker restart` alone does not pick up image changes.
 Leave the container running before reboot:
 `unless-stopped` intentionally preserves an explicit stop.
 
 ### Setting up your environment:
 
-**For a host using production backup destinations:**
 ```bash
-cp .env.prod.example .env
+cp .env.example .env
 # Edit .env with your secrets
-# Choose the host profile in backup-volumes.conf
-./start-backup.sh prod
-```
-
-**For Local:**
-```bash
-cp .env.local.example .env
-# Edit .env with your secrets
-./start-backup.sh local
+./start-backup.sh local  # Or: prod, default local, default prod
 ```
 
 ### Environment Variables
 
-Configuration is managed via `.env` file in `backupServices/filedata/`.
+Credentials are managed via `.env` in `backupServices/filedata/`. The selected
+tracked `path.local` or `path.prod` supplies destinations and takes precedence
+over legacy destination entries in `.env`; credentials must not be put in
+either path file. Path entries use unquoted `KEY=value` syntax. Duplicate keys,
+quotes, backslashes, dollar signs, `#`, tabs, and leading or trailing spaces in
+values are rejected to prevent Compose interpolation or ambiguous parsing.
+
+**Migration:** Before recreating an existing container, privately compare its
+custom destination entries with the selected path file. Move any custom paths to
+that file, review every destination and retention policy, and remove the old
+destination entries from `.env`. Otherwise the tracked path file overrides
+them, potentially targeting a different remote. Path files are tracked; do not
+add private or secret values to them. Docker retains the old configuration
+until the container is recreated. For rollback, restore the previous scripts and
+your previous destination settings and recreate the container.
 
 Backup modes, retention, and schedules are set in `backup-volumes.conf` and
 passed to the container by the generated Compose override. Immich, Paperless,
@@ -334,6 +340,10 @@ FILEN_EMAIL=<email>
 FILEN_PASSWORD=<password>
 FILEN_API_KEY=<key-from-filen-export-api-key>
 
+```
+
+In the selected `path.local` or `path.prod`:
+```bash
 # Volume-Specific Configuration
 <SERVICE>_DROPBOX_PATH=<dropbox path>            # archive mode (no rclone crypt)
 <SERVICE>_SYNC_CRYPT_REMOTE=<configured crypt remote>  # sync-crypt mode
@@ -380,8 +390,8 @@ ROMM_SYNC_CRYPT_REMOTE=filen-crypt:/Romm
 The RomM filedata lane is enabled on the Local profile. Generate a Filen API key with
 `filen export-api-key` using the Filen CLI, then set `FILEN_EMAIL`,
 `FILEN_PASSWORD`, and `FILEN_API_KEY` in `backupServices/filedata/.env`. Set
-`RCLONE_CRYPT_PASSWORD` and the `ROMM_*` settings from the matching environment
-example, then start/recreate the Local backup container:
+`RCLONE_CRYPT_PASSWORD` in `.env`, review `ROMM_SYNC_CRYPT_REMOTE` in
+`path.local`, then start/recreate the Local backup container:
 
 ```bash
 cd backupServices/filedata
@@ -392,7 +402,7 @@ cd backupServices/filedata
 
 ```bash
 # Discord Notifications
-DISCORD_WEBHOOK_URI=<webhook>  # Discord webhook URL for notifications
+DISCORD_WEBHOOK_URL=<webhook>  # Discord webhook URL for notifications
 ```
 
 If a Google Drive sync fails with `unauthorized_client` while refreshing its token,
@@ -456,19 +466,18 @@ allowed characters, but not cron field ranges; verify schedules after changes.
 **Step 1:** Create the environment file for this host
 ```bash
 cd /path/to/homelab/backupServices/filedata
-cp .env.local.example .env
+cp .env.example .env
 ```
 
-For production backup destinations, use `cp .env.prod.example .env` instead.
-Set the required credentials, destinations, modes, and schedule variables for
-the volumes selected by the host profile.
+Set the required credentials in `.env`, review destinations in the selected
+path file, and review modes and schedules in the registry.
 
 **Step 2:** Provision the GPG passphrase in the `gpg-secrets` volume as described
 in [Secrets Management](#secrets-management).
 
 **Step 3:** Start the service
 ```bash
-HOST_PROFILE=local # Change to default or prod as appropriate.
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
@@ -483,7 +492,7 @@ docker logs filedata-backup
 **Start service:**
 ```bash
 cd /path/to/homelab/backupServices/filedata
-HOST_PROFILE=local # Change to default or prod as appropriate.
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
@@ -539,19 +548,8 @@ ls -lht backups/npm/ | head -10
 
 **Remote backups (Dropbox):**
 ```bash
-cd /path/to/homelab/backupServices/filedata
-source .env
-
-# Use rclone via container
-docker run --rm -e DROPBOX_AUTH_TOKEN -e DROPBOX_REFRESH_TOKEN -e PIHOLE_DROPBOX_PATH alpine sh -c "\
-  apk add --no-cache rclone && \
-  mkdir -p /root/.config/rclone && \
-  cat > /root/.config/rclone/rclone.conf <<EOF
-[dropbox]
-type = dropbox
-token = {\"access_token\":\"\${DROPBOX_AUTH_TOKEN}\",\"refresh_token\":\"\${DROPBOX_REFRESH_TOKEN}\"}
-EOF
-  rclone ls dropbox:\${PIHOLE_DROPBOX_PATH}/"
+# Use the running container's configured Dropbox remote.
+docker exec filedata-backup rclone ls dropbox:/Apps/pihole/
 ```
 
 ### Updating Configuration
@@ -561,7 +559,7 @@ EOF
 cd /path/to/homelab/backupServices/filedata
 nano backup-volumes.conf
 # Edit the retention or cron schedule for the service
-HOST_PROFILE=local # Change to default or prod as appropriate.
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
@@ -574,8 +572,7 @@ and an appropriately staggered schedule:
 newservice|newservice_filedata|default,local|archive|7|0 5 * * *
 ```
 
-2. Add configuration to both tracked environment examples and configure it
-locally in `.env`. Update the backup
+2. Add destination configuration to both tracked path files. Update the backup
 specs and service documentation in the same change:
 ```bash
 NEWSERVICE_DROPBOX_PATH=/Apps/newservice
@@ -586,7 +583,7 @@ For `sync-crypt`, set that mode in the registry and configure
 
 3. Run the startup script for each host profile that selects the volume:
 ```bash
-HOST_PROFILE=local # Change to default or prod as appropriate.
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
@@ -722,7 +719,7 @@ find backups/*/backup_*.tar.zst.gpg -mtime +7 -delete
 
 # Or reduce retention in the registry
 nano backup-volumes.conf
-HOST_PROFILE=local # Change to default or prod as appropriate.
+HOST_PROFILE=local # Change to prod as appropriate; see default syntax above.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
