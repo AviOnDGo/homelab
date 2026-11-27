@@ -301,7 +301,7 @@ The AI services backup policy SHALL include `openwebui_filedata` in automated fi
 - **GIVEN** `backupServices/filedata/backup-volumes.conf` defines the host selections
 - **WHEN** the default and Local selections are inspected
 - **THEN** `openwebui_filedata` SHALL be mounted read-only for backup processing
-- **AND** scheduled backup variables for Open WebUI SHALL be defined in backup environment configuration
+- **AND** Open WebUI's schedule SHALL be defined in the backup registry
 
 #### Scenario: Ollama model volume is excluded from backup service
 - **GIVEN** `backupServices/filedata/backup-volumes.conf` defines registered backup sources
