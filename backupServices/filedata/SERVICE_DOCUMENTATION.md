@@ -7,11 +7,11 @@ The filedata backup service provides automated backups of Docker volumes for the
 - `archive`: tar + zstd + GPG + Dropbox upload (legacy/default mode)
 - `sync-crypt`: `rclone sync` to a configured crypt remote, with optional dated retention for replaced/deleted files
 
-Immich and RomM filedata use `sync-crypt` mode, while most other services remain on `archive` mode.
+Immich, Paperless, and RomM filedata use `sync-crypt` mode; the other registered services use `archive` mode.
 
 **Key Features:**
 - Automated daily backups via cron scheduling
-- Per-service mode selection via environment variables
+- Per-service mode selection via the backup volume registry
 - GPG AES256 encryption for archive-mode artifacts
 - rclone crypt encryption for sync-crypt remotes
 - Multi-cloud support (Dropbox, MEGA, Google Drive, and Filen)
@@ -134,17 +134,19 @@ HOST_PROFILE=local # Change to default or prod as appropriate.
 started directly; use `start-backup.sh` to generate host-specific mounts and cron
 jobs before Compose starts the container.
 
-`backup-volumes.conf` is the host-selection registry. Each `|`-separated entry
-gives the backup name, Docker volume name, and comma-separated host profiles.
+`backup-volumes.conf` is the backup registry. Each `|`-separated entry gives the
+backup name, Docker volume name, comma-separated host profiles, backup mode
+(`archive` or `sync-crypt`), retention in days, and five-field cron schedule.
 Every volume includes `default`; `local` and `prod` add host-specific subsets.
 Backup names identify the source path (`/backup-sources/<name>`), backup-script
-argument, and schedule variable (`<NAME>_CRON_SCHEDULE`, uppercasing and
-replacing hyphens with underscores).
+argument, and generated environment keys (uppercase with hyphens replaced by
+underscores).
 
 The `default` profile selects all registered volumes, while `local` and `prod`
 select the volumes listed for those hosts. Host selection is independent of the
-acceptance or production `.env` settings, which configure schedules, modes, and
-destinations. A selected volume must have a schedule configured in `.env`.
+acceptance or production `.env` settings, which configure destinations. A
+registry entry applies the same mode, retention, and schedule to every selected
+host profile.
 
 ### Unified Startup
 
@@ -267,16 +269,19 @@ cp .env.local.example .env
 
 Configuration is managed via `.env` file in `backupServices/filedata/`.
 
-`env_file: .env` supplies backup modes directly to the container and its cron
-jobs; the Compose startup command does not export mode defaults. The script
-uses `archive` when `{SERVICE}_BACKUP_MODE` is unset or empty. Set
-`IMMICH_LIBRARY_BACKUP_MODE`, `IMMICH_PROFILE_BACKUP_MODE`,
-`IMMICH_UPLOAD_BACKUP_MODE`, `PAPERLESS_BACKUP_MODE`, and the Local profile's
-`ROMM_BACKUP_MODE` explicitly to
-`sync-crypt` wherever those volumes use encrypted synchronization. The tracked
-environment examples include these settings. Hyphenated job names use
-uppercase underscore environment keys, such as `immich-library` mapping to
-`IMMICH_LIBRARY_BACKUP_MODE`.
+Backup modes, retention, and schedules are set in `backup-volumes.conf` and
+passed to the container by the generated Compose override. Immich, Paperless,
+and RomM use `sync-crypt`; the other registered volumes use `archive`. To change
+these settings, edit the registry and recreate the container using
+`start-backup.sh`.
+
+When migrating an existing installation, compare any custom `{SERVICE}_BACKUP_MODE`,
+`{SERVICE}_RETENTION_DAYS`, and `{SERVICE}_CRON_SCHEDULE` settings in your `.env`
+with the registry and update the registry if necessary. Remove the old entries
+from `.env`: the generated Compose settings take precedence over them. Verify the
+destination and retention for each selected mode before starting a backup,
+especially for sync-crypt mirrors. The registry does not provide per-profile
+policy overrides; host-specific values require separately configured registries.
 
 Before any archive or sync-crypt backup, the script checks that the source
 directory exists and is an actual mount point. If either check fails, the job
@@ -325,9 +330,6 @@ FILEN_PASSWORD=<password>
 FILEN_API_KEY=<key-from-filen-export-api-key>
 
 # Volume-Specific Configuration
-<SERVICE>_BACKUP_MODE=archive|sync-crypt
-<SERVICE>_CRON_SCHEDULE=<cron expression>
-<SERVICE>_RETENTION_DAYS=<days>
 <SERVICE>_DROPBOX_PATH=<dropbox path>            # archive mode (no rclone crypt)
 <SERVICE>_SYNC_CRYPT_REMOTE=<configured crypt remote>  # sync-crypt mode
 ```
@@ -343,21 +345,16 @@ are not registered in the Prod profile.
 
 At container startup, `configure-rclone.sh` creates one rclone configuration containing every
 provider whose credentials are present. Cron jobs only use that configuration and never rewrite it.
-Set `{SERVICE}_RETENTION_DAYS=0` for a pure mirror under `current/`; deletions then propagate
+Set a service's registry retention to `0` for a pure mirror under `current/`; deletions then propagate
 without a `deleted-archive` copy. Positive retention values preserve the existing dated archive
 behavior.
 
 Example Google Drive and Immich sync-crypt values:
 
 ```bash
-IMMICH_UPLOAD_BACKUP_MODE=sync-crypt
 IMMICH_UPLOAD_SYNC_CRYPT_REMOTE=mega-crypt:/Apps/immich-upload
-IMMICH_UPLOAD_RETENTION_DAYS=30
-IMMICH_UPLOAD_CRON_SCHEDULE=30 3 * * *
 
-PAPERLESS_BACKUP_MODE=sync-crypt
 PAPERLESS_SYNC_CRYPT_REMOTE=gdrive-crypt:paperless
-PAPERLESS_RETENTION_DAYS=0
 ```
 
 Filen's rclone backend requires rclone 1.73 or newer. Generate `FILEN_API_KEY`
@@ -370,10 +367,7 @@ changes, export a new API key and update all three `FILEN_*` values.
 The Local RomM lane is configured as:
 
 ```bash
-ROMM_BACKUP_MODE=sync-crypt
 ROMM_SYNC_CRYPT_REMOTE=filen-crypt:/Romm
-ROMM_RETENTION_DAYS=30
-ROMM_CRON_SCHEDULE=0 5 * * *
 ```
 
 ### RomM Filen setup
@@ -430,7 +424,9 @@ GPG passphrase can be stored in two ways:
 
 ### Cron Schedule Format
 
-The `CRON_SCHEDULE` variable uses standard cron syntax:
+The registry schedule uses standard five-field cron syntax (UTC):
+Separate fields with single spaces. Startup validates the field count and
+allowed characters, but not cron field ranges; verify schedules after changes.
 
 ```
 * * * * *
@@ -558,49 +554,32 @@ EOF
 **Modify backup schedule or retention:**
 ```bash
 cd /path/to/homelab/backupServices/filedata
-nano .env
-# Edit CRON_SCHEDULE or RETENTION_DAYS variables
+nano backup-volumes.conf
+# Edit the retention or cron schedule for the service
 HOST_PROFILE=local # Change to default or prod as appropriate.
 ./start-backup.sh "$HOST_PROFILE"
 ```
 
 **Add new volume to backup:**
 
-1. In every profile that deploys the service, insert its read-only mount and
-top-level external volume declaration into the correct category and service-name
-position. Keep shared resources last and unrelated disabled entries commented:
-```yaml
-volumes:
-  ## Knowledge Services
-  - newservice_filedata:/backup-sources/newservice:ro
-```
-
-Declare `newservice_filedata` with `external: true` and
-`name: newservice_filedata` under the top-level `volumes:` block as well.
-
-2. Insert its job under the matching category in the command, using its own
-schedule variable and the mounted script path. Only the crontab header uses `>`;
-category comments and all jobs use `>>`:
+1. Add the volume to `backup-volumes.conf` under the correct category in
+service-name order. Include `default`, applicable host profiles, mode, retention,
+and an appropriately staggered schedule:
 ```bash
-echo '${NEWSERVICE_CRON_SCHEDULE} /bin/bash /usr/local/bin/backup-script.sh newservice >> /var/log/cron_newservice.log 2>&1' >> /etc/crontabs/root &&
+newservice|newservice_filedata|default,local|archive|7|0 5 * * *
 ```
 
-3. Add configuration to both tracked environment examples and configure it
-locally in `.env`. Use an appropriately staggered schedule. Update the backup
+2. Add configuration to both tracked environment examples and configure it
+locally in `.env`. Update the backup
 specs and service documentation in the same change:
 ```bash
-NEWSERVICE_BACKUP_MODE=archive
-NEWSERVICE_CRON_SCHEDULE=0 5 * * *
 NEWSERVICE_DROPBOX_PATH=/Apps/newservice
-NEWSERVICE_RETENTION_DAYS=7
 ```
 
-For `sync-crypt`, explicitly set the mode and `NEWSERVICE_SYNC_CRYPT_REMOTE`
-instead of relying on a Compose default or archive destination.
+For `sync-crypt`, set that mode in the registry and configure
+`NEWSERVICE_SYNC_CRYPT_REMOTE` instead of an archive destination.
 
-4. Add the new volume to `backup-volumes.conf` and configure its schedule,
-   mode, and destination in both environment examples. Run the startup script
-   for each host profile that selects it:
+3. Run the startup script for each host profile that selects the volume:
 ```bash
 HOST_PROFILE=local # Change to default or prod as appropriate.
 ./start-backup.sh "$HOST_PROFILE"
@@ -615,12 +594,11 @@ per-profile Compose edits are needed.
 
 | Volume | Schedule | Retention | Destination |
 |--------|----------|-----------|-------------|
-| Pi-hole | Per `CRON_SCHEDULE` | `PIHOLE_RETENTION_DAYS` | `$PIHOLE_DROPBOX_PATH` |
-| NPM | Per `CRON_SCHEDULE` | `NPM_RETENTION_DAYS` | `$NPM_DROPBOX_PATH` |
-| RomM (Local) | `0 5 * * *` | `ROMM_RETENTION_DAYS` | `filen-crypt:/Romm` |
+| Pi-hole | `0 2 */10 * *` | 61 days | `$PIHOLE_DROPBOX_PATH` |
+| NPM | `10 2 */7 * *` | 57 days | `$NPM_DROPBOX_PATH` |
+| RomM (Local) | `0 5 * * *` | 30 days | `filen-crypt:/Romm` |
 
-Default schedule: `0 2 * * *` (2:00 AM daily)  
-Default retention: 7 days
+See `backup-volumes.conf` for every registered schedule and retention.
 
 ### Retention Policy
 
@@ -656,7 +634,7 @@ docker logs filedata-backup
 
 **Common issues:**
 - Missing `.env` file → Copy the appropriate environment example and configure it
-- Invalid cron schedule → Verify each selected volume's `<NAME>_CRON_SCHEDULE`
+- Invalid cron schedule → Verify each selected volume's registry entry
 - Volume mount errors → Check `backup-volumes.conf` and host volume availability
 
 ### Backups Not Running
@@ -737,8 +715,8 @@ cd /path/to/homelab/backupServices/filedata
 # Remove backups older than 7 days
 find backups/*/backup_*.tar.zst.gpg -mtime +7 -delete
 
-# Or reduce retention in .env
-nano .env  # Set RETENTION_DAYS to lower value
+# Or reduce retention in the registry
+nano backup-volumes.conf
 HOST_PROFILE=local # Change to default or prod as appropriate.
 ./start-backup.sh "$HOST_PROFILE"
 ```
