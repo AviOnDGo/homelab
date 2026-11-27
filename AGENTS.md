@@ -383,12 +383,16 @@ volume declarations, and cron jobs:
   retention, and schedule in
   `backupServices/filedata/backup-volumes.conf`. The `default` profile SHALL be included;
   include `local` or `prod` when deployed there. The generator includes only existing volumes.
-  Update environment examples, backup scripts where needed, specs, and operator documentation
-  together. Do not enable a service in a profile where it is not deployed.
+  Update `path.local` and `path.prod` with destination settings, the credentials-only
+  `.env.example` if needed, backup scripts, specs, and operator documentation together.
+  Do not enable a service in a profile where it is not deployed.
 - Filedata backup modes, retention, and schedules come from `backup-volumes.conf` and are passed
   to the container by the generated Compose override. Specify `sync-crypt` for every volume
   that requires it, including Immich and Paperless; do not configure these policies in the
   environment examples.
+- Filedata destination settings come from `path.local` or `path.prod`, which override legacy
+  destination values in `.env`. The `local` and `prod` host profiles select their matching
+  destination file; `default` requires an explicit `local` or `prod` destination argument.
 
 ### Host and Service Setup Scripts
 
