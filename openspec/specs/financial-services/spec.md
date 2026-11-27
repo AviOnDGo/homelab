@@ -96,8 +96,9 @@ Both the `firefly` and `firefly-db` containers SHALL declare Docker health check
 #### Scenario: Firefly application health check
 - **GIVEN** the firefly service definition is inspected
 - **WHEN** reviewing the healthcheck block
-- **THEN** it SHALL use `wget --quiet --tries=1 --spider http://localhost:8080/health` as the test command
-- **AND** it SHALL define an `interval`, `timeout`, `retries`, and `start_period`
+- **THEN** it SHALL use `curl` to check `http://localhost:8080/health`
+- **AND** it SHALL define an `interval`, `timeout`, and `retries`
+- **AND** its `start_period` SHALL be 240 seconds
 
 #### Scenario: Firefly database health check
 - **GIVEN** the firefly-db service definition is inspected
@@ -278,6 +279,7 @@ The Firefly service SHALL provide a restore script that restores the PostgreSQL 
 - **GIVEN** the selected restore path completes successfully
 - **WHEN** the restore script reaches finalization
 - **THEN** the restore script SHALL start the full Firefly stack and wait for application and database health checks
+- **AND** the Compose wait timeout SHALL be 600 seconds
 - **AND** it SHALL report a failure if the stack does not become ready
 
 #### Scenario: Failed replacement preserves backup safety
