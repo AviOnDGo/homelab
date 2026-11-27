@@ -105,7 +105,7 @@ The Local filedata backup profile SHALL synchronize `romm_filedata` to Filen usi
 - **WHEN** the Local RomM filedata cron job executes
 - **THEN** the standard filedata backup script SHALL sync the volume to `filen-crypt:/Romm/current/`
 - **AND** replaced and deleted files SHALL be retained under `filen-crypt:/Romm/deleted-archive/YYYY-MM-DD/`
-- **AND** retention SHALL be controlled by `ROMM_RETENTION_DAYS`
+- **AND** retention SHALL be controlled by the RomM registry entry
 
 #### Scenario: RomM sync requires populated library and assets
 - **GIVEN** the Local RomM filedata backup job is configured with `sync-crypt`
