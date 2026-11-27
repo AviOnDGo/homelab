@@ -460,6 +460,16 @@ jobs:
     needs: [apply, restore-npm]
     uses: ./.github/workflows/gcp-watchtower-restore.yml
 
+  restore-filedata-backup:
+    name: Restore Filedata Backup
+    needs: [apply, restore-npm, restore-freshrss, restore-vaultwarden, restore-pihole]
+    uses: ./.github/workflows/gcp-filedata-backup-restore.yml
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+
   teardown:
     name: Terraform Teardown
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' }}

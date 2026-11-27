@@ -1,0 +1,50 @@
+name: Restore Filedata Backup on GCP VM
+
+on:
+  workflow_call:
+    secrets:
+      DROPBOX_AUTH_TOKEN:
+        required: false
+      DROPBOX_REFRESH_TOKEN:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+      DISCORD_WEBHOOK_URL:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  restore:
+    name: Restore Filedata Backup
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: service-restore
+      queue: max
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare GCP restore
+        uses: ./.github/actions/gcp-restore
+        with:
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+
+      - name: Restore filedata backup on VM
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: ./googleCloud/restore-filedata-backup.sh

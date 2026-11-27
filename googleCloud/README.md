@@ -63,8 +63,15 @@ Execution behavior:
   before running it. Manual restores also require the external
   `security_network` to exist on the VM. See the
   [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
+- After all four filedata source restores (NPM, FreshRSS, Vaultwarden, and
+  Pi-hole) succeed, the filedata backup scheduler is rebuilt and started with
+  the `prod` profile. A manual run is also available. Every production source
+  volume must already exist; a missing volume fails the job rather than
+  silently omitting its backups. The scheduler uses the production Dropbox
+  destinations and registry schedules, including remote retention cleanup.
+  Review source data before a manual run. It does not restore application data.
 
-The six GCP restore jobs share a GitHub Actions concurrency group, including
+The seven GCP restore jobs share a GitHub Actions concurrency group, including
 manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
 jobs are canceled when the queue is full. Scheduling order is not guaranteed.
 Direct transport helper, service script, and manual fallback runs are not
@@ -270,6 +277,34 @@ secrets. It is sent over SSH stdin and supplied to Compose as `WEB_PASSWORD`
 in the remote process environment. Supply it again for later manual Compose
 operations; Docker container configuration contains the password.
 
+The filedata backup workflow uses `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`,
+and `GPG_PASSPHRASE`, plus optional `DISCORD_WEBHOOK_URL` for failure
+notifications. Values must be single-line.
+Dropbox tokens cannot contain double quotes or backslashes because the
+container's rclone configuration embeds them in JSON. The workflow currently
+supports archive-mode production entries with a configured Dropbox path only.
+Secrets travel over SSH stdin and
+are written to a private temporary Compose input on the VM, removed when the
+job exits. Docker retains them in the container configuration and rclone's
+container configuration; restrict host and Docker access. The workflow uses
+the `filedata-backup-gcp` Compose project and refuses to start if its
+`gpg-secrets` volume contains a `gpg-passphrase` file, which would otherwise
+override the supplied GitHub secret. Resolve that conflict without discarding
+an existing key. It does not modify existing host environment files.
+
+Add the workflow ref to the WIF provider condition before running it. After
+the workflow is on the default branch, a manual run is:
+
+```bash
+gh workflow run gcp-filedata-backup-restore.yml --ref main
+```
+
+Verify `docker logs filedata-backup` and
+`docker exec filedata-backup crontab -l` on the VM, then verify the first
+scheduled backups in Dropbox. A healthy cron process does not prove that
+credentials work or that backups have succeeded. Re-run the workflow after
+adding or replacing a production volume to refresh the mounts.
+
 ## OIDC Trust Configuration
 
 Configure Workload Identity Provider claim mapping:
@@ -296,11 +331,12 @@ assertion.ref == "refs/heads/main" &&
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-firefly-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-pihole-restore.yml@refs/heads/main" ||
- assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-filedata-backup-restore.yml@refs/heads/main")
 
 The reusable restore workflows also use this service account. Retain the single
-provider value and include all eight workflow refs in the explicit condition
-above. Update an existing provider before running the Pi-hole workflow.
+provider value and include all nine workflow refs in the explicit condition
+above. Update an existing provider before running the filedata backup workflow.
 Do not rely on repository scope alone.
 
 Binding condition baseline (single production service account):
