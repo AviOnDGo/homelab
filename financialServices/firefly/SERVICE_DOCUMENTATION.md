@@ -51,7 +51,7 @@ supported by `docker stack deploy`.
 - **Format:** GPG-encrypted SQL dumps
 - **Destination:** Dropbox `/Apps/firefly/`
 - **Retention:** 120 days
- - **Naming:** `backup_firefly_YYYYMMDD_HHMMSS.sql.zst.gpg` (zstd-compressed SQL dump, GPG encrypted)
+ - **Naming:** `firefly_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` (zstd-compressed SQL dump, GPG encrypted)
 - **Verified:** Volume `firefly_postgresdata` mounted read-only by backup service
 
 **Restore:** See [RESTORE_GUIDE.md](RESTORE_GUIDE.md)

@@ -1,97 +1,133 @@
 # Firefly III Database Restore Guide
 
-This guide covers automated Firefly PostgreSQL restore using `restore.sh`.
-
 ## Prerequisites
 
-- Docker and Docker Compose installed
-- Rclone configured with a reachable `dropbox` remote
-- GPG passphrase used to encrypt backup files
-- Firefly backups present in Dropbox path `/Apps/firefly` (or custom `DROPBOX_PATH`)
+- Docker and Docker Compose with `up --wait`, `rclone`, GPG, and `zstd`.
+- Access to `finance_network`, a configured `dropbox` rclone remote, and a
+  Firefly database backup in `/Apps/firefly`. Set `DROPBOX_REMOTE` or
+  `DROPBOX_PATH` to use another remote or path.
+- The original Firefly `APP_KEY`, database credentials, and a 32-character
+  alphanumeric `STATIC_CRON_TOKEN` available to Compose. See
+  [SERVICE_DOCUMENTATION.md](SERVICE_DOCUMENTATION.md).
+- The GPG passphrase and sufficient private temporary disk space for both the
+  encrypted backup and its uncompressed SQL dump.
+- A separate, verified backup of the current database before replacing it.
+  Schedule downtime and coordinate direct restores and backup jobs manually;
+  the script does not lock against concurrent runs.
 
-## Restore Steps (Script-First)
+## Restore Steps
 
-### 1. Run the restore script
+### 1. Navigate to Firefly
 
 ```bash
 cd financialServices/firefly
-bash restore.sh
 ```
 
-The script performs:
-- Preflight checks (`docker`, `rclone`, `gpg`, `zstd`, Docker daemon)
-- Latest backup discovery from Dropbox
-- Download + decrypt + import workflow
+### 2. Run the restore script
 
-### 2. Existing volume behavior
+```bash
+./restore.sh
+```
 
-If `firefly_postgresdata` already exists, the script prompts:
+The script prompts for the passphrase and, if Firefly data or containers
+already exist, confirmation before replacement. Non-interactive alternatives:
 
-`Remove and recreate volume? [Y/n]`
+- `./restore.sh --if-missing` skips an existing database volume and refuses to
+  restore if Firefly containers exist without that volume.
+- `./restore.sh --force` replaces existing data without confirmation.
 
-- `Y` (default): remove/recreate volume, then restore database
-- `n`: keep existing volume and **skip-restore** (starts full stack only)
+The script selects the newest `firefly_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` dump
+and validates its GPG, zstd, and PostgreSQL dump markers before stopping anything.
+It stages the decrypted SQL in a private temporary directory and removes it on exit. It
+stops `db-backup` if running, stops the Firefly Compose project, checks for
+other running users of the volume, clears the volume in place, imports the dump,
+and waits for the application health check. It uses the database container's
+configured PostgreSQL user and database name.
 
-Important: Option 2 does not import backup data. It only starts the containers.
+### 3. Clear sensitive shell state
 
-### 3. Restore target details
-
-- Canonical database container name: `firefly-db`
-- Database readiness verification command: `pg_isready -U firefly`
-- On success, the script starts full stack with `docker compose up -d`
-
-## Verification
-
-After script completion:
-
-1. Check stack status:
-   ```bash
-   docker compose ps
-   ```
-2. Check database readiness:
-   ```bash
-   docker exec firefly-db pg_isready -U firefly
-   ```
-3. Review logs if needed:
-   ```bash
-   docker compose logs -f
-   ```
-
-## Failure Behavior
-
-- If Dropbox contains no matching backup files, the script fails immediately.
-- If PostgreSQL readiness fails, the script exits non-zero with actionable log hints.
-- If skip-restore is selected, the script exits successfully after starting the stack.
-
-## Rollback to Manual Restore
-
-If the script is unavailable or unsuitable:
-
-1. Stop stack:
-   ```bash
-   docker compose down
-   ```
-2. Recreate volume and containers as required.
-3. Start only DB container:
-   ```bash
-   docker compose create
-   docker start firefly-db
-   ```
-4. Restore manually:
-   ```bash
-   gpg --batch --yes --passphrase "$PASSPHRASE" -d /path/to/backup.sql.zst.gpg \
-     | zstd -d \
-     | docker exec -i firefly-db psql -U firefly -d firefly
-   ```
-5. Start full stack:
-   ```bash
-   docker compose up -d
-   ```
-
-## Security Note
-
-Unset the passphrase after restore:
+If you supplied the passphrase in your shell:
 
 ```bash
 unset PASSPHRASE
 ```
+
+## Verification
+
+```bash
+docker compose ps
+docker exec firefly-db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker logs --tail 100 firefly
+```
+
+Sign in through the proxy and verify the expected accounts, transactions, and
+other data. Database and application health do not prove the backup is current.
+
+## Troubleshooting
+
+- A failed download, decryption, or dump validation leaves existing data intact.
+- If a failure occurs after volume clearing begins, the script leaves a
+  previously running `db-backup` stopped to avoid backing up incomplete data.
+  Recover the database, verify it, and restart `db-backup` manually. A later
+  `--if-missing` run will skip the existing volume; use a deliberate `--force`
+  retry after reviewing the failure.
+- If a container from another Compose project still exists, or another running
+  container uses the database volume, the script refuses to clear it. Resolve
+  the conflict before retrying.
+- If the app fails its health check, inspect `docker compose logs` and confirm
+  the original `APP_KEY`, database credentials, and network are correct.
+- If restarting `db-backup` fails after a successful restore, the script reports
+  failure; start it manually after checking the restored service.
+
+## Manual fallback
+
+This replaces the database. Coordinate with other backup and restore operations,
+and verify the backup before proceeding. The following assumes `db-backup` was
+running; if it was already stopped or absent, omit both its stop and start.
+Run in Bash from the Firefly service directory:
+
+```bash
+(
+set -euo pipefail
+umask 077
+BACKUP=/path/to/firefly_backup.sql.zst.gpg
+WORKDIR=$(mktemp -d)
+trap 'rm -rf -- "$WORKDIR"; unset PASSPHRASE' EXIT
+read -r -s -p "GPG passphrase: " PASSPHRASE
+printf '\n'
+gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$BACKUP" \
+  3<<<"$PASSPHRASE" | zstd -d > "$WORKDIR/backup.sql"
+grep -Fxq -- '-- PostgreSQL database dump' "$WORKDIR/backup.sql"
+grep -Fxq -- '-- PostgreSQL database dump complete' "$WORKDIR/backup.sql"
+docker stop db-backup
+docker compose down
+if [[ -n "$(docker ps -q --filter volume=firefly_postgresdata)" ]]; then
+  echo "Another running container uses the database volume; aborting." >&2
+  exit 1
+fi
+docker volume inspect firefly_postgresdata >/dev/null \
+  || docker volume create firefly_postgresdata
+docker run --rm -v firefly_postgresdata:/restore alpine \
+  sh -c 'find /restore -mindepth 1 -maxdepth 1 -exec rm -rf {} +'
+docker compose create
+docker start firefly-db
+ready=false
+for ((i = 1; i <= 60; i++)); do
+  if docker exec firefly-db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+[[ "$ready" == true ]] || { echo "PostgreSQL is not ready." >&2; exit 1; }
+docker exec -i firefly-db sh -c \
+  'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$WORKDIR/backup.sql"
+docker exec firefly-db sh -c \
+  'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1 FROM public.transactions LIMIT 0"'
+docker compose up -d --wait --wait-timeout 300
+docker start db-backup
+)
+```
+
+On failure after `db-backup` is stopped, it remains stopped. Recover and verify
+Firefly before restarting it. The temporary plaintext dump is removed on exit.
