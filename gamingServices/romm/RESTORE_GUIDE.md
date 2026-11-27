@@ -55,8 +55,7 @@ was stopped after the script completed, start it with:
 
 ```bash
 docker compose up -d
-cd ../../backupServices/filedata
-docker compose -f docker-compose.local.yml up -d filedata-backup
+../../backupServices/filedata/start-backup.sh local
 ```
 
 ### 5. Cleanup sensitive shell state
