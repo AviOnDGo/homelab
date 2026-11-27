@@ -64,7 +64,9 @@ Immich uses a split-lane backup policy:
 - File lane (`immich_library`, `immich_profile`, `immich_upload`): `filedata-backup` runs `sync-crypt` mode to `mega-crypt` with `current/` plus dated `deleted-archive/` retention buckets.
 - Database lane (`immich_postgresdata`): `db-backup` runs the standard encrypted `pg_dump` flow and uploads to Dropbox.
 
-Retention for Immich sync-crypt deleted/replaced-file archive is set to 30 days via filedata backup environment configuration.
+Retention for Immich sync-crypt deleted/replaced-file archives is set to 30 days
+in the three Immich entries in
+[`backup-volumes.conf`](../../backupServices/filedata/backup-volumes.conf).
 
 ### Fresh Local installation and backup setup
 
