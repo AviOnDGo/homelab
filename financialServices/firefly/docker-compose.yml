@@ -3,9 +3,20 @@ services:
     image: fireflyiii/core:latest
     hostname: app
     container_name: firefly
+    environment:
+      APP_KEY: ${APP_KEY:?Set APP_KEY in .env}
+      TRUSTED_PROXIES: "**"
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_DATABASE: firefly
+      DB_USERNAME: ${DB_USERNAME:?Set DB_USERNAME in .env}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      STATIC_CRON_TOKEN_FILE: /run/secrets/firefly_cron_token
+    secrets:
+      - firefly_cron_token
     # volumes:
     #   - firefly:/var/www/html/storage/upload
-    env_file: .env
     # ports:
     #   - 9021:8080  # Exposed via Nginx Proxy Manager instead
     depends_on:
@@ -26,11 +37,14 @@ services:
     container_name: firefly-db
     labels:
       - "com.centurylinklabs.watchtower.enable=false"
-    env_file: .db.env
+    environment:
+      POSTGRES_DB: firefly
+      POSTGRES_USER: ${DB_USERNAME:?Set DB_USERNAME in .env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
     volumes:
       - firefly_postgresdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U firefly"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,33 +54,44 @@ services:
     restart: always
 
   firefly-cron:
-    #
-    # To make this work, set STATIC_CRON_TOKEN in your .env file or as an environment variable and replace REPLACEME below
-    # The STATIC_CRON_TOKEN must be *exactly* 32 characters long
-    # Low resource service - cron scheduler only runs daily at 3 AM
-    #
+    # Provide the same 32-character STATIC_CRON_TOKEN to both app and cron.
     image: alpine
     restart: always
     container_name: firefly-cron
     labels:
       - "com.centurylinklabs.watchtower.enable=false"
-    env_file: .env
+    environment:
+      TZ: UTC
+    secrets:
+      - firefly_cron_token
     depends_on:
       - firefly
       - firefly-db
     # No resource limits - Google Cloud free tier VM runs many services
     # Cron job runs daily at 3 AM, minimal footprint
-    command: sh -c "
-      apk add tzdata
-      && ln -s /usr/share/zoneinfo/${TZ} /etc/localtime
-      | echo \"0 3 * * * wget -qO- http://firefly:8080/api/v1/cron/$$STATIC_CRON_TOKEN;echo\"
-      | crontab -
-      && crond -f -L /dev/stdout"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        apk add --no-cache tzdata
+        ln -sf "/usr/share/zoneinfo/$${TZ}" /etc/localtime
+        STATIC_CRON_TOKEN="$$(cat /run/secrets/firefly_cron_token)"
+        if [ "$${#STATIC_CRON_TOKEN}" -ne 32 ]; then
+          echo "STATIC_CRON_TOKEN must be exactly 32 characters." >&2
+          exit 1
+        fi
+        echo "0 3 * * * wget -qO- http://firefly:8080/api/v1/cron/$${STATIC_CRON_TOKEN}; echo" | crontab -
+        exec crond -f -L /dev/stdout
 
 # Volumes are not external for postgres. This allows the volume to be created with 'docker compose create' with proper permissions. Then use it to restore.
 volumes:
   firefly_postgresdata:
     name: firefly_postgresdata
+
+secrets:
+  firefly_cron_token:
+    file: ${FIREFLY_CRON_TOKEN_FILE:-/run/secrets/firefly_cron_token}
 
 networks:
   default:
