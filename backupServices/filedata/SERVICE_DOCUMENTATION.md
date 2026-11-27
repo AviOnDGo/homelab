@@ -250,7 +250,7 @@ Leave the container running before reboot:
 
 **For a host using production backup destinations:**
 ```bash
-cp env.prod.example .env
+cp .env.prod.example .env
 # Edit .env with your secrets
 # Choose the host profile in backup-volumes.conf
 ./start-backup.sh prod
@@ -258,7 +258,7 @@ cp env.prod.example .env
 
 **For Local:**
 ```bash
-cp env.local.example .env
+cp .env.local.example .env
 # Edit .env with your secrets
 ./start-backup.sh local
 ```
@@ -455,10 +455,10 @@ The `CRON_SCHEDULE` variable uses standard cron syntax:
 **Step 1:** Create the environment file for this host
 ```bash
 cd /path/to/homelab/backupServices/filedata
-cp env.local.example .env
+cp .env.local.example .env
 ```
 
-For production backup destinations, use `cp env.prod.example .env` instead.
+For production backup destinations, use `cp .env.prod.example .env` instead.
 Set the required credentials, destinations, modes, and schedule variables for
 the volumes selected by the host profile.
 
