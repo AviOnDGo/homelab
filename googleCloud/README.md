@@ -191,6 +191,25 @@ Optional variables:
 - BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME
 	- Optional secret name exported as `TF_VAR_bootstrap_git_deploy_key_secret_name`.
 
+When both bootstrap Git variables are set, the VM retrieves the private deploy
+key from Secret Manager and clones the SSH repository into `/opt/homelab`.
+The VM service account needs access to the secret, and its corresponding public
+key must be registered with GitHub (read-only access is sufficient for pulls).
+Bootstrap stores the private key in `/root/.ssh/homelab_deploy_key` with mode
+`600` and configures the repository to use it. Root access to the VM grants
+access to this key. Each boot refreshes it from the latest secret version.
+Bootstrap supports `user@host:path` and `ssh://user@host[:port]/path` SSH
+URLs and scans the configured endpoint if its host key is not already known.
+An automatic key scan does not authenticate the server; pre-provision a verified
+host key in root's `known_hosts` when host identity must be verified on first use.
+
+To update the checkout, run `sudo git -C /opt/homelab pull`. Changing the
+startup script in Terraform requires an apply and a subsequent startup; review
+the plan for VM replacement before applying. Existing clones under `/tmp` are
+not moved or deleted. Copy any needed local changes separately before using
+the new checkout. Bootstrap refuses to modify an existing `/opt/homelab` that
+is not a repository or has a different origin.
+
 The Watchtower restore additionally requires `WATCHTOWER_SCHEDULE` as a
 repository or `prod` environment variable (for example `0 0 3 * * *`).
 The value must be single-line and cannot contain single quotes or backslashes.
