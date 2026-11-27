@@ -285,3 +285,24 @@ install and connect Tailscale on the GCP VM and update its DuckDNS record.
 - **WHEN** the deployment invokes the setup workflow
 - **THEN** the setup workflow SHALL report the failure
 - **AND** service restore jobs SHALL NOT depend on its success
+
+### REQ-018: Firefly GCP recovery SHALL be workflow-orchestrated
+The deployment SHALL provide a reusable and manually dispatchable Firefly
+database restore workflow using the existing GCP restore transport.
+
+#### Scenario: Manual recovery protects an existing volume
+- **GIVEN** an operator dispatches the Firefly restore workflow
+- **WHEN** force is not enabled and the database volume exists
+- **THEN** the restore SHALL skip the existing volume without replacing its data
+
+#### Scenario: Deployment restores after NPM
+- **GIVEN** the VM apply and NPM restore jobs complete successfully
+- **WHEN** the deployment schedules Firefly recovery
+- **THEN** it SHALL invoke the Firefly workflow with force enabled, including after a no-op apply
+- **AND** the recovery SHALL share the queued service restore concurrency group
+
+#### Scenario: Firefly credentials are transmitted privately
+- **GIVEN** the restore workflow receives Dropbox, GPG, and Firefly configuration secrets
+- **WHEN** it invokes the restore script on the VM
+- **THEN** it SHALL transmit those values through SSH standard input without printing them or placing them in command arguments
+- **AND** Firefly configuration SHALL be supplied to Compose without persisting it in the temporary workflow directory

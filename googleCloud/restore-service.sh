@@ -11,6 +11,7 @@ case "$SERVICE" in
   npm) service_dir=securityServices/npm ;;
   freshrss) service_dir=knowledgeServices/freshrss ;;
   vaultwarden) service_dir=securityServices/vaultwarden ;;
+  firefly) service_dir=financialServices/firefly ;;
   watchtower) service_dir=securityServices/watchtower ;;
   *) echo "Unsupported restore service: $SERVICE" >&2; exit 1 ;;
 esac
@@ -53,6 +54,13 @@ fi
 : "${DROPBOX_REFRESH_TOKEN:?Missing DROPBOX_REFRESH_TOKEN secret}"
 : "${GPG_PASSPHRASE:?Missing GPG_PASSPHRASE secret}"
 
+if [[ "$SERVICE" == firefly ]]; then
+  : "${FIREFLY_APP_KEY:?Missing FIREFLY_APP_KEY secret}"
+  : "${FIREFLY_DB_USERNAME:?Missing FIREFLY_DB_USERNAME secret}"
+  : "${FIREFLY_DB_PASSWORD:?Missing FIREFLY_DB_PASSWORD secret}"
+  : "${FIREFLY_STATIC_CRON_TOKEN:?Missing FIREFLY_STATIC_CRON_TOKEN secret}"
+fi
+
 case "$FORCE" in
   false) mode=--if-missing ;;
   true) mode=--force ;;
@@ -67,6 +75,12 @@ fi
   printf '%s' "$DROPBOX_AUTH_TOKEN" | base64 -w0; echo
   printf '%s' "$DROPBOX_REFRESH_TOKEN" | base64 -w0; echo
   printf '%s' "$GPG_PASSPHRASE" | base64 -w0; echo
+  if [[ "$SERVICE" == firefly ]]; then
+    printf '%s' "$FIREFLY_APP_KEY" | base64 -w0; echo
+    printf '%s' "$FIREFLY_DB_USERNAME" | base64 -w0; echo
+    printf '%s' "$FIREFLY_DB_PASSWORD" | base64 -w0; echo
+    printf '%s' "$FIREFLY_STATIC_CRON_TOKEN" | base64 -w0; echo
+  fi
   tar -C "$service_dir" -cf - restore.sh docker-compose.yml
 } | gcloud compute ssh --quiet "$VM_NAME" \
   --project "$PROJECT_ID" --zone "$ZONE" \
@@ -77,6 +91,20 @@ fi
     read -r token64
     read -r refresh64
     read -r pass64
+    if [[ "$2" == firefly ]]; then
+      read -r app_key64
+      read -r db_username64
+      read -r db_password64
+      read -r cron_token64
+      # Preserve trailing newlines while propagating decoding failures.
+      APP_KEY="$(printf %s "$app_key64" | base64 -d && printf .)"
+      DB_USERNAME="$(printf %s "$db_username64" | base64 -d && printf .)"
+      DB_PASSWORD="$(printf %s "$db_password64" | base64 -d && printf .)"
+      STATIC_CRON_TOKEN="$(printf %s "$cron_token64" | base64 -d && printf .)"
+      export APP_KEY="${APP_KEY%.}" DB_USERNAME="${DB_USERNAME%.}"
+      export DB_PASSWORD="${DB_PASSWORD%.}" STATIC_CRON_TOKEN="${STATIC_CRON_TOKEN%.}"
+      unset app_key64 db_username64 db_password64 cron_token64
+    fi
     workdir=$(mktemp -d /tmp/service-restore-workflow.XXXXXXXX)
     trap "rm -rf -- \"\$workdir\"" EXIT
     tar -xf - -C "$workdir"

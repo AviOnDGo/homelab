@@ -25,26 +25,22 @@
 
 ## Configuration Files
 
-**`.env`** (gitignored - main application):
+**`.env`** (gitignored - Compose interpolation values):
 ```bash
-APP_KEY=<32-character-key>
-APP_URL=http://localhost:9021
-TZ=UTC
-DB_CONNECTION=pgsql
-DB_HOST=firefly-db
-DB_DATABASE=firefly
+APP_KEY=<stable-32-character-key>
 DB_USERNAME=firefly
 DB_PASSWORD=<password>
 STATIC_CRON_TOKEN=<32-character-token>
-TRUSTED_PROXIES=**
 ```
 
-**`.db.env`** (gitignored - database):
-```bash
-POSTGRES_DB=firefly
-POSTGRES_USER=firefly
-POSTGRES_PASSWORD=<password>
-```
+Compose explicitly sets only the required application and database settings;
+other Firefly settings use the image defaults. It maps the database credentials
+from `.env` to both Firefly and PostgreSQL. `APP_URL` is not set by Compose.
+Compose takes `STATIC_CRON_TOKEN` from `.env` and mounts it as a secret at
+`/run/secrets/firefly_cron_token` in the Firefly and cron containers. Generate a
+32-character token with `openssl rand -hex 16` and set it privately in `.env`.
+The cron container uses UTC. Environment-backed Compose secrets are not
+supported by `docker stack deploy`.
 
 ## Backup Coverage
 
@@ -55,7 +51,7 @@ POSTGRES_PASSWORD=<password>
 - **Format:** GPG-encrypted SQL dumps
 - **Destination:** Dropbox `/Apps/firefly/`
 - **Retention:** 120 days
- - **Naming:** `backup_firefly_YYYYMMDD_HHMMSS.sql.zst.gpg` (zstd-compressed SQL dump, GPG encrypted)
+ - **Naming:** `firefly_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` (zstd-compressed SQL dump, GPG encrypted)
 - **Verified:** Volume `firefly_postgresdata` mounted read-only by backup service
 
 **Restore:** See [RESTORE_GUIDE.md](RESTORE_GUIDE.md)
@@ -142,9 +138,8 @@ docker exec firefly-cron wget -qO- http://firefly:8080/api/v1/cron/<STATIC_CRON_
 docker ps | grep firefly-db
 docker inspect firefly-db | grep -A 10 Health
 
-# Verify credentials match in .env and .db.env
-grep DB_PASSWORD .env
-grep POSTGRES_PASSWORD .db.env
+# Confirm Compose can resolve required values without printing them
+docker compose config --quiet
 
 # Check connection from firefly container
 docker exec firefly ping -c 2 firefly-db
@@ -155,8 +150,8 @@ docker exec firefly ping -c 2 firefly-db
 # Check cron logs
 docker logs firefly-cron
 
-# Verify token is exactly 32 characters
-grep STATIC_CRON_TOKEN .env | wc -c
+# Verify the mounted secret exists without displaying it
+docker exec firefly test -s /run/secrets/firefly_cron_token
 
 # Test manual execution
 docker exec firefly-cron wget -qO- http://firefly:8080/api/v1/cron/<token>
@@ -213,7 +208,9 @@ Internet → NPM (SSL/TLS) → firefly:8080
 
 ## Security Considerations
 
-- PostgreSQL credentials in gitignored `.env` and `.db.env`
+- `APP_KEY`, `DB_USERNAME`, `DB_PASSWORD`, and `STATIC_CRON_TOKEN` in the
+  gitignored `.env`; restrict access to this file
+- `STATIC_CRON_TOKEN` mounted as a Docker Compose secret in the containers
 - `APP_KEY` must be 32 characters for encryption
 - `STATIC_CRON_TOKEN` protects cron API endpoint
 - Database not exposed to external networks
@@ -241,8 +238,7 @@ docker network create finance_network
 
 # 3. Configure environment
 cp .env.example .env
-cp .db.env.example .db.env
-# Edit .env and .db.env with proper credentials
+# Edit .env with a stable APP_KEY, PostgreSQL credentials, and cron token.
 
 # 4. Start services
 docker compose up -d

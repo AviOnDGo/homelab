@@ -231,7 +231,7 @@ The audit SHALL verify that all services with named external volumes are registe
 - **AND** backup registration SHALL be required before the service is considered production-ready
 
 ### REQ-017: Firefly automated restore script workflow
-The Firefly service SHALL provide a restore script that restores the PostgreSQL database from the latest Dropbox backup and enforces an operator-confirmed volume handling flow.
+The Firefly service SHALL provide a restore script that restores the PostgreSQL database from the latest matching encrypted Dropbox backup and protects existing data unless replacement is authorized.
 
 #### Scenario: Latest backup is selected from Dropbox
 - **GIVEN** the restore script starts with Dropbox credentials and backup path configured
@@ -245,29 +245,23 @@ The Firefly service SHALL provide a restore script that restores the PostgreSQL 
 - **THEN** the restore script SHALL exit with a non-zero status immediately
 - **AND** it SHALL print an actionable error message
 
-#### Scenario: Existing volume prompts for operator decision
+#### Scenario: Existing volume is protected in automatic mode
 - **GIVEN** `firefly_postgresdata` already exists
-- **WHEN** restore preparation reaches volume handling
-- **THEN** the restore script SHALL prompt the operator to choose between remove-and-recreate or keep existing volume
-- **AND** the default choice SHALL be remove-and-recreate
+- **WHEN** the restore script runs with `--if-missing`
+- **THEN** it SHALL skip the restore without changing the existing data
 
-#### Scenario: Volume absent skips choice prompt
-- **GIVEN** `firefly_postgresdata` does not exist
-- **WHEN** restore preparation reaches volume handling
-- **THEN** the restore script SHALL NOT ask the keep-vs-recreate question
-- **AND** it SHALL proceed with restore preparation
+#### Scenario: Existing data requires confirmation or force
+- **GIVEN** the volume or Firefly containers already exist
+- **WHEN** the restore script runs without `--if-missing` or `--force`
+- **THEN** it SHALL ask for confirmation before stopping the stack
+- **AND** it SHALL leave data unchanged if confirmation is declined
 
-#### Scenario: Keep existing volume means skip-restore
-- **GIVEN** the operator chooses to keep the existing volume
-- **WHEN** the restore script evaluates the selected volume action
-- **THEN** the restore script SHALL skip database import
-- **AND** it SHALL start the full Firefly stack
-
-#### Scenario: Recreate volume performs restore
-- **GIVEN** the operator chooses remove-and-recreate
-- **WHEN** the restore script executes the restore path
-- **THEN** the restore script SHALL recreate `firefly_postgresdata`, create containers, and start only `firefly-db` before import
-- **AND** it SHALL decrypt and decompress the selected backup and import it into the Firefly database
+#### Scenario: Authorized restore validates before replacing data
+- **GIVEN** the restore is authorized or no existing data is found
+- **WHEN** the restore script prepares the database
+- **THEN** it SHALL validate the encrypted, compressed SQL dump before stopping services
+- **AND** it SHALL clear an existing `firefly_postgresdata` volume in place or create it if absent
+- **AND** it SHALL create the containers and start only `firefly-db` before importing the dump
 
 #### Scenario: Canonical restore target uses firefly-db
 - **GIVEN** the restore script performs database operations
@@ -275,14 +269,19 @@ The Firefly service SHALL provide a restore script that restores the PostgreSQL 
 - **THEN** it SHALL target the `firefly-db` container name for restore and readiness checks
 - **AND** it SHALL NOT rely on legacy container aliases
 
-#### Scenario: Readiness verification uses pg_isready
-- **GIVEN** restore import completes successfully
-- **WHEN** post-import validation runs
-- **THEN** the restore script SHALL verify database readiness using `pg_isready`
-- **AND** successful readiness SHALL be treated as restore verification completion
+#### Scenario: Database import and verification
+- **GIVEN** the restored database container is starting
+- **WHEN** the restore script imports the dump
+- **THEN** it SHALL wait for `pg_isready`, stop on SQL errors, and verify the transactions table
 
 #### Scenario: Full stack starts after restore path success
 - **GIVEN** the selected restore path completes successfully
 - **WHEN** the restore script reaches finalization
-- **THEN** the restore script SHALL start the full Firefly stack with `docker compose up -d`
-- **AND** it SHALL leave the service in running state
+- **THEN** the restore script SHALL start the full Firefly stack and wait for application and database health checks
+- **AND** it SHALL report a failure if the stack does not become ready
+
+#### Scenario: Failed replacement preserves backup safety
+- **GIVEN** the database backup container was running before a restore
+- **WHEN** a failure occurs after volume clearing begins
+- **THEN** the restore script SHALL leave the backup container stopped
+- **AND** it SHALL report that manual recovery is required
