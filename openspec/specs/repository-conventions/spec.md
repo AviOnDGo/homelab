@@ -12,7 +12,8 @@ operator-managed runtime configuration outside version control.
 #### Scenario: opsx change targets environment configuration
 - **GIVEN** an opsx change or task involves environment variable configuration
 - **WHEN** the change is implemented
-- **THEN** tasks for filedata backups SHALL only create or modify `.env.local.example` and `.env.prod.example`
+- **THEN** tasks for filedata credentials SHALL only create or modify `.env.example`
+- **AND** filedata destination settings SHALL be maintained in `path.local` and `path.prod`
 - **AND** tasks for other backup services SHALL only create or modify `.env.acc.example` and `.env.prd.example`
 - **AND** tasks for all other services SHALL only create or modify `.env.example`
 - **AND** tasks SHALL NOT create, overwrite, or patch `.env` files
@@ -21,10 +22,10 @@ operator-managed runtime configuration outside version control.
 #### Scenario: New service added via an opsx change
 - **GIVEN** an opsx change adds a backup service with configurable environment variables
 - **WHEN** creating environment variable documentation
-- **THEN** the change SHALL add the new variables to both example files required for that backup service by REQ-002
+- **THEN** the change SHALL add new variables to the example files required for that backup service by REQ-002
 - **AND** the operator is responsible for running `cp .env.acc.example .env` or
-  `cp .env.prd.example .env` for PostgreSQL, or the corresponding `.env.local.example`
-  or `.env.prod.example` for filedata backups, to apply configuration
+  `cp .env.prd.example .env` for PostgreSQL, or `cp .env.example .env` for
+  filedata backups, to apply credentials
 
 #### Scenario: New non-backup service added via an opsx change
 - **GIVEN** an opsx change adds a non-backup service with configurable environment variables
@@ -33,7 +34,8 @@ operator-managed runtime configuration outside version control.
 - **AND** the operator is responsible for running `cp .env.example .env` to apply configuration
 
 ### REQ-002: Environment example file naming convention
-Filedata backup SHALL provide `.env.local.example` and `.env.prod.example`.
+Filedata backup SHALL provide one credentials-only `.env.example` and separate
+`path.local` and `path.prod` destination files.
 Other backup services (under `backupServices/`) that require operator-supplied
 environment variables SHALL provide two tracked example files
 (`.env.acc.example` and `.env.prd.example`). All other services with
@@ -41,12 +43,12 @@ operator-supplied environment variables SHALL provide a single `.env.example`
 file. Every tracked template file name SHALL start with a dot and end in
 `.example`.
 
-#### Scenario: Filedata backup has local and production templates
+#### Scenario: Filedata backup separates credentials and destinations
 - **GIVEN** `backupServices/filedata/` is inspected
 - **WHEN** listing tracked files
-- **THEN** the directory SHALL contain `.env.local.example` for the Local profile
-- **AND** the directory SHALL contain `.env.prod.example` for the Prod profile
-- **AND** the directory SHALL NOT contain a plain `.env.example`
+- **THEN** the directory SHALL contain a credentials-only `.env.example`
+- **AND** the directory SHALL contain `path.local` and `path.prod` for destinations
+- **AND** the directory SHALL NOT contain `.env.local.example` or `.env.prod.example`
 - **AND** the directory SHALL NOT contain `.env.backup`
 
 #### Scenario: Other backup service has two env example files
@@ -68,8 +70,8 @@ file. Every tracked template file name SHALL start with a dot and end in
 - **THEN** all environment-specific values SHALL be pre-populated
 - **AND** the operator only needs to fill in secret credentials to complete setup
 
-#### Scenario: Both backup examples have identical variable sets
-- **GIVEN** the two environment examples for a backup service are compared
+#### Scenario: Both PostgreSQL backup examples have identical variable sets
+- **GIVEN** the two environment examples for the PostgreSQL backup service are compared
 - **WHEN** checking which variable names are defined
 - **THEN** both files SHALL declare exactly the same set of variable names
 - **AND** the only permitted differences are environment-specific values (e.g., Dropbox path prefix)
