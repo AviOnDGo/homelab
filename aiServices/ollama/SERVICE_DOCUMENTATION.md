@@ -132,14 +132,17 @@ The `ollama_data` volume is **intentionally excluded** from automated filedata b
 
 If you still want to include it, register it in
 `backupServices/filedata/backup-volumes.conf` with its mode, retention, and
-schedule, then configure its destination in the filedata environment examples:
+schedule:
 
 ```text
 ollama|ollama_data|default|archive|7|0 5 * * *
 ```
 
 Add `local` and/or `prod` to the profile list when Ollama is deployed on those
-hosts.
+hosts. Configure `OLLAMA_DROPBOX_PATH` in both
+[`path.local`](../../backupServices/filedata/path.local) and
+[`path.prod`](../../backupServices/filedata/path.prod) for the corresponding
+backup destinations.
 
 The exclusion is intentional: Open WebUI stores user-owned state that should be recoverable,
 while Ollama model files are large, reproducible artifacts that can be pulled again.
