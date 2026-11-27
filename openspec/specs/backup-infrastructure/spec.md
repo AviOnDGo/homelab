@@ -236,13 +236,13 @@ example file conventions defined in `backup-env-file-standards`.
 #### Scenario: filedata backup service env examples
 - **GIVEN** `backupServices/filedata/` is inspected
 - **WHEN** listing tracked files
-- **THEN** `env.local.example` SHALL be present with `/App_acc/` Dropbox paths
-- **AND** `env.prod.example` SHALL be present with `/Apps/` Dropbox paths
+- **THEN** `.env.local.example` SHALL be present with `/App_acc/` Dropbox paths
+- **AND** `.env.prod.example` SHALL be present with `/Apps/` Dropbox paths
 - **AND** `.env.example` SHALL NOT be present (removed)
 - **AND** `.env.backup` SHALL NOT be present (removed)
 
 #### Scenario: filedata env examples cover all services
-- **GIVEN** `backupServices/filedata/env.local.example` and `env.prod.example` are inspected
+- **GIVEN** `backupServices/filedata/.env.local.example` and `.env.prod.example` are inspected
 - **WHEN** checking the set of variable names
 - **THEN** both files SHALL declare variables for: pihole, npm, vaultwarden,
   openwebui, freshrss, immich (library, profile, upload)
@@ -286,9 +286,9 @@ GPG-encrypted, multi-cloud backup pipeline.
 - **THEN** `FIREFOX_CRON_SCHEDULE`, `FIREFOX_DROPBOX_PATH`, and `FIREFOX_RETENTION_DAYS` SHALL be present
 - **AND** `FIREFOX_CRON_SCHEDULE` SHALL NOT share its cron expression with any other service's schedule variable
 
-#### Scenario: env.prod.example and env.local.example updated
+#### Scenario: .env.prod.example and .env.local.example updated
 - **GIVEN** the relevant backup configuration and deployment state are available for inspection
-- **WHEN** `backupServices/filedata/env.prod.example` and `env.local.example` are inspected
+- **WHEN** `backupServices/filedata/.env.prod.example` and `.env.local.example` are inspected
 - **THEN** a `# Firefox` section SHALL be present in both files containing `FIREFOX_DROPBOX_PATH`, `FIREFOX_RETENTION_DAYS`, and `FIREFOX_CRON_SCHEDULE`
 - **AND** `FIREFOX_CRON_SCHEDULE` SHALL be `10 4 * * *` (staggered at least 5 minutes after FreshRSS at `0 4 * * *`)
 
