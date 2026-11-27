@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,6 +64,55 @@ else:
             capture_output=True,
             check=False,
         )
+
+    def require_compose(self):
+        docker = shutil.which("docker")
+        if docker is None:
+            self.skipTest("Docker is not installed")
+        env = {"PATH": os.defpath, "HOME": str(self.root)}
+        probe = subprocess.run(
+            [docker, "compose", "version"],
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if probe.returncode:
+            message = (probe.stderr + probe.stdout).strip()
+            if "'compose' is not a docker command" in message.lower() or (
+                "unknown command: docker compose" in message.lower()
+            ):
+                self.skipTest(f"Docker Compose is not available: {message}")
+            self.fail(f"Docker Compose version check failed: {message}")
+        return docker, env
+
+    def test_compose_guard_uses_test_environment(self):
+        with mock.patch("shutil.which", return_value=None):
+            with self.assertRaises(unittest.SkipTest):
+                self.require_compose()
+
+        with mock.patch("shutil.which", return_value="/usr/bin/docker"), mock.patch(
+            "subprocess.run"
+        ) as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "version", "")
+            docker, env = self.require_compose()
+            self.assertEqual(docker, "/usr/bin/docker")
+            self.assertEqual(env, {"PATH": os.defpath, "HOME": str(self.root)})
+            self.assertEqual(run.call_args.args[0], [docker, "compose", "version"])
+            self.assertEqual(run.call_args.kwargs["env"], env)
+
+            for message in (
+                "docker: 'compose' is not a docker command.",
+                "unknown command: docker compose",
+            ):
+                with self.subTest(message=message):
+                    run.return_value = subprocess.CompletedProcess([], 1, "", message)
+                    with self.assertRaises(unittest.SkipTest):
+                        self.require_compose()
+
+            run.return_value = subprocess.CompletedProcess([], 1, "", "plugin error")
+            with self.assertRaisesRegex(AssertionError, "plugin error"):
+                self.require_compose()
 
     def test_selects_existing_volumes_and_warns_for_missing(self):
         result = self.run_start(
@@ -231,8 +281,8 @@ else:
         )
         self.assertEqual(result.returncode, 9)
 
-    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
     def test_registered_policies_override_legacy_env_file_values(self):
+        docker, env = self.require_compose()
         result = self.run_start("local", MOCK_VOLUMES="romm_filedata")
         self.assertEqual(result.returncode, 0, result.stderr)
         compose_file = self.root / "docker-compose.yml"
@@ -248,7 +298,7 @@ else:
         )
         config = subprocess.run(
             [
-                shutil.which("docker"),
+                docker,
                 "compose",
                 "--env-file",
                 "/dev/null",
@@ -263,8 +313,7 @@ else:
                 "json",
             ],
             env={
-                "PATH": os.defpath,
-                "HOME": str(self.root),
+                **env,
                 "ROMM_CRON_SCHEDULE": "0 1 * * *",
                 "ROMM_RETENTION_DAYS": "1",
             },
@@ -322,17 +371,13 @@ else:
         )
         self.assertTrue(keys(ROOT / ".env.example").isdisjoint(local_keys))
 
-    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
     def test_generated_override_is_valid_compose(self):
+        docker, env = self.require_compose()
         result = self.run_start("prod", MOCK_VOLUMES="npm_filedata")
         self.assertEqual(result.returncode, 0, result.stderr)
-        env = {
-            "PATH": os.defpath,
-            "HOME": str(self.root),
-        }
         config = subprocess.run(
             [
-                shutil.which("docker"),
+                docker,
                 "compose",
                 "--env-file",
                 "/dev/null",
@@ -395,8 +440,9 @@ else:
         )
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("must have five cron fields", run.stderr)
-    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
+
     def test_all_host_profiles_render_with_their_environment_examples(self):
+        docker, environment = self.require_compose()
         compose_file = self.root / "docker-compose.yml"
         compose_file.write_text(
             compose_file.read_text().replace("- .env", "- fixture-input")
@@ -414,10 +460,6 @@ else:
             ("default", "local"), ("default", "prod"), ("local", None), ("prod", None)
         ):
             with self.subTest(profile=profile, destination=destination):
-                environment = {
-                    "PATH": os.defpath,
-                    "HOME": str(self.root),
-                }
                 selected = [
                     (name, volume, mode, retention, schedule)
                     for name, volume, profiles, mode, retention, schedule in entries
@@ -433,7 +475,7 @@ else:
 
                 compose = subprocess.run(
                     [
-                        shutil.which("docker"),
+                        docker,
                         "compose",
                         "--env-file",
                         "/dev/null",
