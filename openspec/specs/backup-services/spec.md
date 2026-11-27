@@ -228,19 +228,18 @@ these two standard files and removed.
 - **THEN** both `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md` SHALL be present
 - **AND** `IMPLEMENTATION_DETAILS.md` and `QUICKSTART_GUIDE.md` SHALL NOT exist
 
-### REQ-016: Backup services provide environment-specific example files
-`backupServices/filedata/` SHALL provide `.env.local.example` and
-`.env.prod.example`; `backupServices/postgres/` SHALL provide
-`.env.acc.example` and `.env.prd.example`. Each pair SHALL declare exactly the
-same variable names per service domain. Provider-specific path values SHALL be
-permitted to differ by environment and mode, and are not restricted to Dropbox
-for filedata services.
+### REQ-016: Backup services provide credential and destination configuration
+`backupServices/filedata/` SHALL provide a credentials-only `.env.example` and
+destination files `path.local` and `path.prod`; `backupServices/postgres/` SHALL
+provide `.env.acc.example` and `.env.prd.example`. The filedata path files and
+the PostgreSQL examples SHALL each declare matching variable names per pair.
+Filedata destinations SHALL be permitted to differ by environment and mode.
 
-#### Scenario: Filedata examples cover all registered services
-- **GIVEN** `.env.local.example` and `.env.prod.example` are compared
+#### Scenario: Filedata path files cover all registered services
+- **GIVEN** `path.local` and `path.prod` are compared
 - **WHEN** checking variable names
-- **THEN** both files SHALL declare identical variable names for filedata backups
-- **AND** value differences SHALL be limited to environment-specific paths, schedules, or provider targets
+- **THEN** both files SHALL declare identical destination variable names
+- **AND** `.env.example` SHALL contain credentials rather than destination paths
 
 #### Scenario: PostgreSQL examples cover all registered services
 - **GIVEN** `.env.acc.example` and `.env.prd.example` are compared for PostgreSQL backups
@@ -317,7 +316,7 @@ only services deployed to that profile and SHALL NOT enable unrelated jobs.
 - **AND** other host profiles SHALL retain their configured service sets
 
 ### REQ-022: Paperless retained documents are registered with filedata-backup
-The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile, with its schedule and retention. The filedata backup service SHALL declare Paperless destination variables in both `.env.local.example` and `.env.prod.example`.
+The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile, with its schedule and retention. The filedata backup service SHALL declare Paperless destination variables in both `path.local` and `path.prod`.
 
 #### Scenario: Backup profiles preserve configuration during the category move
 - **GIVEN** Paperless backup configuration exists before the move to Knowledge Services
@@ -333,11 +332,11 @@ The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for
 - **AND** every configured Paperless host profile SHALL include `default`
 
 #### Scenario: Paperless backup configuration is documented
-- **GIVEN** `backupServices/filedata/.env.local.example` and `.env.prod.example` are inspected
+- **GIVEN** `backupServices/filedata/path.local` and `path.prod` are inspected
 - **WHEN** Paperless entries are reviewed
 - **THEN** `PAPERLESS_DROPBOX_PATH` and `PAPERLESS_SYNC_CRYPT_REMOTE` SHALL be present in both files
 - **AND** the Paperless schedule and retention SHALL be present in the registry
-- **AND** the Dropbox paths SHALL follow the account-specific example-file convention used by the repo
+- **AND** the paths SHALL follow the selected destination-file convention
 
 ### REQ-023: Paperless retained-file backups exclude derived media artifacts
 The `filedata-backup` pipeline SHALL back up only the canonical retained Paperless document paths from `paperless_filedata`. It SHALL include `documents/originals/**` and `documents/archive/**`, and it SHALL exclude `documents/thumbnails/**` plus runtime lock artifacts.
@@ -420,7 +419,7 @@ backup lane for the `syncthing_filedata` configuration volume.
 The Syncthing filedata backup lane SHALL use `archive` backup mode, run daily, and retain backups for 7 days.
 
 #### Scenario: Configuration enforces Syncthing archive policy
-- **GIVEN** the filedata backup registry and environment examples are inspected
+- **GIVEN** the filedata backup registry and path files are inspected
 - **WHEN** Syncthing backup configuration is reviewed
 - **THEN** Syncthing's registered backup mode SHALL be `archive`
 - **AND** the registered Syncthing schedule SHALL be daily
@@ -463,7 +462,7 @@ secrets mounts SHALL follow grouped source volumes.
 - **THEN** its mounts, volume declarations, and cron jobs SHALL be inserted at
   the category and service-name position in every profile that deploys it
 - **AND** required networks SHALL be inserted in network-name order
-- **AND** environment examples, scripts where required, specs, and operator
+- **AND** destination files, credential examples, scripts where required, specs, and operator
   documentation SHALL be updated together
 - **AND** adding the service SHALL NOT enable unrelated commented entries
 - **AND** declaration order SHALL NOT change configured cron execution times
@@ -528,7 +527,7 @@ The default and Local filedata backup profiles SHALL mount `jackett_filedata` an
 The default filedata backup profile SHALL select `jellyfin_filedata` as a read-only source at `/backup-sources/jellyfin` and SHALL back it up using the existing encrypted archive workflow. The profile SHALL NOT back up Jellyfin media-library bind mounts, downloads, transcodes, or cache. Jellyfin SHALL NOT be selected in Local or Prod filedata backup profiles unless those profiles deploy Jellyfin.
 
 #### Scenario: Default filedata profile backs up Jellyfin configuration
-- **GIVEN** the default filedata registry selection and production environment example are inspected
+- **GIVEN** the default filedata registry selection and production path file are inspected
 - **WHEN** Jellyfin backup configuration is reviewed
 - **THEN** `jellyfin_filedata` SHALL be mounted read-only at `/backup-sources/jellyfin`
 - **AND** a dedicated Jellyfin cron job and archive destination SHALL be configured
@@ -550,13 +549,13 @@ The default filedata backup profile SHALL select `jellyfin_filedata` as a read-o
 ### REQ-035: OpenCode Is Excluded From Filedata Backups
 Filedata backup profiles SHALL NOT select or schedule backups for OpenCode.
 The OpenCode service SHALL NOT require OpenCode-specific backup settings in
-the filedata environment examples.
+the filedata destination files.
 
 #### Scenario: OpenCode has no filedata backup entry
 - **GIVEN** the default, Local, and Prod filedata backup profiles are inspected
-- **WHEN** their AI Services entries and environment examples are reviewed
+- **WHEN** their AI Services entries and destination files are reviewed
 - **THEN** no profile SHALL mount or schedule an OpenCode data backup
-- **AND** the environment examples SHALL NOT define OpenCode backup settings
+- **AND** the destination files SHALL NOT define OpenCode backup settings
 
 ### REQ-036: Filedata Backup Verifies Its Source Mount
 Each filedata backup run SHALL verify that its source directory is an actual
@@ -590,3 +589,22 @@ override, taking precedence over `env_file`.
 - **GIVEN** a registry entry has missing or malformed retention, a schedule without five fields, or unsafe schedule characters
 - **WHEN** the startup script reads the registry
 - **THEN** it SHALL report an error and SHALL NOT start the backup container
+
+### REQ-038: Filedata destinations are selected independently of credentials
+Filedata backup SHALL load destinations from the selected tracked path file
+after the credentials file so that path-file values override legacy environment
+entries. Local and prod host profiles SHALL select their matching path files;
+the default host profile SHALL require an explicit local or prod path selection.
+The startup script SHALL reject missing, duplicate, or ambiguous destination
+entries before starting the container.
+
+#### Scenario: Default profile requires an explicit destination
+- **GIVEN** all registered volumes are selected with the default profile
+- **WHEN** the operator omits the local or prod destination argument
+- **THEN** startup SHALL fail without starting the backup container
+
+#### Scenario: Selected path file overrides legacy destinations
+- **GIVEN** an existing credentials file contains a legacy destination value
+- **WHEN** a host profile starts with a configured destination in its selected path file
+- **THEN** the container SHALL receive the selected path-file value
+- **AND** the credentials SHALL remain supplied by the credentials file
