@@ -101,6 +101,26 @@ else:
         self.assertIn("HERMES_BACKUP_MODE: archive", override)
         self.assertIn("ROMM_BACKUP_MODE: sync-crypt", override)
 
+    def test_media_backups_run_in_local_and_default_but_not_prod(self):
+        names = ("jackett", "radarr", "sonarr", "transmission")
+        volumes = "\n".join(f"{name}_filedata" for name in names) + "\nnpm_filedata"
+        for profile, destination in (
+            ("local", None), ("default", "local"), ("prod", None)
+        ):
+            with self.subTest(profile=profile):
+                result = self.run_start(profile, destination, MOCK_VOLUMES=volumes)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                override = (self.root / "override.yml").read_text()
+                for name in names:
+                    mount = f"{name}_filedata:/backup-sources/{name}:ro"
+                    job = f"/usr/local/bin/backup-script.sh {name}"
+                    if profile == "prod":
+                        self.assertNotIn(mount, override)
+                        self.assertNotIn(job, override)
+                    else:
+                        self.assertIn(mount, override)
+                        self.assertIn(job, override)
+
     def test_registered_policies_match_previous_examples(self):
         expected_sync = {
             "immich-library",
