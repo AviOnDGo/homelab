@@ -168,9 +168,6 @@ apt-get autoremove -y
 apt-get autoclean
 mark_phase_done
 
-## Create a temp directory for cloning the repo
-cd /tmp
-
 # Optional authenticated clone with runtime secret retrieval.
 HOMELAB_GIT_URL="${bootstrap_git_repo_ssh_url}"
 if [ -z "$HOMELAB_GIT_URL" ]; then
@@ -184,30 +181,46 @@ fi
 
 if [ -n "$HOMELAB_GIT_URL" ]; then
   mark_phase_start git-clone
-  repo_name="$(basename "$HOMELAB_GIT_URL")"
-  repo_dir="$(echo "$repo_name" | sed 's/\.git$//')"
+  repo_dir="/opt/homelab"
+  key_file="/root/.ssh/homelab_deploy_key"
 
-  if [ -d "$repo_dir/.git" ]; then
-    log "Repository already exists at /tmp/$repo_dir; skipping clone"
-  elif [ -n "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
-    key_file="/tmp/homelab_deploy_key"
-    if fetch_secret_value "$HOMELAB_GIT_DEPLOY_KEY_SECRET" > "$key_file"; then
-      chmod 600 "$key_file"
-      mkdir -p /root/.ssh
-      touch /root/.ssh/known_hosts
-      ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null || true
-
-      GIT_SSH_COMMAND="ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts" \
-        git clone --depth 1 "$HOMELAB_GIT_URL" \
-        && log "Git clone completed successfully" \
-        || log "Git clone failed; continuing bootstrap"
-      shred -u "$key_file" || rm -f "$key_file"
-    else
-      rm -f "$key_file"
-      log "Unable to retrieve deploy key secret; skipping clone"
-    fi
-  else
+  if [ -z "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
     log "No deploy key secret configured; skipping clone"
+  else
+    if [ -e "$repo_dir" ] && [ ! -d "$repo_dir/.git" ]; then
+      log "Clone destination $repo_dir already exists and is not a repository"
+      exit 1
+    fi
+    if [ -d "$repo_dir/.git" ] && \
+      [ "$(git -C "$repo_dir" remote get-url origin)" != "$HOMELAB_GIT_URL" ]; then
+      log "Repository at $repo_dir has a different origin; refusing to reconfigure it"
+      exit 1
+    fi
+
+    mkdir -p -m 700 /root/.ssh
+    chmod 700 /root/.ssh
+    key_tmp="$(mktemp /root/.ssh/homelab_deploy_key.XXXXXXXX)"
+    if ! fetch_secret_value "$HOMELAB_GIT_DEPLOY_KEY_SECRET" > "$key_tmp" || \
+      [ ! -s "$key_tmp" ]; then
+      rm -f "$key_tmp"
+      log "Unable to retrieve deploy key secret"
+      exit 1
+    fi
+    chmod 600 "$key_tmp"
+    mv -f "$key_tmp" "$key_file"
+    touch /root/.ssh/known_hosts
+    if ! ssh-keygen -F github.com -f /root/.ssh/known_hosts >/dev/null; then
+      ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null
+    fi
+
+    git_ssh_command="ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts"
+    if [ -d "$repo_dir/.git" ]; then
+      log "Repository already exists at $repo_dir; skipping clone"
+    else
+      GIT_SSH_COMMAND="$git_ssh_command" git clone --depth 1 "$HOMELAB_GIT_URL" "$repo_dir"
+      log "Git clone completed successfully"
+    fi
+    git -C "$repo_dir" config core.sshCommand "$git_ssh_command"
   fi
   mark_phase_done
 fi
