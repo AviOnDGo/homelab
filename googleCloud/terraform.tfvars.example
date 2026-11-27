@@ -9,8 +9,3 @@ zone   = "us-central1-a"
 
 # Optional: leave empty to use the default Compute Engine service account.
 vm_service_account_email = ""
-
-# Optional: configure both values for a private repository startup clone.
-# The secret name refers to a Secret Manager secret, not the private key itself.
-bootstrap_git_repo_ssh_url           = ""
-bootstrap_git_deploy_key_secret_name = ""

@@ -10,10 +10,7 @@ data "google_project" "current" {
 }
 
 locals {
-  bootstrap_startup_script = templatefile("${path.module}/bootstrap-startup.sh.tftpl", {
-    bootstrap_git_deploy_key_secret_name = var.bootstrap_git_deploy_key_secret_name
-    bootstrap_git_repo_ssh_url           = var.bootstrap_git_repo_ssh_url
-  })
+  bootstrap_startup_script = file("${path.module}/bootstrap-startup.sh.tftpl")
 
   vm_service_account_email = length(trimspace(var.vm_service_account_email)) > 0 ? var.vm_service_account_email : "${data.google_project.current.number}-compute@developer.gserviceaccount.com"
 }
@@ -57,13 +54,6 @@ resource "google_compute_instance" "gcp-debian_free_tier_vm" {
   # }
 
   metadata_startup_script = local.bootstrap_startup_script
-
-  metadata = {
-    for key, value in {
-      "homelab-git-url"               = var.bootstrap_git_repo_ssh_url
-      "homelab-git-deploy-key-secret" = var.bootstrap_git_deploy_key_secret_name
-    } : key => value if length(trimspace(value)) > 0
-  }
 
   tags = ["http-server"]
 
