@@ -552,3 +552,18 @@ the filedata environment examples.
 - **WHEN** their AI Services entries and environment examples are reviewed
 - **THEN** no profile SHALL mount or schedule an OpenCode data backup
 - **AND** the environment examples SHALL NOT define OpenCode backup settings
+
+### REQ-036: Filedata Backup Verifies Its Source Mount
+Each filedata backup run SHALL verify that its source directory is an actual
+mount point before starting an archive or synchronizing a remote destination.
+
+#### Scenario: An existing source directory is not mounted
+- **GIVEN** the backup source directory exists but is not a mount point
+- **WHEN** an archive or sync-crypt backup is started
+- **THEN** the backup SHALL exit with an error before creating an archive or modifying the remote
+- **AND** the backup SHALL send a source-validation failure notification when Discord is configured
+
+#### Scenario: A mounted source is available
+- **GIVEN** the backup source directory is a mount point
+- **WHEN** the backup is started
+- **THEN** the backup SHALL continue with the existing mode-specific validation and processing
