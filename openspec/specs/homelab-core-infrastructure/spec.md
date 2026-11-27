@@ -201,3 +201,20 @@ Syncthing web access SHALL be compatible with the existing NPM gateway model.
 - **WHEN** an NPM proxy host targets the Syncthing service container endpoint
 - **THEN** the route SHALL resolve within `container_network`
 - **AND** direct cross-category networking SHALL not be required
+
+### REQ-016: rclone host setup configures Dropbox without exposing tokens
+`scripts/host/configure-rclone.sh` SHALL install rclone with `apt-get` when
+rclone is missing and SHALL write an rclone config containing only a Dropbox
+remote built from `DROPBOX_AUTH_TOKEN` and `DROPBOX_REFRESH_TOKEN`. It SHALL
+NOT pass tokens as process arguments.
+
+#### Scenario: The script reruns with Dropbox tokens
+- **GIVEN** an existing rclone config file
+- **WHEN** the operator or a pipeline runs the script with both Dropbox token variables set
+- **THEN** the script SHALL rename the existing file with a `.bak` suffix and write a new config containing only the Dropbox remote
+- **AND** the config file SHALL have mode 600 and the remote SHALL be verified unless `--no-verify` is given
+
+#### Scenario: Tokens are missing
+- **GIVEN** one or both Dropbox token variables unset
+- **WHEN** the script runs
+- **THEN** it SHALL exit with an error before installing rclone or writing the rclone config

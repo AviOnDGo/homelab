@@ -4,6 +4,12 @@
 
 Watchtower is stateless. Recovery is redeploy + verification only. No backup payload restore is required.
 
+For GCP, the reusable or manually dispatched Watchtower restore workflow runs
+this script on the VM. It is scheduled after a successful NPM restore, and shares
+a concurrency group with the NPM, FreshRSS, and Vaultwarden restore jobs.
+See the [GCP deployment guide](../../googleCloud/README.md) for configuration
+and OIDC prerequisites.
+
 ## Script-First Recovery
 
 ### 1. Run restore script

@@ -6,9 +6,13 @@ This guide provides step-by-step procedures for restoring the Nginx Proxy Manage
 
 ## Prerequisites
 
-- Docker and Docker Compose installed
-- Access to backup files
-- Network configuration knowledge
+- Docker, Docker Compose, rclone, GPG, zstd, and tar installed
+- A configured `dropbox` rclone remote and access to the encrypted backup
+- The backup's GPG passphrase
+
+For GCP, the `prod` GitHub environment needs `DROPBOX_AUTH_TOKEN`,
+`DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE` secrets, plus the GCP variables
+documented in [the GCP guide](../../googleCloud/README.md).
 
 ## Volume Information
 
@@ -37,9 +41,50 @@ This guide provides step-by-step procedures for restoring the Nginx Proxy Manage
 
 ## Restoration Procedure
 
+The primary restore path downloads the latest matching NPM backup from Dropbox:
+
+```bash
+cd securityServices/npm
+./restore.sh
+```
+
+The script prompts for the passphrase and confirmation before replacing existing
+data. Set `DROPBOX_PATH` if the backup folder is not `/Apps/npm`. For
+noninteractive use, supply `PASSPHRASE` securely in the environment and pass
+`--force` to replace existing data or `--if-missing` to skip an existing volume.
+
+The [GCP restore workflow](../../.github/workflows/gcp-npm-restore.yml) runs after
+successful Terraform Apply with `force` enabled. Every successful Apply,
+including a no-op, can replace existing NPM data with the latest backup. To
+restore independently, run it manually from the desired branch. Manual runs
+skip an existing volume unless `force` is enabled. A forced restore removes
+the NPM container and clears the volume. A running `filedata-backup` container
+is stopped during the restore and restarted afterward.
+GCP service restore jobs share a GitHub Actions concurrency group. Direct
+transport helper, script, and manual fallback runs are not covered; do not run
+those while a workflow restore is in progress.
+The workflow uses the protected `prod` environment and may require approval.
+Its branch restrictions and GCP OIDC trust policy must allow the selected branch.
+Manual dispatch requires the workflow file to exist on the default branch.
+For a manual restore, ensure the VM exists and has completed bootstrap; the
+restore workflow does not wait for bootstrap readiness.
+
+The workflow sends the passphrase and Dropbox credentials over SSH standard
+input, not command arguments. It installs rclone and zstd on the VM if needed,
+uses temporary rclone configuration, and removes the temporary files on exit.
+The workflow delegates GCP setup and transport to the
+[shared restore action](../../.github/actions/gcp-restore/action.yml) and
+[VM transport helper](../../googleCloud/restore-service.sh); the NPM restore
+script remains the recovery entry point on the VM.
+The passphrase must be a single line. Avoid shell tracing when restoring.
+If a restore fails after creating the volume, investigate before retrying.
+Another successful Apply will force a restore again.
+
+### Manual fallback
+
 **Step 1:** Set the GPG passphrase
 ```bash
-export PASSPHRASE=<your_gpg_passphrase_here>
+read -r -s -p "GPG passphrase: " PASSPHRASE; echo
 ```
 
 **Step 2:** Stop the npm service
@@ -59,13 +104,13 @@ docker volume create npm_filedata
 ```bash
 # Find latest backup or specify filename
 # This restores to the volume root, which npm mounts as both /data and /etc/letsencrypt
-gpg --batch --yes --passphrase "$PASSPHRASE" -d /path/to/npm_<timestamp>.tar.zst.gpg | zstd -d \
+gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+  -d /path/to/npm_<timestamp>.tar.zst.gpg 3<<<"$PASSPHRASE" | zstd -d \
   | docker run --rm -i -v npm_filedata:/restore alpine sh -c "cd /restore && tar -xf -"
 ```
 
 **Step 5:** Start the service
 ```bash
-cd securityServices/npm
 docker compose up -d
 ```
 

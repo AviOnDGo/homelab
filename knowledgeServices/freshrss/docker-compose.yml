@@ -13,6 +13,12 @@ services:
       - freshrss_filedata:/var/www/FreshRSS
     networks:
       - knowledge_network
+    healthcheck:
+      test: ["CMD", "php", "/var/www/FreshRSS/cli/health.php"]
+      interval: 5s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     restart: unless-stopped
 
 networks:

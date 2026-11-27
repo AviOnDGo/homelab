@@ -122,7 +122,7 @@ Navigation: IAM & Admin -> Workload Identity Federation
 - `attribute.actor=assertion.actor`
 - `attribute.environment=assertion.environment`
 9. Add provider condition:
-- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER"`
+- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-duckdns-update.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")`
 10. Create provider.
 
 ## 7. Add Conditional Impersonation Binding
@@ -141,8 +141,9 @@ principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workl
 
 4. Add role:
 - `Workload Identity User` -> `roles/iam.workloadIdentityUser`
-5. IAM condition is optional when using repository-scoped principalSet member.
-	Ref and workflow restrictions for apply are enforced in the workflow itself.
+5. Keep the binding scope repository-only through the repository principalSet shown above.
+	Do not add ref, environment, or workflow-ref checks to this IAM binding; configure those restrictions in step 9 with the WIF provider attribute condition.
+	Workflow guard steps provide an additional defense.
 
 6. Save.
 
@@ -186,7 +187,11 @@ Navigation: GitHub -> repository -> Actions -> Deploy GCP VM Terraform
 - OIDC authentication succeeds.
 - IAM permission checks pass.
 - Terraform plan completes.
-4. Second run (when ready):
+4. Before applying, schedule NPM downtime, back up current NPM data, and verify
+   that the latest Dropbox backup is current and usable for recovery. Every
+   successful apply, including a no-op, forces an NPM restore that overwrites
+   existing data. See the [NPM restore guide](../securityServices/npm/RESTORE_GUIDE.md).
+5. Second run (when ready):
 - action: `apply`
 - environment: `prod`
 - branch/ref: `main`

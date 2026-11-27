@@ -5,7 +5,7 @@
 **Service Name:** invidious  
 **Database Service:** invidious-db  
 **Companion Service:** companion (container: invidious-companion)  
-**Network:** media_network  
+**Networks:** media_network, security_network<br>
 **PostgreSQL Volume:** invidious_postgresdata  
 **Web Interface Port:** 3000  
 **Purpose:** Privacy-focused YouTube frontend
@@ -14,7 +14,7 @@
 
 1. **Invidious** (invidious) - Main application container
 2. **PostgreSQL Database** (invidious-db) - Data persistence for channels, videos, and user preferences
-3. **Invidious Companion** (companion / invidious-companion) - YouTube library caching service
+3. **Invidious Companion** (companion / invidious-companion) - YouTube video stream retrieval
 
 ## Volume Locations
 
@@ -39,6 +39,7 @@ Defined inline in `docker-compose.yml`:
 - HMAC key for API security
 - Companion service configuration (private_url: `http://companion:8282/companion`)
 - Companion secret key
+- Outbound HTTP proxy for Invidious's YouTube and image requests
 
 ## Backup Configuration
 
@@ -49,22 +50,23 @@ Defined inline in `docker-compose.yml`:
 
 ## Network Architecture
 
-All Invidious services communicate within the isolated `media_network`:
+All Invidious services communicate within `media_network`:
 - invidious → invidious-db (PostgreSQL connection)
-- invidious → companion (YouTube library cache)
+- invidious → companion (video stream retrieval)
 - No direct external access to database or companion
 
-For external HTTP(S) egress, `invidious` also joins `security_network` and uses
-the Gluetun HTTP proxy at `http://gluetun:8888`. The lowercase `http_proxy` and
-`https_proxy` variables direct external requests through Gluetun, while
-`no_proxy=localhost,127.0.0.1` keeps local requests direct. The database and
-companion remain connected only to `media_network`.
+Invidious and companion also join `security_network` to reach Gluetun's HTTP
+proxy at `http://gluetun:8888`. Invidious uses its native `http_proxy` setting
+for its YouTube and image requests; companion uses `PROXY` for video stream
+requests. The database remains connected only to `media_network`. These
+application proxy settings do not enforce a network-wide VPN kill switch.
 
-Gluetun must be running and healthy for Invidious external requests to succeed.
-Verify the proxy configuration with:
+Gluetun must be running and healthy for proxied requests to succeed. After
+changing the configuration, recreate the two services:
 
 ```bash
-docker exec invidious env | grep -i proxy
+cd mediaServices/invidious
+docker compose up -d --no-deps invidious companion
 ```
 
 ## Service Dependencies
@@ -131,8 +133,8 @@ docker exec -it invidious-db psql -U kemal -d invidious -c "\dt"
 - PostgreSQL credentials stored in `.env` (excluded from git)
 - HMAC key used for API request signing
 - Companion service uses secret key for authentication
-- Invidious external HTTP(S) egress is routed through Gluetun on `security_network`
-- Database and companion services remain isolated within `media_network`
+- Invidious and companion use Gluetun for their configured outbound requests
+- Database remains isolated within `media_network`
 - No containers run as root (companion has `cap_drop: ALL`)
 
 ## Restoration

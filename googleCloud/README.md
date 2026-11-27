@@ -24,6 +24,41 @@ Execution behavior:
 	- Exception: for temporary testing only, workflow_dispatch can set `enforce_main_guard=false`.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
+- Before every apply, schedule NPM, FreshRSS, and Vaultwarden downtime, back up
+  their current data, and verify that their latest Dropbox backups are current
+  and usable.
+- After successful apply, the reusable NPM restore workflow runs in `prod` and
+  forcibly replaces existing NPM data from the latest backup, even after a
+  no-op apply. It can also be dispatched manually from a permitted branch;
+  manual runs replace existing NPM data only with `force`. GitHub requires
+  the workflow file on the default branch for manual
+  dispatch; the `prod` environment and OIDC trust policy must allow the branch.
+  The separate restore job may require another `prod` approval. See the
+  [NPM restore guide](../securityServices/npm/RESTORE_GUIDE.md).
+- After successful applies and NPM restores, the workflow also forces a
+  FreshRSS restore, including after no-op applies. FreshRSS is skipped if the
+  NPM restore fails or is skipped. Manual FreshRSS restores skip an existing
+  volume unless `force` is enabled. The separate job may require another `prod`
+  approval. Before deployment, allow its workflow ref in the WIF provider
+  condition below. See the [FreshRSS restore guide](../knowledgeServices/freshrss/RESTORE_GUIDE.md).
+- After successful apply and NPM restore, Vaultwarden is forcibly restored from
+  its latest backup, including after a no-op apply. It is skipped if NPM fails
+  or is skipped. Manual runs skip an existing volume unless `force` is enabled.
+  Configure its secret and allow its workflow ref in the WIF condition below
+  before running it. See the [Vaultwarden restore guide](../securityServices/vaultwarden/RESTORE_GUIDE.md).
+- After successful apply and NPM restore, Watchtower is redeployed and verified
+  along with FreshRSS and Vaultwarden, including after a no-op apply. No backup
+  or volume restore is involved. It can also be dispatched manually; its separate `prod`
+  job may require approval. Allow its workflow ref in the WIF condition below
+  before running it. Manual restores also require the external
+  `security_network` to exist on the VM. See the
+  [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
+
+The four GCP restore jobs share a GitHub Actions concurrency group, including
+manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
+jobs are canceled when the queue is full. Scheduling order is not guaranteed.
+Direct transport helper, service script, and manual fallback runs are not
+covered by this group; coordinate them and older workflow versions manually.
 
 Rollback behavior:
 - Re-run workflow against a prior known-good commit and choose action=apply.
@@ -116,7 +151,10 @@ Configure these repository or environment variables:
 	- Full resource name of workload identity provider.
 	- Example: projects/123456789/locations/global/workloadIdentityPools/github-pool/providers/github-provider
 - GCP_SERVICE_ACCOUNT
-	- Service account email used for both plan and apply jobs.
+	- Service account email used for plan and apply jobs and attached to the VM.
+	- The deployer must have `roles/iam.serviceAccountUser` on this service account.
+	- The VM inherits the deployer's permissions; stronger privilege separation
+	  requires updating the workflow to use a separate VM account.
 - GCP_PROJECT_ID
 	- Target GCP project.
 - GCP_BUDGET_CURRENCY_CODE
@@ -128,9 +166,6 @@ Configure these repository or environment variables:
 	- Terraform region input.
 - GCP_ZONE
 	- Terraform zone input.
-- NETDATA_CLAIM_URL
-	- Netdata Cloud claim endpoint used by post-provision onboarding.
-	- Example: https://app.netdata.cloud
 
 Optional variables:
 
@@ -139,29 +174,76 @@ Optional variables:
 	- Default: `gcp-debian-free-tier-vm`
 - TAILSCALE_TAILNET
 	- Tailnet name used when minting short-lived keys from OAuth credentials.
-- GCP_VM_SERVICE_ACCOUNT
-	- Optional dedicated VM service account email exported as `TF_VAR_vm_service_account_email`.
-	- Recommended when startup needs runtime Secret Manager access.
+- DUCKDNS_DOMAIN
+	- DuckDNS subdomain label without `.duckdns.org`, used by the DNS update workflow.
 - BOOTSTRAP_GIT_REPO_SSH_URL
 	- Optional SSH Git URL exported as `TF_VAR_bootstrap_git_repo_ssh_url`.
 - BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME
 	- Optional secret name exported as `TF_VAR_bootstrap_git_deploy_key_secret_name`.
 
+The Watchtower restore additionally requires `WATCHTOWER_SCHEDULE` as a
+repository or `prod` environment variable (for example `0 0 3 * * *`).
+The value must be single-line and cannot contain single quotes or backslashes.
+It is sent over SSH stdin and placed in a temporary Compose environment file
+on the VM, which is removed after the restore.
+
 ## Required GitHub Secrets
 
 - GCP_BILLING_ACCOUNT_ID
 	- Billing account ID used for budget resources.
-- NETDATA_CLAIM_TOKEN
-	- Netdata Cloud claim token used during post-provision onboarding.
-- NETDATA_CLAIM_ROOMS
-	- Comma-separated room IDs for node enrollment.
 
-Tailscale credential options (configure one path):
+Tailscale credential options (required only when the VM needs to log in):
 
-- Option A (preferred): `TAILSCALE_OAUTH_CLIENT_ID` + `TAILSCALE_OAUTH_CLIENT_SECRET` with `TAILSCALE_TAILNET`
+- Option A: `TAILSCALE_OAUTH_CLIENT_ID` + `TAILSCALE_OAUTH_CLIENT_SECRET` with `TAILSCALE_TAILNET`
 	- Workflow mints a short-lived key at runtime.
-- Option B (fallback): `TAILSCALE_EPHEMERAL_AUTH_KEY`
-	- Workflow fetches pre-generated short-lived key from secret store.
+- Option B: `TAILSCALE_EPHEMERAL_AUTH_KEY`
+	- Workflow uses the pre-generated key; this takes precedence when both paths are configured.
+
+The DuckDNS update workflow requires `DUCKDNS_TOKEN` in `prod` (or repository
+secrets). It runs after a successful VM apply, independently of service restores,
+and can also be started manually using `gcp-duckdns-update.yml`. The VM must
+exist and be reachable over GCP SSH. The workflow installs Tailscale if missing,
+starts its service, skips login when Tailscale is already running, and attempts
+to reconnect a stopped session without credentials. It creates a login key only
+when the backend requires login. If credentials are missing or login fails,
+manually reconnect the VM in Tailscale and rerun the workflow; the DuckDNS update
+requires Tailscale to be running. The workflow fails if its configuration, SSH,
+Tailscale installation/login, or DuckDNS update fails.
+Set the `DUCKDNS_DOMAIN` variable and token before applying. Add the workflow
+to the OIDC provider condition below before its first run. Once the workflow is
+available on the default branch, run it manually with:
+
+```bash
+gh workflow run gcp-duckdns-update.yml --ref main
+```
+
+Removing the install phase from the Terraform startup script changes
+`metadata_startup_script`, which can force replacement of the VM and its boot
+disk. Review the Terraform plan and back up data before explicitly allowing any
+replacement; the deployment workflow blocks unapproved replacements.
+
+Test first with a disposable DuckDNS domain: verify that its A record resolves
+to the VM's Tailscale IPv4 address, then test HTTPS from an authorized tailnet
+device. Confirm no other updater overwrites the record and review any existing
+AAAA record. DNS caches can delay changes, and DNS rebinding protection can
+block Tailscale addresses. The address is not publicly reachable; NPM HTTP-01
+certificate validation will not work through it. Verify a working DNS-01
+certificate issuance and renewal method before switching production DNS.
+The update runs on apply or manual dispatch, not continuously or on destroy.
+
+Optional Dropbox credentials for rclone on the VM:
+
+- `DROPBOX_AUTH_TOKEN` + `DROPBOX_REFRESH_TOKEN`
+	- After onboarding, the apply job runs `scripts/host/configure-rclone.sh` on the VM as root. It installs rclone and configures a verified `dropbox` remote in `/root/.config/rclone/rclone.conf`.
+	- Tokens and the script are sent over SSH stdin, not command lines. If either secret is missing, the step warns and skips.
+
+The NPM, FreshRSS, and Vaultwarden restore workflows require `DROPBOX_AUTH_TOKEN`,
+`DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE` in `prod` (or repository secrets).
+Each restore's `prod` job
+receives environment secrets independently; repository secrets are explicitly
+passed to the reusable workflow. Missing credentials fail the restore job.
+OIDC trust restrictions must also allow the reusable workflow's
+`job_workflow_ref`, as well as manual runs of that workflow.
 
 ## OIDC Trust Configuration
 
@@ -178,13 +260,30 @@ Configure Workload Identity Provider claim mapping:
 
 Provider condition baseline:
 
-assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER"
+assertion.repository == "OWNER/REPO" &&
+assertion.repository_owner == "OWNER" &&
+assertion.environment == "prod" &&
+assertion.ref == "refs/heads/main" &&
+(assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-duckdns-update.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")
 
-Binding condition baseline (single service account):
+The reusable restore workflows also use this service account. Retain the single
+provider value and include all six workflow refs in the explicit condition
+above. Update an existing provider before running the new workflow or Vaultwarden
+restores. Do not rely on repository scope alone.
+
+Binding condition baseline (single production service account):
 
 principalSet://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/WIF_POOL_ID/attribute.repository/OWNER/REPO
 
-Apply ref restriction is enforced in workflow guard steps (`refs/heads/main` and workflow ref checks), while repository scoping is enforced in WIF/provider and service-account binding.
+The IAM binding scopes impersonation to the repository principalSet. The WIF
+provider attribute condition separately enforces repository, owner,
+environment, ref, and workflow-ref claims. Workflow guard steps provide an
+additional defense for `refs/heads/main` and workflow refs.
 
 ## Least-Privilege IAM Guidance
 
@@ -210,7 +309,7 @@ Checks include:
 - Do not pass bootstrap secrets as Terraform variables consumed in metadata_startup_script.
 - Do not print secrets in workflow logs.
 - Keep Terraform debug logging disabled in production runs.
-- Use workflow post-provision stages for secret-bearing onboarding actions (Tailscale, Netdata claim).
+- Use workflow post-provision stages for secret-bearing Tailscale onboarding.
 - If VM startup needs private clone credentials, store only secret *names* in Terraform and retrieve values at runtime via VM service account.
 
 ## First-Time Operator Checklist
@@ -257,14 +356,15 @@ against the same bucket and prefix; do not create an empty replacement backend.
 
 VM bootstrap no longer sets a personal Git author identity. Cloning and fetching
 do not require one. Configure an identity privately on hosts that create commits.
-The Google provider recreates a VM when `metadata_startup_script` changes, so
-this template cleanup can produce a replacement plan for an existing VM. The
-workflow blocks that plan before publishing it for apply unless a manual run
-explicitly enables `allow_vm_replacement`. Back up application data and the boot
-disk and arrange a maintenance window before approving a rebuild. The opt-in
-does not bypass the existing main/ref or protected-environment checks. Local
-Terraform commands do not execute this workflow guard; inspect their plan and
-do not apply an unapproved replacement.
+The Google provider recreates a VM when `metadata_startup_script` changes.
+Removing the Netdata agent from the startup template therefore produces a
+replacement plan for an existing VM. The workflow blocks that plan before
+publishing it for apply unless a manual run explicitly enables
+`allow_vm_replacement`. Back up application data and the boot disk and arrange a
+maintenance window before approving a rebuild. The opt-in does not bypass the
+existing main/ref or protected-environment checks. Local Terraform commands do
+not execute this workflow guard; inspect their plan and do not apply an
+unapproved replacement.
 
 ## State Drift Recovery
 
@@ -304,25 +404,25 @@ terraform plan \
 - Confirm required variables are configured: `GCP_WIF_PROVIDER`, `GCP_SERVICE_ACCOUNT`, `GCP_PROJECT_ID`, `GCP_BUDGET_CURRENCY_CODE`, `GCP_TF_STATE_BUCKET`, `GCP_REGION`, `GCP_ZONE`.
 - Confirm `prod` contains the `GCP_BILLING_ACCOUNT_ID` environment secret.
 - Confirm `GCP_SERVICE_ACCOUNT` uses full email format (`<name>@<project>.iam.gserviceaccount.com`).
-- Confirm Netdata/Tailscale onboarding config is set (`NETDATA_CLAIM_URL`, `NETDATA_CLAIM_TOKEN`, `NETDATA_CLAIM_ROOMS`, and either OAuth or ephemeral auth key path).
+- Confirm Tailscale onboarding credentials are configured if a login is needed:
+  either `TAILSCALE_EPHEMERAL_AUTH_KEY`, or `TAILSCALE_TAILNET` with both OAuth credentials.
 - Confirm WIF provider condition matches repository and owner values.
 - Confirm service-account policy contains `roles/iam.workloadIdentityUser` binding for repository principalSet.
 - Confirm backend bucket exists and includes `roles/storage.objectAdmin` and `roles/storage.legacyBucketReader` for deploy service account.
 - Run workflow_dispatch `action=plan` from branch and confirm completion through auth/validate/init/plan.
 - Run workflow_dispatch `action=apply` and verify post-provision checks:
 	- Docker service active on VM
-	- Tailscale backend state is `Running`
-	- Netdata node status shows claimed
 	- Optional startup clone completed or skipped with explicit non-secret log reason
+- Verify the separate Tailscale and DuckDNS workflow succeeds and Tailscale
+  backend state is `Running`.
 
 ## Onboarding Rollback
 
 If post-provision onboarding fails after Terraform apply:
 
-1. Temporarily remove or rotate failing onboarding secrets in `prod` environment.
-2. Re-run workflow with `action=apply` to reapply infrastructure while skipping/failing fast on secret checks.
-3. If needed, revert workflow onboarding steps to previous commit and re-run apply.
-4. Keep startup script secret-safe during rollback; do not move secrets into Terraform metadata.
+1. Rotate or correct failing onboarding secrets in the `prod` environment.
+2. Re-run `gcp-duckdns-update.yml` independently; service restores do not depend on it.
+3. Keep startup script secret-safe during rollback; do not move secrets into Terraform metadata.
 
 ## Troubleshooting Notes
 
@@ -348,9 +448,7 @@ If post-provision onboarding fails after Terraform apply:
 - Tailscale onboarding fails with OAuth errors
 	- Verify `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_CLIENT_SECRET`, and `TAILSCALE_TAILNET` values.
 	- If OAuth cannot mint key, configure `TAILSCALE_EPHEMERAL_AUTH_KEY` fallback and retry.
-- Netdata claim fails
-	- Verify `NETDATA_CLAIM_TOKEN`, `NETDATA_CLAIM_ROOMS`, and `NETDATA_CLAIM_URL`.
-	- SSH to VM and run `sudo netdatacli status` to inspect claim state before retrying.
+	- If the backend state is `NeedsMachineAuth`, approve the VM in the Tailscale admin console and rerun the workflow.
 - Startup clone skips or fails
 	- Ensure VM service account can access Secret Manager secret version.
 	- Confirm deploy key secret name and SSH repo URL are configured and valid.
@@ -367,8 +465,26 @@ Use local CLI only for development diagnostics. CI remains the source of truth.
 
 From repository root:
 
-- cd googleCloud
-- terraform fmt -check -recursive
-- terraform init
-- terraform validate
-- terraform plan -var="project_id=<project>" -var="billing_account_id=<billing>" -var="budget_currency_code=<billing-account-currency-code>" -var="region=<region>" -var="zone=<zone>"
+```bash
+cd googleCloud
+cp -n terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project and billing values.
+cp -n backend.hcl.example backend.hcl
+# Edit backend.hcl with the existing state bucket.
+terraform fmt -check -recursive
+terraform init -reconfigure -backend-config=backend.hcl
+terraform validate
+export USER_PROJECT_OVERRIDE=true
+export GOOGLE_BILLING_PROJECT="<gcp-project-id>"
+terraform plan
+```
+
+Local plan requires Google Application Default Credentials with access to the
+project, billing account, and state bucket. Set `GOOGLE_BILLING_PROJECT` to a
+quota project ID, not a billing account ID, and use `USER_PROJECT_OVERRIDE` to
+send it with provider API requests. These exports apply only to the current
+shell and do not configure the GitHub workflow.
+
+The copied variable and backend files are ignored by Git; do not put credentials
+or private keys in them. A plan does not apply changes; review it carefully
+before any apply.
