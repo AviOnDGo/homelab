@@ -17,12 +17,15 @@ Run the commands below from the repository root. Set `WEB_PASSWORD` in the Pi-ho
 
 What the script does:
 
-- Validates required tools (`docker`, `rclone`, `gpg`, `zstd`)
+- Validates required tools (`docker`, `rclone`, `gpg`, `zstd`, and `tar`)
 - Prompts for GPG passphrase
 - Selects latest `*.tar.zst.gpg` from `dropbox:/Apps/pihole` (or `DROPBOX_PATH` override)
+- Extracts the archive to a private temporary directory and checks both SQLite databases
+  before changing existing data; allow sufficient temporary space for the extracted backup
+- Uses the Compose-configured Pi-hole image for database checks, downloading it if needed
 - Prompts before deleting `pihole_filedata`
 - Restores archive contents into `pihole_filedata`
-- Starts Pi-hole and verifies `gravity.db` and `pihole-FTL.db`
+- Starts Pi-hole and verifies the integrity of `gravity.db` and `pihole-FTL.db`
 
 Safety behavior:
 
@@ -49,8 +52,8 @@ volume.
 
 ```bash
 (cd securityServices/pihole && docker compose ps)
-docker exec pihole ls -lh /etc/pihole/gravity.db
-docker exec pihole ls -lh /etc/pihole/pihole-FTL.db
+docker exec pihole pihole-FTL /etc/pihole/gravity.db 'PRAGMA integrity_check;'
+docker exec pihole pihole-FTL /etc/pihole/pihole-FTL.db 'PRAGMA integrity_check;'
 nslookup google.com 127.0.0.1
 ```
 
@@ -79,8 +82,8 @@ gpg --batch --yes --passphrase "$PASSPHRASE" -d <filename>.tar.zst.gpg | zstd -d
 
 ```bash
 (cd securityServices/pihole && docker compose up -d)
-docker exec pihole ls -lh /etc/pihole/gravity.db
-docker exec pihole ls -lh /etc/pihole/pihole-FTL.db
+docker exec pihole pihole-FTL /etc/pihole/gravity.db 'PRAGMA integrity_check;'
+docker exec pihole pihole-FTL /etc/pihole/pihole-FTL.db 'PRAGMA integrity_check;'
 ```
 
 ## Notes
