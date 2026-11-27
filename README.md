@@ -275,8 +275,9 @@ conflicts, GPU support, storage paths, VPN requirements, and backup profiles.
 Use each service's `SERVICE_DOCUMENTATION.md`; use its script-first
 `RESTORE_GUIDE.md` when present for recovery.
 
-Backup schedules are embedded in the backup-service Compose definitions and
-do not require a repository-level host crontab.
+Backup schedules run inside the backup containers and do not require a
+repository-level host crontab. Filedata schedules are configured in
+`backupServices/filedata/backup-volumes.conf`.
 
 ---
 
