@@ -176,8 +176,8 @@ if ! BACKUP_STATE=$(docker ps -a --filter "name=^/${BACKUP_CONTAINER}$" \
 fi
 if [[ "$BACKUP_STATE" == "$BACKUP_CONTAINER running" ]]; then
   info "Stopping ${BACKUP_CONTAINER}..."
-  docker stop "$BACKUP_CONTAINER" >/dev/null
   BACKUP_WAS_RUNNING=true
+  docker stop "$BACKUP_CONTAINER" >/dev/null
 fi
 
 info "Stopping the Firefly stack..."

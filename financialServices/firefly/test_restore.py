@@ -37,7 +37,12 @@ case "$(basename "$0"):$1" in
     elif [[ "$*" == *"volume="* && "${VOLUME_BUSY:-}" == 1 ]]; then
       echo other-container
     fi ;;
-  docker:stop) touch "$STATE/backup-stopped" ;;
+  docker:stop)
+    touch "$STATE/backup-stopped"
+    if [[ "${FAIL_STOP:-}" == 1 ]]; then
+      echo "Failed to stop backup container" >&2
+      exit 1
+    fi ;;
   docker:start)
     if [[ "$2" == db-backup ]]; then
       [[ "${FAIL_RESTART:-}" != 1 ]] || exit 1
@@ -143,6 +148,23 @@ esac
         self.assertIn("docker start db-backup", calls)
         self.assertNotIn("test-passphrase", calls + result.stdout + result.stderr)
         self.assertFalse(list(self.root.glob("firefly-restore.*")))
+
+    def test_failed_backup_stop_attempts_restart_without_stopping_firefly(self) -> None:
+        self.env.update(BACKUP_RUNNING="1", FAIL_STOP="1")
+        for fail_restart in ("0", "1"):
+            with self.subTest(fail_restart=fail_restart):
+                self.env["FAIL_RESTART"] = fail_restart
+                result = self.run_restore("--force")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Failed to stop backup container", result.stderr)
+                self.assertIn("docker start db-backup", self.calls())
+                self.assertNotIn("docker compose", self.calls())
+                self.assertEqual(
+                    (self.root / "backup-stopped").exists(), fail_restart == "1"
+                )
+                if fail_restart == "1":
+                    self.assertIn("Could not restart db-backup", result.stderr)
+                self.log.unlink()
 
     def test_invalid_backup_never_stops_services(self) -> None:
         for failure in ("FAIL_LIST", "FAIL_GPG", "EMPTY_DUMP"):
