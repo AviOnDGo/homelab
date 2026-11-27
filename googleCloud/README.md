@@ -65,12 +65,15 @@ Execution behavior:
   [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
 - After all four filedata source restores (NPM, FreshRSS, Vaultwarden, and
   Pi-hole) succeed, the filedata backup scheduler is rebuilt and started with
-  the `prod` profile. A manual run is also available. Every production source
-  volume must already exist; a missing volume fails the job rather than
-  silently omitting its backups. The scheduler uses the production Dropbox
-  destinations in `backupServices/filedata/path.prod` and registry schedules,
-  including remote retention cleanup.
-  Review source data before a manual run. It does not restore application data.
+  the `prod` profile. A manual run is also available. Missing production
+  volumes are omitted with a workflow warning and a Discord alert when the
+  webhook is configured; at least one source volume must exist. Restore missing
+  volumes and rerun the workflow to add their mounts and schedules.
+  The scheduler uses the production Dropbox destinations in
+  `backupServices/filedata/path.prod` and registry schedules, including remote
+  retention cleanup. Review source data before a manual run, especially after
+  a failed service restore: an existing volume can contain incomplete data.
+  This workflow does not restore application data.
 
 The seven GCP restore jobs share a GitHub Actions concurrency group, including
 manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
@@ -298,8 +301,11 @@ in the remote process environment. Supply it again for later manual Compose
 operations; Docker container configuration contains the password.
 
 The filedata backup workflow uses `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`,
-and `GPG_PASSPHRASE`, plus optional `DISCORD_WEBHOOK_URL` for failure
-notifications. Values must be single-line.
+and `GPG_PASSPHRASE`, plus optional `DISCORD_WEBHOOK_URL` for backup failure
+and missing-volume notifications. Values must be single-line. If the webhook
+is absent, missing volumes are reported in the workflow logs only. If sending
+the alert fails, the scheduler still starts for available volumes, but the
+workflow fails so the notification problem is visible.
 Dropbox tokens cannot contain double quotes or backslashes because the
 container's rclone configuration embeds them in JSON. The workflow currently
 supports archive-mode production entries with a configured Dropbox path only.
