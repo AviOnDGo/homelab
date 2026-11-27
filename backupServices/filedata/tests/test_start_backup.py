@@ -290,6 +290,7 @@ else:
                     },
                 )
                 service = model["services"]["filedata-backup"]
+                self.assertEqual(service["environment"]["TZ"], "UTC")
                 command = "\n".join(service["command"])
                 for name, _ in selected:
                     self.assertIn(f"backup-script.sh {name}", command)

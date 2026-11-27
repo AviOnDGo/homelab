@@ -674,7 +674,7 @@ docker exec filedata-backup ps aux | grep crond
 **Check container time/timezone:**
 ```bash
 docker exec filedata-backup date
-# Should match your TZ setting
+# The container timezone is UTC.
 ```
 
 **Manual test:**

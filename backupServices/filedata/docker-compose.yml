@@ -5,6 +5,8 @@ services:
     container_name: filedata-backup
     env_file:
       - .env
+    environment:
+      TZ: UTC
     volumes:
       - gpg-secrets:/run/secrets:ro
     command: >
