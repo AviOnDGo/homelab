@@ -110,13 +110,13 @@ If Syncthing backup lanes cause operational issues, rollback with the following 
 1. Remove the Syncthing entry from:
   - `backupServices/filedata/backup-volumes.conf`
 2. Remove Syncthing lane variables from:
-  - `backupServices/filedata/.env.local.example`
-  - `backupServices/filedata/.env.prod.example`
+  - `backupServices/filedata/path.local`
+  - `backupServices/filedata/path.prod`
 3. Recreate filedata-backup container:
 
 ```bash
 cd backupServices/filedata
-./start-backup.sh default
+./start-backup.sh default local  # Or: default prod
 ```
 
 4. Keep previously generated Syncthing and SecondBrain backup artifacts until post-rollback verification completes.
