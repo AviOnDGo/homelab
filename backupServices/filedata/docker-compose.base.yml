@@ -1,0 +1,17 @@
+services:
+  filedata-backup:
+    build: .
+    image: homelab/filedata-backup:local
+    container_name: filedata-backup
+    env_file:
+      - .env
+    volumes:
+      - gpg-secrets:/run/secrets:ro
+    command: >
+      sh -c "echo 'ERROR: Filedata backup mounts and cron jobs are not configured' >&2; exit 1"
+    network_mode: bridge
+    restart: unless-stopped
+
+volumes:
+  gpg-secrets:
+    driver: local

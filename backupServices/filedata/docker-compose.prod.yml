@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     volumes:
-      # Mount volumes to backup (read-only) — remote-profile services only
+      # Mount volumes to backup (read-only) — prod-profile services only
       ## Knowledge Services
       - freshrss_filedata:/backup-sources/freshrss:ro
       ## Security Services
