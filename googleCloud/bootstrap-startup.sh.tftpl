@@ -187,6 +187,29 @@ if [ -n "$HOMELAB_GIT_URL" ]; then
   if [ -z "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
     log "No deploy key secret configured; skipping clone"
   else
+    git_port=22
+    if [[ "$HOMELAB_GIT_URL" =~ ^ssh://([^/@]+@)?(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9][A-Za-z0-9._-]*)(:([0-9]{1,5}))?/.+ ]]; then
+      git_host="$${BASH_REMATCH[2]}"
+      git_port="$${BASH_REMATCH[4]:-22}"
+      git_host="$${git_host#[}"
+      git_host="$${git_host%]}"
+    elif [[ "$HOMELAB_GIT_URL" != *://* ]] && \
+      [[ "$HOMELAB_GIT_URL" =~ ^([^/@:]+@)?([A-Za-z0-9][A-Za-z0-9._-]*):.+ ]]; then
+      git_host="$${BASH_REMATCH[2]}"
+    else
+      log "Unsupported Git SSH URL: expected an SSH URL or user@host:path"
+      exit 1
+    fi
+    if (( 10#$git_port < 1 || 10#$git_port > 65535 )); then
+      log "Invalid Git SSH port"
+      exit 1
+    fi
+    git_port="$((10#$git_port))"
+    git_known_host="$git_host"
+    if [ "$git_port" -ne 22 ]; then
+      git_known_host="[$git_host]:$git_port"
+    fi
+
     if [ -e "$repo_dir" ] && [ ! -d "$repo_dir/.git" ]; then
       log "Clone destination $repo_dir already exists and is not a repository"
       exit 1
@@ -209,8 +232,13 @@ if [ -n "$HOMELAB_GIT_URL" ]; then
     chmod 600 "$key_tmp"
     mv -f "$key_tmp" "$key_file"
     touch /root/.ssh/known_hosts
-    if ! ssh-keygen -F github.com -f /root/.ssh/known_hosts >/dev/null; then
-      ssh-keyscan -H github.com >> /root/.ssh/known_hosts 2>/dev/null
+    if ! ssh-keygen -F "$git_known_host" -f /root/.ssh/known_hosts >/dev/null; then
+      if ! host_keys="$(ssh-keyscan -p "$git_port" -H "$git_host" 2>/dev/null)" || \
+        [ -z "$host_keys" ]; then
+        log "Unable to scan SSH host key for $git_known_host"
+        exit 1
+      fi
+      printf '%s\n' "$host_keys" >> /root/.ssh/known_hosts
     fi
 
     git_ssh_command="ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts"

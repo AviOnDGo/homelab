@@ -3,10 +3,19 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 TEMPLATE = ROOT / "googleCloud" / "bootstrap-startup.sh.tftpl"
 URL = "git@github.com:example/homelab.git"
+GIT_LOCATION_VARS = {
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+}
 
 
 class BootstrapGitTests(unittest.TestCase):
@@ -41,8 +50,25 @@ class BootstrapGitTests(unittest.TestCase):
             encoding="utf-8",
         )
         ssh.chmod(0o755)
+        keyscan = self.bin / "ssh-keyscan"
+        keyscan.write_text(
+            '#!/bin/bash\n'
+            'printf "%s\\n" "$*" >> "$SCAN_LOG"\n'
+            'if [ "${SCAN_FAIL:-no}" = yes ]; then exit 1; fi\n'
+            'host="$4"\n'
+            'if [ "$2" != 22 ]; then host="[$host]:$2"; fi\n'
+            'printf "%s ssh-ed25519 '
+            'AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\\n" '
+            '"$host"\n',
+            encoding="utf-8",
+        )
+        keyscan.chmod(0o755)
         self.env = {
-            **os.environ,
+            **{
+                key: value
+                for key, value in os.environ.items()
+                if key not in GIT_LOCATION_VARS
+            },
             "PATH": f"{self.bin}:{os.environ['PATH']}",
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_CONFIG_GLOBAL": "/dev/null",
@@ -53,6 +79,7 @@ class BootstrapGitTests(unittest.TestCase):
             "REMOTE_REPO": str(self.remote),
             "EXPECTED_KEY": str(self.ssh_dir / "homelab_deploy_key"),
             "SECRET_PATH": str(self.secret),
+            "SCAN_LOG": str(self.work / "scan-log"),
             "TEST_GIT_URL": URL,
             "TEST_SECRET_NAME": "deploy-key",
         }
@@ -79,7 +106,7 @@ class BootstrapGitTests(unittest.TestCase):
             "bootstrap_git_deploy_key_secret_name", "TEST_SECRET_NAME"
         ).replace("/root/.ssh", str(self.ssh_dir)).replace(
             "/opt/homelab", str(self.checkout)
-        )
+        ).replace("$${", "${")
         script = """
 set -Eeuo pipefail
 log() { echo "$1"; }
@@ -150,6 +177,66 @@ fetch_secret_value() {
         result = self.bootstrap()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("different origin", result.stdout)
+
+    def test_scans_configured_endpoint_and_reuses_known_host(self) -> None:
+        cases = (
+            ("git@other.example:owner/repo.git", "other.example", 22),
+            ("ssh://git@host.example/owner/repo.git", "host.example", 22),
+            ("ssh://git@ssh.github.com:443/owner/repo.git", "ssh.github.com", 443),
+            ("ssh://git@[2001:db8::1]:2222/owner/repo.git", "2001:db8::1", 2222),
+        )
+        for url, host, port in cases:
+            with self.subTest(url=url):
+                if self.checkout.exists():
+                    self.git("-C", str(self.checkout), "remote", "set-url", "origin", url)
+                self.env["TEST_GIT_URL"] = url
+                result = self.bootstrap()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected = f"-p {port} -H {host}"
+                calls = (self.work / "scan-log").read_text(encoding="utf-8").splitlines()
+                self.assertEqual(calls[-1], expected)
+                result = self.bootstrap()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    (self.work / "scan-log").read_text(encoding="utf-8").splitlines(),
+                    calls,
+                )
+
+    def test_invalid_ssh_url_is_rejected(self) -> None:
+        for url in (
+            "https://github.com/owner/repo",
+            "ssh://host:99999/repo",
+            "git@-option:owner/repo",
+        ):
+            with self.subTest(url=url):
+                self.env["TEST_GIT_URL"] = url
+                result = self.bootstrap()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.checkout.exists())
+
+    def test_existing_checkout_fails_if_host_scan_fails(self) -> None:
+        self.assertEqual(self.bootstrap().returncode, 0)
+        url = "ssh://git@other.example:443/owner/repo.git"
+        self.git("-C", str(self.checkout), "remote", "set-url", "origin", url)
+        self.env["TEST_GIT_URL"] = url
+        self.env["SCAN_FAIL"] = "yes"
+        result = self.bootstrap()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Unable to scan SSH host key", result.stdout)
+        self.assertTrue((self.checkout / ".git").exists())
+
+    def test_fixture_ignores_inherited_git_locations(self) -> None:
+        inherited = {key: str(self.work / "outside") for key in GIT_LOCATION_VARS}
+        with patch.dict(os.environ, inherited):
+            nested = BootstrapGitTests("test_clone_pull_and_existing_checkout")
+            try:
+                nested.setUp()
+                self.assertTrue(GIT_LOCATION_VARS.isdisjoint(nested.env))
+                result = nested.bootstrap()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((self.work / "outside").exists())
+            finally:
+                nested.doCleanups()
 
 
 if __name__ == "__main__":

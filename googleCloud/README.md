@@ -198,6 +198,10 @@ key must be registered with GitHub (read-only access is sufficient for pulls).
 Bootstrap stores the private key in `/root/.ssh/homelab_deploy_key` with mode
 `600` and configures the repository to use it. Root access to the VM grants
 access to this key. Each boot refreshes it from the latest secret version.
+Bootstrap supports `user@host:path` and `ssh://user@host[:port]/path` SSH
+URLs and scans the configured endpoint if its host key is not already known.
+An automatic key scan does not authenticate the server; pre-provision a verified
+host key in root's `known_hosts` when host identity must be verified on first use.
 
 To update the checkout, run `sudo git -C /opt/homelab pull`. Changing the
 startup script in Terraform requires an apply and a subsequent startup; review
