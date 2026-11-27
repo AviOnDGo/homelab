@@ -15,7 +15,10 @@ class StartBackupTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("start-backup.sh", "backup-volumes.conf", "docker-compose.yml"):
+        for name in (
+            "start-backup.sh", "backup-volumes.conf", "docker-compose.yml",
+            "path.local", "path.prod",
+        ):
             shutil.copy(ROOT / name, self.root / name)
         self.bin = self.root / "bin"
         self.bin.mkdir()
@@ -49,9 +52,12 @@ else:
             "MOCK_ARGS": str(self.root / "args"),
         }
 
-    def run_start(self, profile, **env):
+    def run_start(self, profile, destination=None, **env):
+        args = ["bash", str(self.root / "start-backup.sh"), profile]
+        if destination is not None:
+            args.append(destination)
         return subprocess.run(
-            ["bash", str(self.root / "start-backup.sh"), profile],
+            args,
             env={**self.env, **env},
             text=True,
             capture_output=True,
@@ -84,7 +90,7 @@ else:
 
     def test_default_selects_local_only_entries_when_present(self):
         result = self.run_start(
-            "default", MOCK_VOLUMES="hermes_filedata\nromm_filedata"
+            "default", "local", MOCK_VOLUMES="hermes_filedata\nromm_filedata"
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         override = (self.root / "override.yml").read_text()
@@ -132,7 +138,7 @@ else:
             if line and not line.startswith("#")
         ]
         result = self.run_start(
-            "default", MOCK_VOLUMES="\n".join(entry[1] for entry in entries)
+            "default", "prod", MOCK_VOLUMES="\n".join(entry[1] for entry in entries)
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         override = (self.root / "override.yml").read_text()
@@ -145,7 +151,7 @@ else:
             self.assertIn(f"{key}_BACKUP_MODE: {expected_mode}", override)
             self.assertIn(f'{key}_RETENTION_DAYS: "{retention}"', override)
             self.assertIn(f'{key}_CRON_SCHEDULE: "{schedule}"', override)
-        for example in (".env.local.example", ".env.prod.example"):
+        for example in (".env.example", "path.local", "path.prod"):
             text = (ROOT / example).read_text()
             for suffix in ("_BACKUP_MODE=", "_RETENTION_DAYS=", "_CRON_SCHEDULE="):
                 self.assertNotIn(suffix, text)
@@ -184,8 +190,11 @@ else:
         self.assertNotIn("hermes_filedata", override)
 
     def test_rejects_bad_profile_and_invalid_configuration(self):
-        for profile in ("other", "remote"):
-            result = self.run_start(profile, MOCK_VOLUMES="npm_filedata")
+        for profile, destination in (
+            ("other", None), ("remote", None), ("default", None),
+            ("default", "other"), ("prod", "local"),
+        ):
+            result = self.run_start(profile, destination, MOCK_VOLUMES="npm_filedata")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Usage:", result.stderr)
         (self.root / "backup-volumes.conf").write_text(
@@ -208,12 +217,14 @@ else:
         self.assertEqual(result.returncode, 0, result.stderr)
         compose_file = self.root / "docker-compose.yml"
         compose_file.write_text(
-            compose_file.read_text().replace("- .env", "- .env.prod.example")
+            compose_file.read_text().replace("- .env", "- fixture-input")
         )
-        (self.root / ".env.prod.example").write_text(
+        (self.root / "fixture-input").write_text(
             "ROMM_BACKUP_MODE=archive\n"
             "ROMM_RETENTION_DAYS=0\n"
             "ROMM_CRON_SCHEDULE=0 0 * * *\n"
+            "ROMM_SYNC_CRYPT_REMOTE=legacy:wrong\n"
+            "DROPBOX_AUTH_TOKEN=fixture-token\n"
         )
         config = subprocess.run(
             [
@@ -246,6 +257,50 @@ else:
         self.assertEqual(values["ROMM_BACKUP_MODE"], "sync-crypt")
         self.assertEqual(values["ROMM_RETENTION_DAYS"], "30")
         self.assertEqual(values["ROMM_CRON_SCHEDULE"], "0 5 * * *")
+        self.assertEqual(values["ROMM_SYNC_CRYPT_REMOTE"], "filen-crypt:/Romm")
+        self.assertEqual(values["DROPBOX_AUTH_TOKEN"], "fixture-token")
+
+    def test_missing_or_invalid_destination_fails_before_compose(self):
+        path_file = self.root / "path.prod"
+        for contents in (
+            "",
+            "NPM_DROPBOX_PATH=\n",
+            "NPM_DROPBOX_PATH=/one\nNPM_DROPBOX_PATH=/two\n",
+            "NPM_DROPBOX_PATH=$INTERPOLATED\n",
+            "DROPBOX_AUTH_TOKEN=not-a-destination\n",
+        ):
+            with self.subTest(contents=contents):
+                path_file.write_text(contents)
+                result = self.run_start("prod", MOCK_VOLUMES="npm_filedata")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("ERROR:", result.stderr)
+                self.assertFalse((self.root / "args").exists())
+
+    def test_missing_path_file_fails_before_compose(self):
+        (self.root / "path.local").unlink()
+        result = self.run_start("local", MOCK_VOLUMES="npm_filedata")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Missing destination file", result.stderr)
+        self.assertFalse((self.root / "args").exists())
+
+    def test_path_files_match_and_example_contains_no_destinations(self):
+        def keys(path):
+            return {
+                line.split("=", 1)[0]
+                for line in path.read_text().splitlines()
+                if line and not line.startswith("#")
+            }
+
+        local_keys = keys(ROOT / "path.local")
+        self.assertEqual(local_keys, keys(ROOT / "path.prod"))
+        self.assertTrue(local_keys)
+        self.assertTrue(
+            all(
+                key.endswith(("_DROPBOX_PATH", "_SYNC_CRYPT_REMOTE"))
+                for key in local_keys
+            )
+        )
+        self.assertTrue(keys(ROOT / ".env.example").isdisjoint(local_keys))
 
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
     def test_generated_override_is_valid_compose(self):
@@ -322,6 +377,11 @@ else:
         self.assertIn("must have five cron fields", run.stderr)
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
     def test_all_host_profiles_render_with_their_environment_examples(self):
+        compose_file = self.root / "docker-compose.yml"
+        compose_file.write_text(
+            compose_file.read_text().replace("- .env", "- fixture-input")
+        )
+        (self.root / "fixture-input").write_text("DROPBOX_AUTH_TOKEN=fixture-token\n")
         entries = []
         for line in (ROOT / "backup-volumes.conf").read_text().splitlines():
             if line and not line.startswith("#"):
@@ -330,19 +390,14 @@ else:
                     (name, volume, profiles.split(","), mode, retention, schedule)
                 )
 
-        for profile in ("default", "local", "prod"):
-            with self.subTest(profile=profile):
-                environment_file = ROOT / (
-                    ".env.local.example" if profile == "local" else ".env.prod.example"
-                )
+        for profile, destination in (
+            ("default", "local"), ("default", "prod"), ("local", None), ("prod", None)
+        ):
+            with self.subTest(profile=profile, destination=destination):
                 environment = {
                     "PATH": os.defpath,
                     "HOME": str(self.root),
                 }
-                for line in environment_file.read_text().splitlines():
-                    if line and not line.startswith("#") and "=" in line:
-                        key, value = line.split("=", 1)
-                        environment[key] = value
                 selected = [
                     (name, volume, mode, retention, schedule)
                     for name, volume, profiles, mode, retention, schedule in entries
@@ -351,6 +406,7 @@ else:
 
                 result = self.run_start(
                     profile,
+                    destination,
                     MOCK_VOLUMES="\n".join(entry[1] for entry in selected),
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -368,7 +424,6 @@ else:
                         "-f",
                         str(self.root / "override.yml"),
                         "config",
-                        "--no-env-resolution",
                         "--format",
                         "json",
                     ],
@@ -393,6 +448,17 @@ else:
                 )
                 service = model["services"]["filedata-backup"]
                 self.assertEqual(service["environment"]["TZ"], "UTC")
+                path_profile = destination or profile
+                path_lines = (self.root / f"path.{path_profile}").read_text().splitlines()
+                paths = dict(
+                    line.split("=", 1)
+                    for line in path_lines
+                    if line and not line.startswith("#")
+                )
+                self.assertEqual(
+                    service["environment"]["NPM_DROPBOX_PATH"],
+                    "/App_acc/npm" if path_profile == "local" else "/Apps/npm",
+                )
                 command = "\n".join(service["command"])
                 for name, _, mode, retention, schedule in selected:
                     self.assertIn(f"backup-script.sh {name}", command)
@@ -402,6 +468,13 @@ else:
                     self.assertEqual(service["environment"][schedule_key], schedule)
                     retention_key = name.upper().replace("-", "_") + "_RETENTION_DAYS"
                     self.assertEqual(service["environment"][retention_key], retention)
+                    destination_key = name.upper().replace("-", "_") + (
+                        "_DROPBOX_PATH" if mode == "archive" else "_SYNC_CRYPT_REMOTE"
+                    )
+                    self.assertTrue(paths[destination_key])
+                    self.assertEqual(
+                        service["environment"][destination_key], paths[destination_key]
+                    )
 
 
 if __name__ == "__main__":

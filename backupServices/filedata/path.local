@@ -1,37 +1,8 @@
 # ============================================================
-# filedata-backup — LOCAL environment example
-# Copy this template to .env for the local environment.
+# filedata-backup — LOCAL destinations
 # Dropbox root: /App_acc
-# .env is gitignored; this file is tracked.
+# This file is tracked. Do not put credentials here.
 # ============================================================
-
-# --- Dropbox OAuth2 credentials (required) ---
-DROPBOX_AUTH_TOKEN=
-DROPBOX_REFRESH_TOKEN=
-
-# --- Google Drive OAuth2 credentials (required for Google Drive sync-crypt mode) ---
-GOOGLE_DRIVE_ACCESS_TOKEN=
-GOOGLE_DRIVE_REFRESH_TOKEN=
-# Optional: set both when these tokens were issued by your own Google OAuth client.
-GOOGLE_DRIVE_CLIENT_ID=
-GOOGLE_DRIVE_CLIENT_SECRET=
-
-# --- GPG passphrase (for AES256 encryption) ---
-GPG_PASSPHRASE=
-
-# --- Discord webhook (optional, leave blank to disable) ---
-DISCORD_WEBHOOK_URL=
-
-# --- Shared rclone crypt credentials (used by MEGA and Google Drive crypt remotes) ---
-MEGA_USER=
-MEGA_PASS=
-RCLONE_CRYPT_PASSWORD=
-RCLONE_CRYPT_PASSWORD2=
-
-# --- Filen credentials (used by the Local RomM filedata sync) ---
-FILEN_EMAIL=
-FILEN_PASSWORD=
-FILEN_API_KEY=
 
 # --- Per-service backup configuration ---
 # Backup modes, retention, and schedules are configured in backup-volumes.conf.

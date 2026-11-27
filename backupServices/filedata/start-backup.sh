@@ -1,14 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 || ! "$1" =~ ^(default|local|prod)$ ]]; then
-  echo "Usage: $0 {default|local|prod}" >&2
+if [[ $# -lt 1 || $# -gt 2 || ! "$1" =~ ^(default|local|prod)$ ]] ||
+   [[ "$1" == default && ( $# -ne 2 || ! "$2" =~ ^(local|prod)$ ) ]] ||
+   [[ "$1" != default && $# -ne 1 ]]; then
+  echo "Usage: $0 {local|prod} | default {local|prod}" >&2
   exit 1
 fi
 
 profile="$1"
+path_profile="${2:-$profile}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 config="${script_dir}/backup-volumes.conf"
+path_file="${script_dir}/path.${path_profile}"
+if [[ ! -f "$path_file" ]]; then
+  echo "ERROR: Missing destination file ${path_file}." >&2
+  exit 1
+fi
+
+declare -A destinations=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*_(DROPBOX_PATH|SYNC_CRYPT_REMOTE))=(.*)$ ]]; then
+    echo "ERROR: Invalid destination entry in ${path_file}." >&2
+    exit 1
+  fi
+  key="${BASH_REMATCH[1]}"
+  value="${BASH_REMATCH[3]}"
+  if [[ -v "destinations[$key]" || "$value" == *'$'* || "$value" == *'#'* ||
+        "$value" == *'"'* || "$value" == *"'"* || "$value" == *\\* ||
+        "$value" == *$'\r'* || "$value" == *$'\t'* ||
+        "$value" == ' '* || "$value" == *' ' ]]; then
+    echo "ERROR: Duplicate or unsupported destination value for ${key} in ${path_file}." >&2
+    exit 1
+  fi
+  destinations["$key"]="$value"
+done < "$path_file"
 
 # Listing once distinguishes an unavailable Docker daemon from a missing volume.
 if ! volume_list="$(docker volume ls --format '{{.Name}}')"; then
@@ -69,6 +96,15 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     missing=$((missing + 1))
     continue
   fi
+  if [[ "$mode" == archive ]]; then
+    destination_key="${key}_DROPBOX_PATH"
+  else
+    destination_key="${key}_SYNC_CRYPT_REMOTE"
+  fi
+  if [[ -z "${destinations[$destination_key]:-}" ]]; then
+    echo "ERROR: Missing ${destination_key} in ${path_file}." >&2
+    exit 1
+  fi
   names+=("$name")
   volumes+=("$volume")
   categories+=("$category")
@@ -87,7 +123,8 @@ trap 'rm -f -- "$override"' EXIT
 
 # The override contains no credentials.
 {
-  printf 'services:\n  filedata-backup:\n    volumes:\n'
+  printf 'services:\n  filedata-backup:\n    env_file:\n      - path.%s\n    volumes:\n' \
+    "$path_profile"
   previous=""
   for ((i = 0; i < ${#names[@]}; i++)); do
     if [[ "${categories[$i]}" != "$previous" ]]; then
@@ -151,7 +188,7 @@ EOF
   done
 } > "$override"
 
-echo "Starting ${#names[@]} backup job(s) for ${profile}; ${missing} missing volume(s) skipped."
+echo "Starting ${#names[@]} backup job(s) for ${profile} with ${path_profile} destinations; ${missing} missing volume(s) skipped."
 docker compose --project-directory "$script_dir" \
   -f "${script_dir}/docker-compose.yml" -f "$override" \
   up --build --force-recreate --wait --wait-timeout 60 filedata-backup
