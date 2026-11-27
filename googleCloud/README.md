@@ -55,7 +55,10 @@ Execution behavior:
   its latest backup, including after a no-op apply. It is skipped if NPM fails
   or is skipped. Manual runs skip an existing volume unless `force` is enabled.
   Configure `PIHOLE_WEB_PASSWORD` and allow its workflow ref in the WIF condition
-  below before running it. See the [Pi-hole restore guide](../securityServices/pihole/RESTORE_GUIDE.md).
+  below before running it. Before restoring, the workflow copies the current
+  host resolver configuration and stops and disables `systemd-resolved`.
+  See the [Pi-hole restore guide](../securityServices/pihole/RESTORE_GUIDE.md)
+  for prerequisites and recovery guidance.
 - After successful apply and NPM restore, Watchtower is redeployed and verified
   along with FreshRSS and Vaultwarden, including after a no-op apply. No backup
   or volume restore is involved. It can also be dispatched manually; its separate `prod`
