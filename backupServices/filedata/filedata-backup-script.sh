@@ -219,7 +219,7 @@ run_archive_backup() {
 
   # Phase 2: GPG Encryption
   echo "[2/5] Encrypting with GPG (AES256)..."
-  echo "$GPG_PASSPHRASE" | gpg --symmetric --cipher-algo AES256 \
+  printf '%s\n' "$GPG_PASSPHRASE" | gpg --symmetric --cipher-algo AES256 \
       --batch --yes --passphrase-fd 0 \
       -o "$BACKUP_FILE_GPG" "$BACKUP_FILE"
 

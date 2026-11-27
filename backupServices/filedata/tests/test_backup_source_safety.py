@@ -23,7 +23,12 @@ class BackupSourceSafetyTests(unittest.TestCase):
         original = original.replace(
             'SOURCE_DIR="/backup-sources/${VOLUME_NAME}"',
             'SOURCE_DIR="${TEST_SOURCE_DIR}"',
-        ).replace("/run/secrets/gpg-passphrase", str(self.root / "no-gpg-secret"))
+        ).replace(
+            "/run/secrets/gpg-passphrase", str(self.root / "no-gpg-secret")
+        ).replace(
+            'BACKUP_DIR="/backups/${VOLUME_NAME}"',
+            'BACKUP_DIR="${TEST_BACKUP_DIR}"',
+        )
         self.script = self.root / "backup.sh"
         self.script.write_text(original)
 
@@ -54,6 +59,7 @@ class BackupSourceSafetyTests(unittest.TestCase):
             env={
                 **self.env,
                 "TEST_SOURCE_DIR": str(source),
+                "TEST_BACKUP_DIR": str(self.root / "backups"),
                 "SAMPLE_BACKUP_MODE": mode,
             },
             text=True,
@@ -96,6 +102,16 @@ class BackupSourceSafetyTests(unittest.TestCase):
             "Required environment variable missing: SAMPLE_DROPBOX_PATH", result.stdout
         )
         self.assertNotIn("not a mount point", result.stdout)
+
+    def test_archive_passphrase_is_not_interpreted_as_echo_options(self):
+        zstd = self.bin / "zstd"
+        zstd.write_text('#!/bin/sh\nwhile [ "$1" != -o ]; do shift; done\n: > "$2"\n')
+        gpg = self.bin / "gpg"
+        gpg.write_text('#!/bin/sh\ncat > "$HOME/passphrase-input"\nexit 1\n')
+        self.env["GPG_PASSPHRASE"] = "-n"
+        result = self.run_backup("/proc", "archive")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((self.root / "passphrase-input").read_text(), "-n\n")
 
 
 if __name__ == "__main__":
