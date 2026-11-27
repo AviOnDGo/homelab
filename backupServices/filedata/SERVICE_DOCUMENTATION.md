@@ -163,6 +163,11 @@ The `prod` name matches the GitHub environment name, but the profile is selected
 explicitly; GitHub environment selection does not automatically select it. The
 PostgreSQL backup service continues to use its own Compose files.
 
+On the GCP VM, the GitHub Actions filedata backup restore workflow starts the
+`prod` profile after the source services are restored, or by manual dispatch.
+See the [GCP deployment guide](../../googleCloud/README.md#workflow) for
+credentials, prerequisites, and verification.
+
 The script requires Docker Compose with `up --wait` support. It lists Docker
 volumes, warns for each missing expected volume, and generates a temporary Compose
 override with read-only mounts and jobs for the volumes present. It fails if Docker
