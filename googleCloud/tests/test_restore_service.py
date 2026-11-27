@@ -4,6 +4,7 @@ import itertools
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tarfile
 import tempfile
@@ -348,10 +349,10 @@ esac""",
         archive_path = self.work / "backup.tar"
         with tarfile.open(archive_path, "w") as archive:
             for name in ("gravity.db", "pihole-FTL.db"):
-                data = b"test data"
-                member = tarfile.TarInfo(name)
-                member.size = len(data)
-                archive.addfile(member, io.BytesIO(data))
+                database = self.work / name
+                with sqlite3.connect(database) as db:
+                    db.execute("CREATE TABLE example (value TEXT)")
+                archive.add(database, arcname=name)
         password = "pihole-$password-'fixture\n"
         self.env.update(
             SERVICE="pihole",
@@ -370,16 +371,30 @@ exec bash -c "$command"
             "docker": """
 echo "${COMPOSE_PROJECT_NAME:-} $*" >> "$ARGUMENTS"
 case "$1" in
-  info|exec) ;;
+  info) ;;
+  exec)
+    if [[ "$3" == pihole-FTL ]]; then echo ok; fi ;;
   compose)
     [[ "$WEB_PASSWORD" == "$EXPECTED_PIHOLE_PASSWORD" ]]
     [[ "$2" == -f ]]
-    [[ "${FAIL_COMPOSE:-}" != 1 ]] ;;
+    [[ "${FAIL_COMPOSE:-}" != 1 ]]
+    if [[ "$*" == *"config --images pihole"* ]]; then echo pihole/pihole:latest; fi ;;
   volume)
     if [[ "$2" == inspect ]]; then [[ "$FORCE" == false ]]; fi ;;
   ps) ;;
   inspect) echo false ;;
-  run) cat >/dev/null ;;
+  run)
+    if [[ "$*" == *" --entrypoint pihole-FTL "* ]]; then
+      for arg in "$@"; do
+        case "$arg" in
+          *:/check) staged="${arg%:/check}" ;;
+          /check/*.db) database="${arg##*/}" ;;
+        esac
+      done
+      python3 -c 'import sqlite3, sys; db = sqlite3.connect(sys.argv[1]); print("\\n".join(row[0] for row in db.execute("PRAGMA integrity_check"))) ' "$staged/$database"
+    elif [[ "$*" == *" -i "* ]]; then
+      cat >/dev/null
+    fi ;;
   *) echo "Unexpected docker command: $*" >&2; exit 1 ;;
 esac
 """,
@@ -418,6 +433,23 @@ esac""",
                     self.assertFalse(Path(compose_path).parent.exists())
                     self.assertEqual(" up -d" in calls, fail == "0")
                 self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+        database = self.work / "gravity.db"
+        data = bytearray(database.read_bytes())
+        data[100] = 0
+        database.write_bytes(data)
+        with tarfile.open(archive_path, "w") as archive:
+            for name in ("gravity.db", "pihole-FTL.db"):
+                archive.add(self.work / name, arcname=name)
+        self.arguments.unlink(missing_ok=True)
+        self.env.update(FORCE="true", FAIL_COMPOSE="0")
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid backup database gravity.db", result.stderr)
+        self.assertNotIn(
+            "pihole_filedata:/restore", self.arguments.read_text(encoding="utf-8")
+        )
+        self.assertFalse(list(self.work.glob("pihole-restore.*")))
 
     def test_pihole_compose_receives_password_from_environment(self) -> None:
         docker = shutil.which("docker")

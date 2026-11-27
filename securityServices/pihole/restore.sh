@@ -78,6 +78,11 @@ if [[ "$MODE" == "--if-missing" ]] && docker volume inspect "$VOLUME_NAME" >/dev
 fi
 
 docker compose -f "$COMPOSE_FILE" config --quiet
+PIHOLE_IMAGE=$(docker compose -f "$COMPOSE_FILE" config --images pihole)
+if [[ -z "$PIHOLE_IMAGE" || "$PIHOLE_IMAGE" == *$'\n'* ]]; then
+  error "Could not determine the Pi-hole image from Compose."
+  exit 1
+fi
 
 if ! rclone lsd "${DROPBOX_REMOTE}:" >/dev/null 2>&1; then
   error "Cannot reach rclone remote '${DROPBOX_REMOTE}'."
@@ -121,13 +126,39 @@ fi
 # 4. Download and validate latest backup
 # --------------------------------------------------------------------------- #
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/pihole-restore.XXXXXXXX")
+TMP_DIR="$(cd "$TMP_DIR" && pwd -P)"
 info "Downloading latest backup: $LATEST_FILE"
 rclone copy "${DROPBOX_REMOTE}:${DROPBOX_PATH}/${LATEST_FILE}" "$TMP_DIR" --progress
 LOCAL_BACKUP="${TMP_DIR}/${LATEST_FILE}"
 
 info "Validating backup before changing Pi-hole..."
+mkdir "$TMP_DIR/staged"
 gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 -d "$LOCAL_BACKUP" 3<<<"$PASSPHRASE" \
-  | zstd -d | tar -tf - >/dev/null
+  | zstd -d | tar --no-same-owner --no-same-permissions -xf - -C "$TMP_DIR/staged"
+for database in gravity.db pihole-FTL.db; do
+  path="$TMP_DIR/staged/$database"
+  if [[ -L "$path" || ! -f "$path" || ! -s "$path" ]]; then
+    error "Invalid backup database $database: missing, empty, or not a regular file."
+    exit 1
+  fi
+  for suffix in -wal -shm; do
+    sidecar="${path}${suffix}"
+    if [[ -L "$sidecar" || ( -e "$sidecar" && ! -f "$sidecar" ) ]]; then
+      error "Invalid SQLite sidecar: ${database}${suffix}."
+      exit 1
+    fi
+  done
+  # SQLite may need to create or update sidecars to read a WAL-backed database.
+  if ! result=$(docker run --rm --network none --read-only --entrypoint pihole-FTL \
+    -v "$TMP_DIR/staged:/check" "$PIHOLE_IMAGE" "/check/$database" 'PRAGMA integrity_check;'); then
+    error "Invalid backup database $database: integrity check could not run."
+    exit 1
+  fi
+  if [[ "$result" != "ok" ]]; then
+    error "Invalid backup database $database: integrity check failed: $result"
+    exit 1
+  fi
+done
 
 # --------------------------------------------------------------------------- #
 # 5. Stop the service if running
@@ -196,8 +227,18 @@ info "Waiting for container to become ready..."
 sleep 3
 
 for database in gravity.db pihole-FTL.db; do
-  if ! docker exec "$CONTAINER_NAME" ls -lh "/etc/pihole/$database" >/dev/null 2>&1; then
-    error "$database not found inside the container."
+  path="/etc/pihole/$database"
+  if ! docker exec "$CONTAINER_NAME" sh -c \
+    'test -f "$1" && test ! -L "$1" && test -s "$1"' sh "$path"; then
+    error "$database is missing, empty, or not a regular file."
+    exit 1
+  fi
+  if ! result=$(docker exec "$CONTAINER_NAME" pihole-FTL "$path" 'PRAGMA integrity_check;'); then
+    error "Could not check the integrity of $database."
+    exit 1
+  fi
+  if [[ "$result" != "ok" ]]; then
+    error "Integrity check failed for $database: $result"
     exit 1
   fi
 done
