@@ -3,7 +3,9 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +37,20 @@ class FiledataBackupRestoreTests(unittest.TestCase):
         )
         self.executable("sudo", 'exec "$@"')
         self.executable(
+            "curl",
+            """
+printf '%s\\n' "$@" > "$FIXTURE/curl-arguments"
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == --data-binary ]]; then
+    printf '%s' "$2" > "$FIXTURE/discord-payload"
+    break
+  fi
+  shift
+done
+[[ "${FAIL_CURL:-0}" != 1 ]]
+""",
+        )
+        self.executable(
             "docker",
             """
 echo "$COMPOSE_PROJECT_NAME $*" >> "$FIXTURE/docker-calls"
@@ -47,7 +63,12 @@ case "$1" in
         [[ "$3" != "${MISSING_VOLUME:-}" ]]
       fi
     elif [[ "$2" == ls ]]; then
-      printf '%s\\n' freshrss_filedata npm_filedata pihole_filedata vaultwarden_filedata
+      [[ "${FAIL_VOLUME_LIST:-0}" != 1 ]] || exit 1
+      for volume in freshrss_filedata npm_filedata pihole_filedata vaultwarden_filedata; do
+        if [[ ",${MISSING_VOLUMES:-}," != *",$volume,"* ]]; then
+          printf '%s\\n' "$volume"
+        fi
+      done
     fi ;;
   build) ;;
   run) [[ "${SECRET_CONFLICT:-0}" != 1 ]] ;;
@@ -79,6 +100,7 @@ esac
     def test_remote_start_and_literal_credentials(self):
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.work / "discord-payload").exists())
         calls = (self.work / "docker-calls").read_text()
         self.assertIn("filedata-backup-gcp compose", calls)
         self.assertIn("--wait", calls)
@@ -115,10 +137,96 @@ esac
         for name in ("FRESHRSS", "NPM", "PIHOLE", "VAULTWARDEN"):
             self.assertEqual(values[f"{name}_DROPBOX_PATH"], f"/Apps/{name.lower()}")
 
-    def test_missing_volume_or_conflicting_secret_prevents_start(self):
+    def test_missing_volumes_are_skipped_and_reported_to_discord(self):
+        self.env["MISSING_VOLUMES"] = "pihole_filedata,vaultwarden_filedata"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        override = (self.work / "override.yml").read_text()
+        self.assertIn("freshrss_filedata:/backup-sources/freshrss:ro", override)
+        self.assertIn("npm_filedata:/backup-sources/npm:ro", override)
+        self.assertNotIn("pihole_filedata", override)
+        self.assertNotIn("vaultwarden_filedata", override)
+        payload = json.loads((self.work / "discord-payload").read_text())
+        self.assertIn("pihole_filedata", payload["content"])
+        self.assertIn("vaultwarden_filedata", payload["content"])
+        self.assertIn("pihole_filedata", result.stderr)
+        self.assertNotIn(
+            self.env["DISCORD_WEBHOOK_URL"],
+            (self.work / "curl-arguments").read_text() + result.stdout + result.stderr,
+        )
+
+    def test_missing_volume_alert_uses_real_http_request(self):
+        curl = shutil.which("curl")
+        if not curl:
+            self.skipTest("curl is unavailable")
+        received = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                length = int(self.headers["Content-Length"])
+                received.append(json.loads(self.rfile.read(length)))
+                self.send_response(204)
+                self.end_headers()
+
+            def log_message(self, format, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        self.executable("curl", f'exec "{curl}" "$@"')
+        self.env["DISCORD_WEBHOOK_URL"] = f"http://127.0.0.1:{server.server_port}/alert"
+        self.env["MISSING_VOLUMES"] = "pihole_filedata"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(received), 1)
+        self.assertIn("pihole_filedata", received[0]["content"])
+        self.assertEqual(received[0]["allowed_mentions"], {"parse": []})
+
+    def test_no_volumes_or_unavailable_docker_preserves_existing_container(self):
         self.env["EXISTING_CONTAINER"] = "1"
         for variables in (
-            {"MISSING_VOLUME": "pihole_filedata"},
+            {"MISSING_VOLUMES": (
+                "freshrss_filedata,npm_filedata,pihole_filedata,vaultwarden_filedata"
+            )},
+            {"FAIL_VOLUME_LIST": "1"},
+        ):
+            with self.subTest(variables=variables):
+                self.env.update(variables)
+                result = self.invoke()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("ERROR:", result.stderr)
+                calls = (self.work / "docker-calls").read_text()
+                self.assertNotIn(" compose ", calls)
+                self.assertNotIn(" stop ", calls)
+                self.assertNotIn(" rm ", calls)
+                for key in variables:
+                    self.env.pop(key)
+                (self.work / "docker-calls").unlink()
+
+    def test_missing_volume_notification_failure_still_starts_scheduler(self):
+        self.env["MISSING_VOLUMES"] = "pihole_filedata"
+        self.env["FAIL_CURL"] = "1"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Scheduler started", result.stderr)
+        self.assertIn(" compose ", (self.work / "docker-calls").read_text())
+
+    def test_missing_volume_without_webhook_warns_and_starts(self):
+        self.env["MISSING_VOLUMES"] = "pihole_filedata"
+        self.env["DISCORD_WEBHOOK_URL"] = ""
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("not sent to Discord", result.stderr)
+        self.assertFalse((self.work / "discord-payload").exists())
+        self.assertIn(" compose ", (self.work / "docker-calls").read_text())
+
+    def test_conflicting_secret_prevents_start(self):
+        self.env["EXISTING_CONTAINER"] = "1"
+        for variables in (
             {"SECRET_VOLUME": "1", "SECRET_CONFLICT": "1"},
         ):
             with self.subTest(variables=variables):

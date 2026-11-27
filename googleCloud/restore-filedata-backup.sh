@@ -50,9 +50,19 @@ done
     tar -xf - -C "$workdir"
     export COMPOSE_PROJECT_NAME=filedata-backup-gcp
 
+    if ! volume_list="$(docker volume ls --format "{{.Name}}")"; then
+      echo "ERROR: Cannot list Docker volumes; no backup deployment was started." >&2
+      exit 1
+    fi
+    missing_volumes=()
+    available=0
     while IFS="|" read -r name volume profiles mode _; do
       [[ -z "$name" || "$name" == \#* ]] && continue
       if [[ ",$profiles," == *,prod,* ]]; then
+        if [[ ! "$volume" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+          echo "ERROR: Invalid production source volume name." >&2
+          exit 1
+        fi
         if [[ "$mode" != archive ]]; then
           echo "ERROR: Production backup $name requires unsupported mode $mode." >&2
           exit 1
@@ -63,12 +73,40 @@ done
           echo "ERROR: Production Dropbox destination missing for $name." >&2
           exit 1
         fi
-        if ! docker volume inspect "$volume" >/dev/null; then
-          echo "ERROR: Required production source volume $volume is missing." >&2
-          exit 1
+        if grep -Fxq -- "$volume" <<< "$volume_list"; then
+          available=$((available + 1))
+        else
+          echo "WARNING: Production source volume $volume is missing; its backup will not run." >&2
+          missing_volumes+=("$volume")
         fi
       fi
     done < "$workdir/backup-volumes.conf"
+
+    notification_failed=0
+    if (( ${#missing_volumes[@]} > 0 )); then
+      if [[ -z "$DISCORD_WEBHOOK_URL" ]]; then
+        echo "WARNING: Discord webhook is not configured; missing volumes were not sent to Discord." >&2
+      else
+        missing_text="$(printf "%s, " "${missing_volumes[@]}")"
+        missing_text="${missing_text%, }"
+        webhook="${DISCORD_WEBHOOK_URL//\\/\\\\}"
+        webhook="${webhook//\"/\\\"}"
+        printf "url = \"%s\"\n" "$webhook" > "$workdir/discord-curl.conf"
+        unset webhook
+        if ! curl -q --config "$workdir/discord-curl.conf" --fail --silent --show-error \
+          --connect-timeout 5 --max-time 15 \
+          -H "Content-Type: application/json" \
+          --data-binary "{\"content\":\"Filedata backup warning: missing production volumes: ${missing_text}. These volumes will not be backed up. Restore them and rerun the filedata backup workflow.\",\"allowed_mentions\":{\"parse\":[]}}" \
+          >/dev/null; then
+          echo "ERROR: Failed to send missing-volume alert to Discord." >&2
+          notification_failed=1
+        fi
+      fi
+    fi
+    if (( available == 0 )); then
+      echo "ERROR: No production source volumes are available; no backup deployment was started." >&2
+      exit 1
+    fi
 
     # Use a private temporary env-file without changing an existing host configuration.
     : > "$workdir/workflow-input"
@@ -104,4 +142,8 @@ done
     fi
     bash "$workdir/start-backup.sh" prod
     echo "Filedata backup scheduler is healthy. Verify its crontab and first backup."
+    if (( notification_failed )); then
+      echo "ERROR: Scheduler started, but the missing-volume Discord alert failed." >&2
+      exit 1
+    fi
   '"'"''
