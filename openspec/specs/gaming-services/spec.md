@@ -120,6 +120,7 @@ RomM SHALL provide an executable `gamingServices/romm/restore.sh` that restores 
 - **GIVEN** the Filen backup, Dropbox PostgreSQL backup, credentials, and GPG passphrase are available
 - **WHEN** the operator runs `./restore.sh` and confirms replacement of existing data
 - **THEN** the script SHALL stop RomM and any running Local filedata backup container before synchronizing `romm_filedata` from the configured Filen `current/` tree
+- **AND** it SHALL load the Local path file after the filedata credentials file
 - **AND** it SHALL recreate `romm_postgresdata`, create the RomM containers, and start only `romm-db` before importing the dump
 - **AND** it SHALL start RomM and the Local filedata backup service after successful recovery
 
