@@ -327,3 +327,9 @@ filedata restore workflow using the existing GCP restore transport.
 - **WHEN** it invokes the restore script on the VM
 - **THEN** it SHALL transmit those values through SSH standard input without printing them or placing them in command arguments
 - **AND** the Pi-hole password SHALL be supplied to Compose through the process environment
+
+#### Scenario: Pi-hole recovery prepares host DNS
+- **GIVEN** the GCP VM has a readable resolver configuration
+- **WHEN** the Pi-hole workflow prepares the host for restoration
+- **THEN** it SHALL replace `/etc/resolv.conf` with a copy of its current contents
+- **AND** it SHALL stop and disable systemd-resolved before restoring Pi-hole
