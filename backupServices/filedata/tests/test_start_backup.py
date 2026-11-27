@@ -92,6 +92,83 @@ else:
         self.assertIn("romm_filedata:/backup-sources/romm:ro", override)
         self.assertIn("HERMES_CRON_SCHEDULE", override)
         self.assertIn("ROMM_CRON_SCHEDULE", override)
+        self.assertIn("HERMES_BACKUP_MODE: archive", override)
+        self.assertIn("ROMM_BACKUP_MODE: sync-crypt", override)
+
+    def test_registered_policies_match_previous_examples(self):
+        expected_sync = {
+            "immich-library",
+            "immich-profile",
+            "immich-upload",
+            "paperless",
+            "romm",
+        }
+        expected = {
+            "hermes": ("14", "35 2 * * *"),
+            "n8n": ("30", "25 2 * * *"),
+            "omniroute": ("14", "30 2 * * *"),
+            "openwebui": ("14", "20 2 * * *"),
+            "firefox": ("14", "10 4 * * *"),
+            "syncthing": ("7", "15 1 * * *"),
+            "romm": ("30", "0 5 * * *"),
+            "freshrss": ("7", "0 4 * * *"),
+            "paperless": ("0", "15 4 * * *"),
+            "radicale": ("7", "0 3 * * *"),
+            "immich-library": ("30", "0 3 * * *"),
+            "immich-profile": ("30", "15 3 * * *"),
+            "immich-upload": ("30", "30 3 * * *"),
+            "jackett": ("7", "30 4 * * *"),
+            "jellyfin": ("7", "20 1 * * *"),
+            "radarr": ("2", "20 4 * * *"),
+            "sonarr": ("2", "25 4 * * *"),
+            "transmission": ("7", "35 4 * * *"),
+            "npm": ("57", "10 2 */7 * *"),
+            "pihole": ("61", "0 2 */10 * *"),
+            "vaultwarden": ("7", "15 2 * * *"),
+        }
+        entries = [
+            line.split("|")
+            for line in (ROOT / "backup-volumes.conf").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        result = self.run_start(
+            "default", MOCK_VOLUMES="\n".join(entry[1] for entry in entries)
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        override = (self.root / "override.yml").read_text()
+        self.assertEqual({entry[0] for entry in entries}, set(expected))
+        for name, _, _, mode, retention, schedule in entries:
+            expected_mode = "sync-crypt" if name in expected_sync else "archive"
+            self.assertEqual(mode, expected_mode, name)
+            self.assertEqual((retention, schedule), expected[name], name)
+            key = name.upper().replace("-", "_")
+            self.assertIn(f"{key}_BACKUP_MODE: {expected_mode}", override)
+            self.assertIn(f'{key}_RETENTION_DAYS: "{retention}"', override)
+            self.assertIn(f'{key}_CRON_SCHEDULE: "{schedule}"', override)
+        for example in (".env.local.example", ".env.prod.example"):
+            text = (ROOT / example).read_text()
+            for suffix in ("_BACKUP_MODE=", "_RETENTION_DAYS=", "_CRON_SCHEDULE="):
+                self.assertNotIn(suffix, text)
+
+    def test_invalid_or_missing_registry_policy_stops_deployment(self):
+        for entry in (
+            "npm|npm_filedata|default,prod||7|0 2 * * *",
+            "npm|npm_filedata|default,prod|sync|7|0 2 * * *",
+            "npm|npm_filedata|default,prod|archive||0 2 * * *",
+            "npm|npm_filedata|default,prod|archive|-1|0 2 * * *",
+            "npm|npm_filedata|default,prod|archive|07|0 2 * * *",
+            "npm|npm_filedata|default,prod|archive|7|0 2 * *",
+            "npm|npm_filedata|default,prod|archive|7|0 2 * * *;echo",
+            "npm|npm_filedata|default,prod|archive|7|0 2 * * *|extra",
+        ):
+            with self.subTest(entry=entry):
+                (self.root / "backup-volumes.conf").write_text(
+                    f"# Security Services\n{entry}\n"
+                )
+                result = self.run_start("prod", MOCK_VOLUMES="npm_filedata")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Invalid entry", result.stderr)
+                self.assertFalse((self.root / "args").exists())
 
     def test_prod_selects_the_same_volumes_as_the_prod_compose(self):
         volumes = (
@@ -112,7 +189,7 @@ else:
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("Usage:", result.stderr)
         (self.root / "backup-volumes.conf").write_text(
-            "# Security Services\nnpm|npm_filedata|prod\n"
+            "# Security Services\nnpm|npm_filedata|prod|archive|7|0 2 * * *\n"
         )
         result = self.run_start("prod", MOCK_VOLUMES="npm_filedata")
         self.assertNotEqual(result.returncode, 0)
@@ -126,13 +203,57 @@ else:
         self.assertEqual(result.returncode, 9)
 
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
+    def test_registered_policies_override_legacy_env_file_values(self):
+        result = self.run_start("local", MOCK_VOLUMES="romm_filedata")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        compose_file = self.root / "docker-compose.yml"
+        compose_file.write_text(
+            compose_file.read_text().replace("- .env", "- .env.prod.example")
+        )
+        (self.root / ".env.prod.example").write_text(
+            "ROMM_BACKUP_MODE=archive\n"
+            "ROMM_RETENTION_DAYS=0\n"
+            "ROMM_CRON_SCHEDULE=0 0 * * *\n"
+        )
+        config = subprocess.run(
+            [
+                shutil.which("docker"),
+                "compose",
+                "--env-file",
+                "/dev/null",
+                "--project-directory",
+                str(self.root),
+                "-f",
+                str(compose_file),
+                "-f",
+                str(self.root / "override.yml"),
+                "config",
+                "--format",
+                "json",
+            ],
+            env={
+                "PATH": os.defpath,
+                "HOME": str(self.root),
+                "ROMM_CRON_SCHEDULE": "0 1 * * *",
+                "ROMM_RETENTION_DAYS": "1",
+            },
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(config.returncode, 0, config.stderr)
+        values = json.loads(config.stdout)["services"]["filedata-backup"]["environment"]
+        self.assertEqual(values["ROMM_BACKUP_MODE"], "sync-crypt")
+        self.assertEqual(values["ROMM_RETENTION_DAYS"], "30")
+        self.assertEqual(values["ROMM_CRON_SCHEDULE"], "0 5 * * *")
+
+    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
     def test_generated_override_is_valid_compose(self):
         result = self.run_start("prod", MOCK_VOLUMES="npm_filedata")
         self.assertEqual(result.returncode, 0, result.stderr)
         env = {
             "PATH": os.defpath,
             "HOME": str(self.root),
-            "NPM_CRON_SCHEDULE": "10 2 */7 * *",
         }
         config = subprocess.run(
             [
@@ -160,8 +281,10 @@ else:
         compose = json.loads(config.stdout)
         service = compose["services"]["filedata-backup"]
         self.assertEqual(
-            service["environment"]["NPM_CRON_SCHEDULE"], env["NPM_CRON_SCHEDULE"]
+            service["environment"]["NPM_CRON_SCHEDULE"], "10 2 */7 * *"
         )
+        self.assertEqual(service["environment"]["NPM_RETENTION_DAYS"], "57")
+        self.assertEqual(service["environment"]["NPM_BACKUP_MODE"], "archive")
         # Compose's canonical output escapes literal dollars for another parse.
         command = service["command"][2].replace("$$", "$")
         self.assertIn("set -- ${NPM_CRON_SCHEDULE}", command)
@@ -178,7 +301,7 @@ else:
         command = command.replace("tail -f /var/log/cron.log", ":")
         run = subprocess.run(
             ["/bin/sh", "-ec", command],
-            env=env,
+            env={**env, **service["environment"]},
             text=True,
             capture_output=True,
             check=False,
@@ -197,23 +320,15 @@ else:
         )
         self.assertNotEqual(run.returncode, 0)
         self.assertIn("must have five cron fields", run.stderr)
-        no_schedule = subprocess.run(
-            config.args,
-            env={"PATH": os.defpath, "HOME": str(self.root)},
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        self.assertNotEqual(no_schedule.returncode, 0)
-        self.assertIn("NPM_CRON_SCHEDULE is required", no_schedule.stderr)
-
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
     def test_all_host_profiles_render_with_their_environment_examples(self):
         entries = []
         for line in (ROOT / "backup-volumes.conf").read_text().splitlines():
             if line and not line.startswith("#"):
-                name, volume, profiles = line.split("|")
-                entries.append((name, volume, profiles.split(",")))
+                name, volume, profiles, mode, retention, schedule = line.split("|")
+                entries.append(
+                    (name, volume, profiles.split(","), mode, retention, schedule)
+                )
 
         for profile in ("default", "local", "prod"):
             with self.subTest(profile=profile):
@@ -229,27 +344,14 @@ else:
                         key, value = line.split("=", 1)
                         environment[key] = value
                 selected = [
-                    (name, volume)
-                    for name, volume, profiles in entries
+                    (name, volume, mode, retention, schedule)
+                    for name, volume, profiles, mode, retention, schedule in entries
                     if profile in profiles
                 ]
-                missing_schedules = [
-                    name.upper().replace("-", "_") + "_CRON_SCHEDULE"
-                    for name, _ in selected
-                    if not environment.get(
-                        name.upper().replace("-", "_") + "_CRON_SCHEDULE"
-                    )
-                ]
-                self.assertEqual(missing_schedules, [])
 
                 result = self.run_start(
                     profile,
-                    MOCK_VOLUMES="\n".join(volume for _, volume in selected),
-                    **{
-                        key: value
-                        for key, value in environment.items()
-                        if key.endswith("_CRON_SCHEDULE")
-                    },
+                    MOCK_VOLUMES="\n".join(entry[1] for entry in selected),
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
 
@@ -286,19 +388,20 @@ else:
                     mounts,
                     {
                         volume: f"/backup-sources/{name}"
-                        for name, volume in selected
+                        for name, volume, _, _, _ in selected
                     },
                 )
                 service = model["services"]["filedata-backup"]
                 self.assertEqual(service["environment"]["TZ"], "UTC")
                 command = "\n".join(service["command"])
-                for name, _ in selected:
+                for name, _, mode, retention, schedule in selected:
                     self.assertIn(f"backup-script.sh {name}", command)
+                    mode_key = name.upper().replace("-", "_") + "_BACKUP_MODE"
+                    self.assertEqual(service["environment"][mode_key], mode)
                     schedule_key = name.upper().replace("-", "_") + "_CRON_SCHEDULE"
-                    self.assertEqual(
-                        service["environment"][schedule_key],
-                        environment[schedule_key],
-                    )
+                    self.assertEqual(service["environment"][schedule_key], schedule)
+                    retention_key = name.upper().replace("-", "_") + "_RETENTION_DAYS"
+                    self.assertEqual(service["environment"][retention_key], retention)
 
 
 if __name__ == "__main__":

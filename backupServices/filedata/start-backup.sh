@@ -16,7 +16,7 @@ if ! volume_list="$(docker volume ls --format '{{.Name}}')"; then
   exit 1
 fi
 
-declare -a names=() volumes=() categories=()
+declare -a names=() volumes=() categories=() modes=() retentions=() schedules=()
 declare -A seen_names=() seen_volumes=() seen_keys=()
 category=""
 missing=0
@@ -27,13 +27,16 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     continue
   fi
   [[ -z "$line" || "$line" == \#* ]] && continue
-  if [[ ! "$line" =~ ^([a-z0-9]+(-[a-z0-9]+)*)\|([a-z0-9_]+)\|([a-z]+(,[a-z]+)*)$ ]]; then
+  if [[ ! "$line" =~ ^([a-z0-9]+(-[a-z0-9]+)*)\|([a-z0-9_]+)\|([a-z]+(,[a-z]+)*)\|(archive|sync-crypt)\|(0|[1-9][0-9]*)\|(([a-zA-Z0-9*/,-]+\ ){4}[a-zA-Z0-9*/,-]+)$ ]]; then
     echo "ERROR: Invalid entry in ${config}: ${line}" >&2
     exit 1
   fi
   name="${BASH_REMATCH[1]}"
   volume="${BASH_REMATCH[3]}"
   profiles="${BASH_REMATCH[4]}"
+  mode="${BASH_REMATCH[6]}"
+  retention="${BASH_REMATCH[7]}"
+  schedule="${BASH_REMATCH[8]}"
   key="${name//-/_}"
   key="${key^^}"
   if [[ -z "$category" || -v "seen_names[$name]" || -v "seen_volumes[$volume]" ||
@@ -69,6 +72,9 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   names+=("$name")
   volumes+=("$volume")
   categories+=("$category")
+  modes+=("$mode")
+  retentions+=("$retention")
+  schedules+=("$schedule")
 done < "$config"
 
 if (( ${#names[@]} == 0 )); then
@@ -79,7 +85,7 @@ fi
 override="$(mktemp "${TMPDIR:-/tmp}/filedata-compose.XXXXXXXX.yml")"
 trap 'rm -f -- "$override"' EXIT
 
-# The override contains no credentials; Compose resolves schedules from its environment.
+# The override contains no credentials.
 {
   printf 'services:\n  filedata-backup:\n    volumes:\n'
   previous=""
@@ -91,10 +97,13 @@ trap 'rm -f -- "$override"' EXIT
     printf '      - %s:/backup-sources/%s:ro\n' "${volumes[$i]}" "${names[$i]}"
   done
   printf '    environment:\n'
-  for name in "${names[@]}"; do
+  for ((i = 0; i < ${#names[@]}; i++)); do
+    name="${names[$i]}"
     key="${name//-/_}"
-    key="${key^^}_CRON_SCHEDULE"
-    printf '      %s: "${%s:?%s is required}"\n' "$key" "$key" "$key"
+    key="${key^^}"
+    printf '      %s_BACKUP_MODE: %s\n' "$key" "${modes[$i]}"
+    printf '      %s_RETENTION_DAYS: "%s"\n' "$key" "${retentions[$i]}"
+    printf '      %s_CRON_SCHEDULE: "%s"\n' "$key" "${schedules[$i]}"
   done
   cat <<'EOF'
     command:
