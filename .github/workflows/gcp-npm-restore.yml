@@ -1,4 +1,4 @@
-name: Restore NPM on GCP VM
+name: "GCP Restore: NPM"
 
 on:
   workflow_call:

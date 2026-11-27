@@ -64,7 +64,7 @@ mark_phase_done
 
 ## Install Dependencies with minimal packages
 mark_phase_start base-packages
-apt-get install -y --no-install-recommends ca-certificates curl gnupg lsb-release btop git unzip openssh-client jq
+apt-get install -y --no-install-recommends ca-certificates curl gnupg lsb-release btop unzip jq
 mark_phase_done
 
 # Docker installation optimized for low resources
@@ -110,149 +110,11 @@ fi
 systemctl restart docker
 mark_phase_done
 
-metadata_get() {
-  local key="$1"
-  curl -fsS -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/instance/attributes/$key" || true
-}
-
-metadata_project_id() {
-  curl -fsS -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/project/project-id"
-}
-
-metadata_token() {
-  curl -fsS -H "Metadata-Flavor: Google" \
-    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" \
-    | sed -n 's/.*"access_token"[ ]*:[ ]*"\([^"]*\)".*/\1/p'
-}
-
-fetch_secret_value() {
-  local secret_name="$1"
-  local project_id
-  local access_token
-  local response
-
-  if [ -z "$secret_name" ]; then
-    log "[fetch_secret_value] Secret name is empty"
-    return 1
-  fi
-
-  project_id="$(metadata_project_id)"
-  access_token="$(metadata_token)"
-
-  if [ -z "$project_id" ]; then
-    log "[fetch_secret_value] Project id metadata is empty"
-    return 1
-  fi
-
-  if [ -z "$access_token" ]; then
-    log "[fetch_secret_value] Access token metadata is empty"
-    return 1
-  fi
-
-  if ! response="$(curl -fsS -H "Authorization: Bearer $access_token" \
-    "https://secretmanager.googleapis.com/v1/projects/$project_id/secrets/$secret_name/versions/latest:access")"; then
-    log "[fetch_secret_value] Failed to fetch secret $secret_name"
-    return 1
-  fi
-
-  echo "$response" | sed -n 's/.*"data"[ ]*:[ ]*"\([^\"]*\)".*/\1/p' \
-    | tr '_-' '/+' \
-    | base64 -d
-}
-
 # Clean up to free memory
 mark_phase_start apt-cleanup
 apt-get autoremove -y
 apt-get autoclean
 mark_phase_done
-
-# Optional authenticated clone with runtime secret retrieval.
-HOMELAB_GIT_URL="${bootstrap_git_repo_ssh_url}"
-if [ -z "$HOMELAB_GIT_URL" ]; then
-  HOMELAB_GIT_URL="$(metadata_get homelab-git-url)"
-fi
-
-HOMELAB_GIT_DEPLOY_KEY_SECRET="${bootstrap_git_deploy_key_secret_name}"
-if [ -z "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
-  HOMELAB_GIT_DEPLOY_KEY_SECRET="$(metadata_get homelab-git-deploy-key-secret)"
-fi
-
-if [ -n "$HOMELAB_GIT_URL" ]; then
-  mark_phase_start git-clone
-  repo_dir="/opt/homelab"
-  key_file="/root/.ssh/homelab_deploy_key"
-
-  if [ -z "$HOMELAB_GIT_DEPLOY_KEY_SECRET" ]; then
-    log "No deploy key secret configured; skipping clone"
-  else
-    git_port=22
-    if [[ "$HOMELAB_GIT_URL" =~ ^ssh://([^/@]+@)?(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9][A-Za-z0-9._-]*)(:([0-9]{1,5}))?/.+ ]]; then
-      git_host="$${BASH_REMATCH[2]}"
-      git_port="$${BASH_REMATCH[4]:-22}"
-      git_host="$${git_host#[}"
-      git_host="$${git_host%]}"
-    elif [[ "$HOMELAB_GIT_URL" != *://* ]] && \
-      [[ "$HOMELAB_GIT_URL" =~ ^([^/@:]+@)?([A-Za-z0-9][A-Za-z0-9._-]*):.+ ]]; then
-      git_host="$${BASH_REMATCH[2]}"
-    else
-      log "Unsupported Git SSH URL: expected an SSH URL or user@host:path"
-      exit 1
-    fi
-    if (( 10#$git_port < 1 || 10#$git_port > 65535 )); then
-      log "Invalid Git SSH port"
-      exit 1
-    fi
-    git_port="$((10#$git_port))"
-    git_host="$${git_host,,}"
-    git_known_host="$git_host"
-    if [ "$git_port" -ne 22 ]; then
-      git_known_host="[$git_host]:$git_port"
-    fi
-
-    if [ -e "$repo_dir" ] && [ ! -d "$repo_dir/.git" ]; then
-      log "Clone destination $repo_dir already exists and is not a repository"
-      exit 1
-    fi
-    if [ -d "$repo_dir/.git" ] && \
-      [ "$(git -C "$repo_dir" remote get-url origin)" != "$HOMELAB_GIT_URL" ]; then
-      log "Repository at $repo_dir has a different origin; refusing to reconfigure it"
-      exit 1
-    fi
-
-    mkdir -p -m 700 /root/.ssh
-    chmod 700 /root/.ssh
-    key_tmp="$(mktemp /root/.ssh/homelab_deploy_key.XXXXXXXX)"
-    if ! fetch_secret_value "$HOMELAB_GIT_DEPLOY_KEY_SECRET" > "$key_tmp" || \
-      [ ! -s "$key_tmp" ]; then
-      rm -f "$key_tmp"
-      log "Unable to retrieve deploy key secret"
-      exit 1
-    fi
-    chmod 600 "$key_tmp"
-    mv -f "$key_tmp" "$key_file"
-    touch /root/.ssh/known_hosts
-    if ! ssh-keygen -F "$git_known_host" -f /root/.ssh/known_hosts >/dev/null; then
-      if ! host_keys="$(ssh-keyscan -p "$git_port" -H "$git_host" 2>/dev/null)" || \
-        [ -z "$host_keys" ]; then
-        log "Unable to scan SSH host key for $git_known_host"
-        exit 1
-      fi
-      printf '%s\n' "$host_keys" >> /root/.ssh/known_hosts
-    fi
-
-    git_ssh_command="ssh -i $key_file -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/root/.ssh/known_hosts"
-    if [ -d "$repo_dir/.git" ]; then
-      log "Repository already exists at $repo_dir; skipping clone"
-    else
-      GIT_SSH_COMMAND="$git_ssh_command" git clone --depth 1 "$HOMELAB_GIT_URL" "$repo_dir"
-      log "Git clone completed successfully"
-    fi
-    git -C "$repo_dir" config core.sshCommand "$git_ssh_command"
-  fi
-  mark_phase_done
-fi
 
 write_status "completed phase=bootstrap"
 

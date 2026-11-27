@@ -41,7 +41,9 @@ and validates its GPG, zstd, and PostgreSQL dump markers before stopping anythin
 It stages the decrypted SQL in a private temporary directory and removes it on exit. It
 stops `db-backup` if running, stops the Firefly Compose project, checks for
 other running users of the volume, clears the volume in place, imports the dump,
-and waits for the application health check. It uses the database container's
+and waits up to 600 seconds for the stack's health checks. The application
+health check has a 240-second startup grace period. A health check failure
+after startup still fails the restore. It uses the database container's
 configured PostgreSQL user and database name. PostgreSQL readiness is checked
 over TCP so the temporary initialization server is not mistaken for the final
 server.
@@ -136,7 +138,7 @@ docker exec -i firefly-db sh -c \
   'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$WORKDIR/backup.sql"
 docker exec firefly-db sh -c \
   'exec psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT 1 FROM public.transactions LIMIT 0"'
-docker compose up -d --wait --wait-timeout 300
+docker compose up -d --wait --wait-timeout 600
 docker start db-backup
 )
 ```

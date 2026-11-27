@@ -44,15 +44,3 @@ variable "vm_service_account_email" {
   type        = string
   default     = ""
 }
-
-variable "bootstrap_git_repo_ssh_url" {
-  description = "Optional SSH URL for startup clone (example: git@github.com:owner/repo.git)."
-  type        = string
-  default     = ""
-}
-
-variable "bootstrap_git_deploy_key_secret_name" {
-  description = "Optional Secret Manager secret name containing startup deploy key private key."
-  type        = string
-  default     = ""
-}

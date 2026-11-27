@@ -608,3 +608,22 @@ entries before starting the container.
 - **WHEN** a host profile starts with a configured destination in its selected path file
 - **THEN** the container SHALL receive the selected path-file value
 - **AND** the credentials SHALL remain supplied by the credentials file
+
+### REQ-039: GCP filedata scheduler reports missing sources
+The GCP filedata backup restore workflow SHALL report missing production source
+volumes and start the scheduler with available volumes. It SHALL send a Discord
+alert when a webhook is configured and SHALL report an alert delivery failure
+without preventing available volumes from being scheduled. It SHALL fail without
+replacing the existing container when no production source volumes are available.
+
+#### Scenario: Some production source volumes are missing
+- **GIVEN** at least one production source volume exists and another is missing
+- **WHEN** the filedata backup restore workflow starts the scheduler
+- **THEN** available volumes SHALL be mounted and scheduled
+- **AND** missing volumes SHALL be reported in the workflow logs
+- **AND** a configured Discord webhook SHALL receive their names
+
+#### Scenario: No production source volumes are available
+- **GIVEN** no production source volumes exist
+- **WHEN** the filedata backup restore workflow checks source volumes
+- **THEN** it SHALL fail without replacing an existing backup container

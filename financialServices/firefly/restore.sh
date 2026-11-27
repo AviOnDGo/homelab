@@ -250,7 +250,7 @@ fi
 # 9. Start Firefly and verify health
 # --------------------------------------------------------------------------- #
 info "Starting Firefly and waiting for health checks..."
-if ! docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 300; then
+if ! docker compose -f "$COMPOSE_FILE" up -d --wait --wait-timeout 600; then
   error "Firefly did not become healthy; inspect docker compose logs."
   exit 1
 fi

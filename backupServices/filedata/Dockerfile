@@ -2,5 +2,6 @@ FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0
 
 RUN apk add --no-cache rclone curl bash findutils gnupg tar zstd
 
-COPY --chmod=755 filedata-backup-script.sh /usr/local/bin/backup-script.sh
-COPY --chmod=755 configure-rclone.sh /usr/local/bin/configure-rclone.sh
+COPY filedata-backup-script.sh /usr/local/bin/backup-script.sh
+COPY configure-rclone.sh /usr/local/bin/configure-rclone.sh
+RUN chmod 755 /usr/local/bin/backup-script.sh /usr/local/bin/configure-rclone.sh

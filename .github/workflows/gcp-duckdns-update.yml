@@ -1,4 +1,4 @@
-name: Configure Tailscale and DuckDNS for GCP VM
+name: "GCP Configure: Tailscale and DuckDNS"
 
 on:
   workflow_call:

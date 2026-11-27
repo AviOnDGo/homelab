@@ -55,6 +55,34 @@ class RestoreServiceTests(unittest.TestCase):
             check=False,
         )
 
+    def pihole_dns_stubs(self) -> dict[str, str]:
+        etc = self.work / "etc"
+        etc.mkdir()
+        resolver = etc / "resolv.conf"
+        runtime = self.work / "runtime-resolv.conf"
+        runtime.write_text("nameserver 169.254.169.254\nsearch example.internal\n")
+        resolver.symlink_to(runtime)
+        state = self.work / "resolver-state"
+        state.write_text("enabled active\n")
+        self.env.update(
+            TEST_RESOLVER=str(resolver),
+            TEST_RUNTIME_RESOLVER=str(runtime),
+            TEST_RESOLVER_STATE=str(state),
+        )
+        return {
+            "gcloud": """
+for arg in "$@"; do command="$arg"; done
+command="${command//\\/etc\\/resolv.conf/$TEST_RESOLVER}"
+unset WEB_PASSWORD PIHOLE_WEB_PASSWORD
+exec bash -c "$command"
+""",
+            "systemctl": """
+[[ "$*" == "disable --now systemd-resolved" ]]
+[[ "${FAIL_DISABLE:-0}" != 1 ]] || exit 1
+echo "disabled inactive" > "$TEST_RESOLVER_STATE"
+""",
+        }
+
     def test_allowed_restores_transport_secrets_and_service_files(self) -> None:
         for (service, directory), (force, mode) in itertools.product(
             (
@@ -249,13 +277,12 @@ esac""",
                 self.assertEqual(list(self.work.glob("vaultwarden-restore.*")), [])
 
     def test_deployment_runs_vaultwarden_after_npm(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+        workflow = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
             encoding="utf-8"
         )
         job = workflow.split("\n  restore-vaultwarden:\n", 1)[1].split(
-            "\n  restore-watchtower:", 1
+            "\n  restore-firefly:", 1
         )[0]
-        self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertIn("    uses: ./.github/workflows/gcp-vaultwarden-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
 
@@ -362,11 +389,7 @@ esac""",
             TMPDIR=str(self.work),
         )
         for name, body in {
-            "gcloud": """
-for arg in "$@"; do command="$arg"; done
-unset WEB_PASSWORD PIHOLE_WEB_PASSWORD
-exec bash -c "$command"
-""",
+            **self.pihole_dns_stubs(),
             "sudo": 'exec "$@"',
             "docker": """
 echo "${COMPOSE_PROJECT_NAME:-} $*" >> "$ARGUMENTS"
@@ -450,6 +473,32 @@ esac""",
             "pihole_filedata:/restore", self.arguments.read_text(encoding="utf-8")
         )
         self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+    def test_pihole_copies_resolver_and_disables_service(self) -> None:
+        self.env.update(SERVICE="pihole", PIHOLE_WEB_PASSWORD="test-password")
+        for name, body in {
+            **self.pihole_dns_stubs(),
+            "sudo": 'exec "$@"',
+            "docker": 'case "$*" in "info"|"volume inspect pihole_filedata") exit 0 ;; *) exit 1 ;; esac',
+            "rclone": "exit 0",
+            "zstd": "exit 0",
+            "jq": 'echo "{}"',
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        resolver = Path(self.env["TEST_RESOLVER"])
+        runtime = Path(self.env["TEST_RUNTIME_RESOLVER"])
+        state = Path(self.env["TEST_RESOLVER_STATE"])
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(resolver.is_symlink())
+        self.assertEqual(resolver.read_text(), runtime.read_text())
+        self.assertEqual(state.read_text().strip(), "disabled inactive")
+        self.assertEqual(self.invoke().returncode, 0)
+        self.env["FAIL_DISABLE"] = "1"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
 
     def test_pihole_compose_receives_password_from_environment(self) -> None:
         docker = shutil.which("docker")
@@ -603,13 +652,10 @@ esac""",
             self.assertIn(f'          : "${{{name}:?', workflow)
 
     def test_deployment_runs_pihole_after_npm(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+        workflow = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
             encoding="utf-8"
         )
-        job = workflow.split("\n  restore-pihole:\n", 1)[1].split(
-            "\n  restore-watchtower:", 1
-        )[0]
-        self.assertIn("    needs: [apply, restore-npm]\n", job)
+        job = workflow.split("\n  restore-pihole:\n", 1)[1]
         self.assertNotIn("\n    if:", job)
         self.assertIn("    uses: ./.github/workflows/gcp-pihole-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
@@ -620,13 +666,12 @@ esac""",
             self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
 
     def test_deployment_runs_firefly_after_npm(self) -> None:
-        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+        workflow = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
             encoding="utf-8"
         )
         job = workflow.split("\n  restore-firefly:\n", 1)[1].split(
-            "\n  restore-watchtower:", 1
+            "\n  restore-pihole:", 1
         )[0]
-        self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertIn("    uses: ./.github/workflows/gcp-firefly-restore.yml\n", job)
         self.assertIn("      force: true\n", job)
         for name in (
@@ -640,12 +685,27 @@ esac""",
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
             encoding="utf-8"
         )
-        job = workflow.split("\n  restore-freshrss:\n", 1)[1].split(
-            "\n  teardown:", 1
+        job = workflow.split("\n  restore-services:\n", 1)[1].split(
+            "\n  restore-watchtower:", 1
         )[0]
         self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertNotIn("\n    if:", job)
-        self.assertIn("    uses: ./.github/workflows/gcp-freshrss-restore.yml\n", job)
+        self.assertIn("    uses: ./.github/workflows/gcp-service-restores.yml\n", job)
+        group = (ROOT / ".github" / "workflows" / "gcp-service-restores.yml").read_text(
+            encoding="utf-8"
+        )
+        freshrss = group.split("\n  restore-freshrss:\n", 1)[1].split(
+            "\n  restore-vaultwarden:", 1
+        )[0]
+        self.assertIn("    uses: ./.github/workflows/gcp-freshrss-restore.yml\n", freshrss)
+        self.assertIn("      force: true\n", freshrss)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "FIREFLY_APP_KEY", "FIREFLY_DB_USERNAME", "FIREFLY_DB_PASSWORD",
+            "FIREFLY_STATIC_CRON_TOKEN", "PIHOLE_WEB_PASSWORD",
+        ):
+            self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
+            self.assertIn(f"      {name}:\n", group)
 
     def test_remote_command_runs_npm_skip_path(self) -> None:
         for name, body in {
@@ -925,7 +985,7 @@ esac
             encoding="utf-8"
         )
         job = workflow.split("\n  restore-watchtower:\n", 1)[1].split(
-            "\n  teardown:", 1
+            "\n  restore-filedata-backup:", 1
         )[0]
         self.assertIn("    needs: [apply, restore-npm]\n", job)
         self.assertNotIn("\n    if:", job)

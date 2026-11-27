@@ -1,4 +1,4 @@
-name: Restore FreshRSS on GCP VM
+name: "GCP Restore: FreshRSS"
 
 on:
   workflow_call:

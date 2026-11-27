@@ -119,6 +119,12 @@ fi
     workdir=$(mktemp -d /tmp/service-restore-workflow.XXXXXXXX)
     trap "rm -rf -- \"\$workdir\"" EXIT
     tar -xf - -C "$workdir"
+    if [[ "$2" == pihole ]]; then
+      cp -L /etc/resolv.conf "$workdir/resolv.conf"
+      chmod 644 "$workdir/resolv.conf"
+      mv -fT "$workdir/resolv.conf" /etc/resolv.conf
+      systemctl disable --now systemd-resolved
+    fi
     if ! command -v rclone >/dev/null || ! command -v zstd >/dev/null; then
       apt-get update
       apt-get install -y --no-install-recommends rclone zstd

@@ -187,22 +187,14 @@ The deployment workflow SHALL wait for bootstrap completion by polling host read
 - **THEN** the workflow SHALL fail with timeout context
 - **AND** diagnostics SHALL include current status and recent bootstrap logs
 
-### REQ-011: Runtime repository bootstrap auth SHALL remain least-privilege
-Any optional repository clone performed during VM bootstrap SHALL use a runtime-retrieved least-privilege deploy key. The key SHALL remain accessible only to root for subsequent Git operations and SHALL NOT be embedded in Terraform state or VM metadata.
+### REQ-011: VM bootstrap SHALL NOT clone the repository
+VM bootstrap SHALL NOT clone the homelab repository or retrieve or store a repository deploy key.
 
-#### Scenario: Runtime credential retention for later pulls
-- **GIVEN** bootstrap performs an authenticated clone for a private repository
-- **WHEN** clone authentication completes
-- **THEN** credentials SHALL be retrieved at runtime from approved secret sources
-- **AND** the deploy key SHALL be stored in a root-only file for subsequent Git operations
-- **AND** the repository SHALL use that key for later pulls
-- **AND** temporary credential files SHALL be removed
-
-#### Scenario: Existing clone is configured on subsequent boots
-- **GIVEN** the configured repository already exists at the persistent clone location
-- **WHEN** bootstrap runs again
-- **THEN** it SHALL preserve the existing checkout
-- **AND** it SHALL refresh the deploy key and configure the repository to use it
+#### Scenario: Bootstrap runs without repository credentials
+- **GIVEN** the VM startup script is running
+- **WHEN** bootstrap completes
+- **THEN** it SHALL NOT access the repository or retrieve a deploy key
+- **AND** it SHALL NOT store a repository checkout or deploy key on the VM
 
 ### REQ-013: Cloud recovery workflow SHALL use existing keyless GCP trust boundaries
 FreshRSS recovery workflow execution SHALL authenticate to GCP using repository-approved keyless OIDC federation and SHALL run under protected environment controls.
@@ -335,3 +327,9 @@ filedata restore workflow using the existing GCP restore transport.
 - **WHEN** it invokes the restore script on the VM
 - **THEN** it SHALL transmit those values through SSH standard input without printing them or placing them in command arguments
 - **AND** the Pi-hole password SHALL be supplied to Compose through the process environment
+
+#### Scenario: Pi-hole recovery prepares host DNS
+- **GIVEN** the GCP VM has a readable resolver configuration
+- **WHEN** the Pi-hole workflow prepares the host for restoration
+- **THEN** it SHALL replace `/etc/resolv.conf` with a copy of its current contents
+- **AND** it SHALL stop and disable systemd-resolved before restoring Pi-hole

@@ -179,7 +179,7 @@ Navigation: GitHub -> repository -> Settings -> Environments -> New environment
 
 ## 10. Validate with Safe First Run
 
-Navigation: GitHub -> repository -> Actions -> Deploy GCP VM Terraform
+Navigation: GitHub -> repository -> Actions -> Deploy: GCP VM
 
 1. Run workflow.
 2. First run:

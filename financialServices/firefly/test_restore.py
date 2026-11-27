@@ -154,6 +154,7 @@ esac
         self.assertLess(calls.index("gpg "), calls.index("docker stop db-backup"))
         self.assertLess(calls.index("docker stop db-backup"), calls.index("docker run"))
         self.assertIn("ON_ERROR_STOP=1", calls)
+        self.assertIn("up -d --wait --wait-timeout 600", calls)
         self.assertIn("docker start db-backup", calls)
         self.assertNotIn("test-passphrase", calls + result.stdout + result.stderr)
         self.assertFalse(list(self.root.glob("firefly-restore.*")))

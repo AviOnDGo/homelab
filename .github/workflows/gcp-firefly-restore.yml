@@ -1,4 +1,4 @@
-name: Restore Firefly on GCP VM
+name: "GCP Restore: Firefly"
 
 on:
   workflow_call:

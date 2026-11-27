@@ -55,7 +55,10 @@ Execution behavior:
   its latest backup, including after a no-op apply. It is skipped if NPM fails
   or is skipped. Manual runs skip an existing volume unless `force` is enabled.
   Configure `PIHOLE_WEB_PASSWORD` and allow its workflow ref in the WIF condition
-  below before running it. See the [Pi-hole restore guide](../securityServices/pihole/RESTORE_GUIDE.md).
+  below before running it. Before restoring, the workflow copies the current
+  host resolver configuration and stops and disables `systemd-resolved`.
+  See the [Pi-hole restore guide](../securityServices/pihole/RESTORE_GUIDE.md)
+  for prerequisites and recovery guidance.
 - After successful apply and NPM restore, Watchtower is redeployed and verified
   along with FreshRSS and Vaultwarden, including after a no-op apply. No backup
   or volume restore is involved. It can also be dispatched manually; its separate `prod`
@@ -63,14 +66,25 @@ Execution behavior:
   before running it. Manual restores also require the external
   `security_network` to exist on the VM. See the
   [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
-- After all four filedata source restores (NPM, FreshRSS, Vaultwarden, and
-  Pi-hole) succeed, the filedata backup scheduler is rebuilt and started with
-  the `prod` profile. A manual run is also available. Every production source
-  volume must already exist; a missing volume fails the job rather than
-  silently omitting its backups. The scheduler uses the production Dropbox
-  destinations in `backupServices/filedata/path.prod` and registry schedules,
-  including remote retention cleanup.
-  Review source data before a manual run. It does not restore application data.
+- After apply and NPM restore succeed, the
+  [service restore group](../.github/workflows/gcp-service-restores.yml) runs
+  FreshRSS, Vaultwarden, Firefly, and Pi-hole. Add future service restore jobs
+  to this group so the filedata backup scheduler waits for them too.
+- After every grouped restore finishes, whether successful or failed, the
+  filedata backup scheduler is rebuilt and started with the `prod` profile.
+  It does not start if apply or NPM restore fails, or if the group or workflow
+  is canceled. A failed restore can leave an existing volume incomplete; the
+  scheduler can back up that incomplete data and apply remote retention cleanup.
+  Check failed restores and recover affected data promptly. A manual run is
+  also available. Missing production
+  volumes are omitted with a workflow warning and a Discord alert when the
+  webhook is configured; at least one source volume must exist. Restore missing
+  volumes and rerun the workflow to add their mounts and schedules.
+  The scheduler uses the production Dropbox destinations in
+  `backupServices/filedata/path.prod` and registry schedules, including remote
+  retention cleanup. Review source data before a manual run, especially after
+  a failed service restore: an existing volume can contain incomplete data.
+  This workflow does not restore application data.
 
 The seven GCP restore jobs share a GitHub Actions concurrency group, including
 manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
@@ -194,29 +208,14 @@ Optional variables:
 	- Tailnet name used when minting short-lived keys from OAuth credentials.
 - DUCKDNS_DOMAIN
 	- DuckDNS subdomain label without `.duckdns.org`, used by the DNS update workflow.
-- BOOTSTRAP_GIT_REPO_SSH_URL
-	- Optional SSH Git URL exported as `TF_VAR_bootstrap_git_repo_ssh_url`.
-- BOOTSTRAP_GIT_DEPLOY_KEY_SECRET_NAME
-	- Optional secret name exported as `TF_VAR_bootstrap_git_deploy_key_secret_name`.
 
-When both bootstrap Git variables are set, the VM retrieves the private deploy
-key from Secret Manager and clones the SSH repository into `/opt/homelab`.
-The VM service account needs access to the secret, and its corresponding public
-key must be registered with GitHub (read-only access is sufficient for pulls).
-Bootstrap stores the private key in `/root/.ssh/homelab_deploy_key` with mode
-`600` and configures the repository to use it. Root access to the VM grants
-access to this key. Each boot refreshes it from the latest secret version.
-Bootstrap supports `user@host:path` and `ssh://user@host[:port]/path` SSH
-URLs and scans the configured endpoint if its host key is not already known.
-An automatic key scan does not authenticate the server; pre-provision a verified
-host key in root's `known_hosts` when host identity must be verified on first use.
-
-To update the checkout, run `sudo git -C /opt/homelab pull`. Changing the
-startup script in Terraform requires an apply and a subsequent startup; review
-the plan for VM replacement before applying. Existing clones under `/tmp` are
-not moved or deleted. Copy any needed local changes separately before using
-the new checkout. Bootstrap refuses to modify an existing `/opt/homelab` that
-is not a repository or has a different origin.
+VM bootstrap does not clone the repository or retrieve a Git deploy key.
+Service restore workflows transfer only the required service files to a
+temporary directory on the VM. Existing `/opt/homelab` checkouts and deploy
+keys from earlier bootstraps are not automatically removed; remove them
+manually after confirming they are no longer needed. Changing the startup
+script in Terraform requires an apply and a subsequent startup; review the
+plan for VM replacement before applying.
 
 The Watchtower restore additionally requires `WATCHTOWER_SCHEDULE` as a
 repository or `prod` environment variable (for example `0 0 3 * * *`).
@@ -298,8 +297,11 @@ in the remote process environment. Supply it again for later manual Compose
 operations; Docker container configuration contains the password.
 
 The filedata backup workflow uses `DROPBOX_AUTH_TOKEN`, `DROPBOX_REFRESH_TOKEN`,
-and `GPG_PASSPHRASE`, plus optional `DISCORD_WEBHOOK_URL` for failure
-notifications. Values must be single-line.
+and `GPG_PASSPHRASE`, plus optional `DISCORD_WEBHOOK_URL` for backup failure
+and missing-volume notifications. Values must be single-line. If the webhook
+is absent, missing volumes are reported in the workflow logs only. If sending
+the alert fails, the scheduler still starts for available volumes, but the
+workflow fails so the notification problem is visible.
 Dropbox tokens cannot contain double quotes or backslashes because the
 container's rclone configuration embeds them in JSON. The workflow currently
 supports archive-mode production entries with a configured Dropbox path only.
@@ -498,7 +500,7 @@ terraform plan \
 - Run workflow_dispatch `action=plan` from branch and confirm completion through auth/validate/init/plan.
 - Run workflow_dispatch `action=apply` and verify post-provision checks:
 	- Docker service active on VM
-	- Optional startup clone completed or skipped with explicit non-secret log reason
+	- Bootstrap completed without cloning the repository or retrieving a deploy key
 - Verify the separate Tailscale and DuckDNS workflow succeeds and Tailscale
   backend state is `Running`.
 
@@ -535,9 +537,6 @@ If post-provision onboarding fails after Terraform apply:
 	- Verify `TAILSCALE_OAUTH_CLIENT_ID`, `TAILSCALE_OAUTH_CLIENT_SECRET`, and `TAILSCALE_TAILNET` values.
 	- If OAuth cannot mint key, configure `TAILSCALE_EPHEMERAL_AUTH_KEY` fallback and retry.
 	- If the backend state is `NeedsMachineAuth`, approve the VM in the Tailscale admin console and rerun the workflow.
-- Startup clone skips or fails
-	- Ensure VM service account can access Secret Manager secret version.
-	- Confirm deploy key secret name and SSH repo URL are configured and valid.
 - Terraform plan shows a billing budget update even though the target project did not change
 	- Check whether the budget filter is using `projects/<project_id>` instead of `projects/<project_number>`.
 	- Use the canonical project number form expected by the Google provider to eliminate repeated normalization drift.
