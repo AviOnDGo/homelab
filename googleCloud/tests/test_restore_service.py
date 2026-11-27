@@ -4,6 +4,7 @@ import itertools
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tarfile
 import tempfile
@@ -259,7 +260,7 @@ esac""",
         self.assertIn("      force: true\n", job)
 
     def test_restore_jobs_share_a_queued_concurrency_group(self) -> None:
-        for service in ("npm", "freshrss", "vaultwarden", "firefly", "watchtower"):
+        for service in ("npm", "freshrss", "vaultwarden", "firefly", "pihole", "watchtower"):
             with self.subTest(service=service):
                 workflow = (
                     ROOT / ".github" / "workflows" / f"gcp-{service}-restore.yml"
@@ -314,6 +315,177 @@ esac""",
                     archive.extractfile(name).read(),
                     (ROOT / "financialServices" / "firefly" / name).read_bytes(),
                 )
+
+    def test_pihole_password_is_required_and_transported_over_stdin(self) -> None:
+        self.env["SERVICE"] = "pihole"
+        self.env.pop("PIHOLE_WEB_PASSWORD", None)
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PIHOLE_WEB_PASSWORD", result.stderr)
+        self.assertFalse(self.arguments.exists())
+
+        self.env["PIHOLE_WEB_PASSWORD"] = "pihole-$password-'fixture\n"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        arguments = self.arguments.read_text(encoding="utf-8")
+        self.assertIn(" _ --if-missing pihole", arguments)
+        self.assertNotIn(
+            self.env["PIHOLE_WEB_PASSWORD"].rstrip("\n"),
+            arguments + result.stdout + result.stderr,
+        )
+        lines = self.stream.read_bytes().split(b"\n", 4)
+        self.assertEqual(
+            base64.b64decode(lines[3]).decode(), self.env["PIHOLE_WEB_PASSWORD"]
+        )
+        with tarfile.open(fileobj=io.BytesIO(lines[4])) as archive:
+            self.assertEqual(set(archive.getnames()), {"restore.sh", "docker-compose.yml"})
+            for name in archive.getnames():
+                self.assertEqual(
+                    archive.extractfile(name).read(),
+                    (ROOT / "securityServices" / "pihole" / name).read_bytes(),
+                )
+
+    def test_pihole_remote_restore_modes_and_cleanup(self) -> None:
+        archive_path = self.work / "backup.tar"
+        with tarfile.open(archive_path, "w") as archive:
+            for name in ("gravity.db", "pihole-FTL.db"):
+                database = self.work / name
+                with sqlite3.connect(database) as db:
+                    db.execute("CREATE TABLE example (value TEXT)")
+                archive.add(database, arcname=name)
+        password = "pihole-$password-'fixture\n"
+        self.env.update(
+            SERVICE="pihole",
+            PIHOLE_WEB_PASSWORD=password,
+            EXPECTED_PIHOLE_PASSWORD=password,
+            ARCHIVE=str(archive_path),
+            TMPDIR=str(self.work),
+        )
+        for name, body in {
+            "gcloud": """
+for arg in "$@"; do command="$arg"; done
+unset WEB_PASSWORD PIHOLE_WEB_PASSWORD
+exec bash -c "$command"
+""",
+            "sudo": 'exec "$@"',
+            "docker": """
+echo "${COMPOSE_PROJECT_NAME:-} $*" >> "$ARGUMENTS"
+case "$1" in
+  info) ;;
+  exec)
+    if [[ "$3" == pihole-FTL ]]; then echo ok; fi ;;
+  compose)
+    [[ "$WEB_PASSWORD" == "$EXPECTED_PIHOLE_PASSWORD" ]]
+    [[ "$2" == -f ]]
+    [[ "${FAIL_COMPOSE:-}" != 1 ]]
+    if [[ "$*" == *"config --images pihole"* ]]; then echo pihole/pihole:latest; fi ;;
+  volume)
+    if [[ "$2" == inspect ]]; then [[ "$FORCE" == false ]]; fi ;;
+  ps) ;;
+  inspect) echo false ;;
+  run)
+    if [[ "$*" == *" --entrypoint pihole-FTL "* ]]; then
+      for arg in "$@"; do
+        case "$arg" in
+          *:/check) staged="${arg%:/check}" ;;
+          /check/*.db) database="${arg##*/}" ;;
+        esac
+      done
+      python3 -c 'import sqlite3, sys; db = sqlite3.connect(sys.argv[1]); print("\\n".join(row[0] for row in db.execute("PRAGMA integrity_check"))) ' "$staged/$database"
+    elif [[ "$*" == *" -i "* ]]; then
+      cat >/dev/null
+    fi ;;
+  *) echo "Unexpected docker command: $*" >&2; exit 1 ;;
+esac
+""",
+            "rclone": """
+case "$1" in
+  lsd) ;;
+  lsf) echo pihole_2025-01-01_00-00-00.tar.zst.gpg ;;
+  copy) printf encrypted > "$3/${2##*/}" ;;
+  *) exit 1 ;;
+esac""",
+            "zstd": "cat",
+            "gpg": 'cat "$ARCHIVE"',
+            "jq": 'echo "{}"',
+            "sleep": "exit 0",
+        }.items():
+            path = self.work / name
+            path.write_text(f"#!/bin/bash\nset -eu\n{body}\n", encoding="utf-8")
+            path.chmod(0o755)
+        for force, fail in (("false", "0"), ("true", "0"), ("true", "1")):
+            with self.subTest(force=force, fail=fail):
+                self.arguments.unlink(missing_ok=True)
+                self.env.update(FORCE=force, FAIL_COMPOSE=fail)
+                result = self.invoke()
+                calls = self.arguments.read_text(encoding="utf-8")
+                self.assertEqual(result.returncode == 0, fail == "0", result.stderr)
+                self.assertNotIn(password.rstrip("\n"), calls + result.stdout + result.stderr)
+                if force == "false":
+                    self.assertIn("skipping automatic restore", result.stdout)
+                    self.assertNotIn(" compose ", calls)
+                else:
+                    self.assertIn("pihole compose -f", calls)
+                    compose_path = next(
+                        line.split(" -f ", 1)[1].split(" ", 1)[0]
+                        for line in calls.splitlines() if " compose " in line
+                    )
+                    self.assertFalse(Path(compose_path).parent.exists())
+                    self.assertEqual(" up -d" in calls, fail == "0")
+                self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+        database = self.work / "gravity.db"
+        data = bytearray(database.read_bytes())
+        data[100] = 0
+        database.write_bytes(data)
+        with tarfile.open(archive_path, "w") as archive:
+            for name in ("gravity.db", "pihole-FTL.db"):
+                archive.add(self.work / name, arcname=name)
+        self.arguments.unlink(missing_ok=True)
+        self.env.update(FORCE="true", FAIL_COMPOSE="0")
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Invalid backup database gravity.db", result.stderr)
+        self.assertNotIn(
+            "pihole_filedata:/restore", self.arguments.read_text(encoding="utf-8")
+        )
+        self.assertFalse(list(self.work.glob("pihole-restore.*")))
+
+    def test_pihole_compose_receives_password_from_environment(self) -> None:
+        docker = shutil.which("docker")
+        if docker is None:
+            self.skipTest("Docker Compose is not available")
+        version = subprocess.run(
+            [docker, "compose", "version"], capture_output=True, check=False
+        )
+        if version.returncode:
+            self.skipTest("Docker Compose is not available")
+        compose_file = self.work / "docker-compose.yml"
+        shutil.copyfile(ROOT / "securityServices" / "pihole" / "docker-compose.yml", compose_file)
+        env = os.environ.copy()
+        env["WEB_PASSWORD"] = "pihole-$password-'fixture\n"
+        result = subprocess.run(
+            [
+                docker,
+                "compose",
+                "-f",
+                str(compose_file),
+                "config",
+                "--format",
+                "json",
+            ],
+            cwd=self.work,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = json.loads(result.stdout)["services"]["pihole"]["environment"]
+        # Compose escapes dollar signs when rendering its reusable configuration.
+        rendered_password = environment["FTLCONF_webserver_api_password"]
+        self.assertEqual(rendered_password.replace("$$", "$"), env["WEB_PASSWORD"])
 
     def test_firefly_remote_restore_modes_and_failure(self) -> None:
         self.env.update(
@@ -408,6 +580,44 @@ esac""",
             self.assertIn(f"      {name}:\n", workflow)
             self.assertIn(f"          {name}: ${{{{ secrets.{name} }}}}\n", workflow)
             self.assertIn(f'          : "${{{name}:?', workflow)
+
+    def test_pihole_workflow_wires_restore_credentials(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-pihole-restore.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("  workflow_call:\n", workflow)
+        self.assertIn("  workflow_dispatch:\n", workflow)
+        self.assertEqual(workflow.count("        default: false\n"), 2)
+        self.assertIn("    environment: prod\n", workflow)
+        self.assertIn("          SERVICE: pihole\n", workflow)
+        self.assertIn("          FORCE: ${{ inputs.force || false }}\n", workflow)
+        self.assertIn("        run: ./googleCloud/restore-service.sh\n", workflow)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "PIHOLE_WEB_PASSWORD",
+        ):
+            self.assertIn(f"      {name}:\n", workflow)
+            self.assertEqual(
+                workflow.count(f"          {name}: ${{{{ secrets.{name} }}}}\n"), 2
+            )
+            self.assertIn(f'          : "${{{name}:?', workflow)
+
+    def test_deployment_runs_pihole_after_npm(self) -> None:
+        workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(
+            encoding="utf-8"
+        )
+        job = workflow.split("\n  restore-pihole:\n", 1)[1].split(
+            "\n  restore-watchtower:", 1
+        )[0]
+        self.assertIn("    needs: [apply, restore-npm]\n", job)
+        self.assertNotIn("\n    if:", job)
+        self.assertIn("    uses: ./.github/workflows/gcp-pihole-restore.yml\n", job)
+        self.assertIn("      force: true\n", job)
+        for name in (
+            "DROPBOX_AUTH_TOKEN", "DROPBOX_REFRESH_TOKEN", "GPG_PASSPHRASE",
+            "PIHOLE_WEB_PASSWORD",
+        ):
+            self.assertIn(f"      {name}: ${{{{ secrets.{name} }}}}\n", job)
 
     def test_deployment_runs_firefly_after_npm(self) -> None:
         workflow = (ROOT / ".github" / "workflows" / "gcp-vm-deploy.yml").read_text(

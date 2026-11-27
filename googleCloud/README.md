@@ -24,7 +24,7 @@ Execution behavior:
 	- Exception: for temporary testing only, workflow_dispatch can set `enforce_main_guard=false`.
 - VM replacement plans are blocked by default. A reviewed manual run can set
   `allow_vm_replacement=true` after data backup and recovery preparation.
-- Before every apply, schedule NPM, FreshRSS, Vaultwarden, and Firefly downtime, back up
+- Before every apply, schedule NPM, FreshRSS, Vaultwarden, Firefly, and Pi-hole downtime, back up
   their current data, and verify that their latest Dropbox backups are current
   and usable.
 - After successful apply, the reusable NPM restore workflow runs in `prod` and
@@ -51,6 +51,11 @@ Execution behavior:
   fails or is skipped. Manual runs skip an existing database volume unless
   `force` is enabled. Configure the Firefly secrets and allow its workflow ref
   in the WIF condition below. See the [Firefly restore guide](../financialServices/firefly/RESTORE_GUIDE.md).
+- After successful apply and NPM restore, Pi-hole is forcibly restored from
+  its latest backup, including after a no-op apply. It is skipped if NPM fails
+  or is skipped. Manual runs skip an existing volume unless `force` is enabled.
+  Configure `PIHOLE_WEB_PASSWORD` and allow its workflow ref in the WIF condition
+  below before running it. See the [Pi-hole restore guide](../securityServices/pihole/RESTORE_GUIDE.md).
 - After successful apply and NPM restore, Watchtower is redeployed and verified
   along with FreshRSS and Vaultwarden, including after a no-op apply. No backup
   or volume restore is involved. It can also be dispatched manually; its separate `prod`
@@ -59,7 +64,7 @@ Execution behavior:
   `security_network` to exist on the VM. See the
   [Watchtower restore guide](../securityServices/watchtower/RESTORE_GUIDE.md).
 
-The five GCP restore jobs share a GitHub Actions concurrency group, including
+The six GCP restore jobs share a GitHub Actions concurrency group, including
 manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
 jobs are canceled when the queue is full. Scheduling order is not guaranteed.
 Direct transport helper, service script, and manual fallback runs are not
@@ -242,7 +247,7 @@ Optional Dropbox credentials for rclone on the VM:
 	- After onboarding, the apply job runs `scripts/host/configure-rclone.sh` on the VM as root. It installs rclone and configures a verified `dropbox` remote in `/root/.config/rclone/rclone.conf`.
 	- Tokens and the script are sent over SSH stdin, not command lines. If either secret is missing, the step warns and skips.
 
-The NPM, FreshRSS, Vaultwarden, and Firefly restore workflows require `DROPBOX_AUTH_TOKEN`,
+The NPM, FreshRSS, Vaultwarden, Firefly, and Pi-hole restore workflows require `DROPBOX_AUTH_TOKEN`,
 `DROPBOX_REFRESH_TOKEN`, and `GPG_PASSPHRASE` in `prod` (or repository secrets).
 Each restore's `prod` job
 receives environment secrets independently; repository secrets are explicitly
@@ -259,6 +264,11 @@ environment, not saved in the temporary workflow directory. Supply the same
 configuration again for later manual Compose operations or container
 recreation. Container configuration still contains application and database
 credentials and requires appropriate Docker host access controls.
+
+Pi-hole additionally requires `PIHOLE_WEB_PASSWORD` in `prod` or repository
+secrets. It is sent over SSH stdin and supplied to Compose as `WEB_PASSWORD`
+in the remote process environment. Supply it again for later manual Compose
+operations; Docker container configuration contains the password.
 
 ## OIDC Trust Configuration
 
@@ -285,11 +295,12 @@ assertion.ref == "refs/heads/main" &&
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-duckdns-update.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-firefly-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-pihole-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")
 
 The reusable restore workflows also use this service account. Retain the single
-provider value and include all seven workflow refs in the explicit condition
-above. Update an existing provider before running the Firefly workflow.
+provider value and include all eight workflow refs in the explicit condition
+above. Update an existing provider before running the Pi-hole workflow.
 Do not rely on repository scope alone.
 
 Binding condition baseline (single production service account):

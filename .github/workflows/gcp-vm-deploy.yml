@@ -443,6 +443,18 @@ jobs:
       FIREFLY_DB_PASSWORD: ${{ secrets.FIREFLY_DB_PASSWORD }}
       FIREFLY_STATIC_CRON_TOKEN: ${{ secrets.FIREFLY_STATIC_CRON_TOKEN }}
 
+  restore-pihole:
+    name: Restore Pi-hole
+    needs: [apply, restore-npm]
+    uses: ./.github/workflows/gcp-pihole-restore.yml
+    with:
+      force: true
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      PIHOLE_WEB_PASSWORD: ${{ secrets.PIHOLE_WEB_PASSWORD }}
+
   restore-watchtower:
     name: Restore Watchtower
     needs: [apply, restore-npm]

@@ -122,7 +122,7 @@ Navigation: IAM & Admin -> Workload Identity Federation
 - `attribute.actor=assertion.actor`
 - `attribute.environment=assertion.environment`
 9. Add provider condition:
-- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-duckdns-update.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-firefly-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")`
+- `assertion.repository == "OWNER/REPO" && assertion.repository_owner == "OWNER" && assertion.environment == "prod" && assertion.ref == "refs/heads/main" && (assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vm-deploy.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-npm-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-freshrss-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-duckdns-update.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-vaultwarden-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-firefly-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-pihole-restore.yml@refs/heads/main" || assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main")`
 10. Create provider.
 
 ## 7. Add Conditional Impersonation Binding
@@ -174,7 +174,7 @@ Navigation: GitHub -> repository -> Settings -> Environments -> New environment
 2. Add `GCP_BILLING_ACCOUNT_ID` as an environment secret.
 3. Add required reviewers.
 4. Keep apply approvals gated by this environment.
-5. Configure the Dropbox, GPG, and Firefly restore secrets listed in the
+5. Configure the Dropbox, GPG, Firefly, and Pi-hole restore secrets listed in the
    [GCP deployment guide](README.md) before applying.
 
 ## 10. Validate with Safe First Run
@@ -189,11 +189,12 @@ Navigation: GitHub -> repository -> Actions -> Deploy GCP VM Terraform
 - OIDC authentication succeeds.
 - IAM permission checks pass.
 - Terraform plan completes.
-4. Before applying, schedule downtime for NPM, FreshRSS, Vaultwarden, and
-   Firefly. Back up their current data and verify the latest Dropbox backups
+4. Before applying, schedule downtime for NPM, FreshRSS, Vaultwarden, Firefly,
+   and Pi-hole. Back up their current data and verify the latest Dropbox backups
    are current and usable. Every successful apply, including a no-op, forces
    these restores and overwrites existing data. See the
-   [Firefly restore guide](../financialServices/firefly/RESTORE_GUIDE.md).
+   [Firefly restore guide](../financialServices/firefly/RESTORE_GUIDE.md) and
+   [Pi-hole restore guide](../securityServices/pihole/RESTORE_GUIDE.md).
 5. Second run (when ready):
 - action: `apply`
 - environment: `prod`
