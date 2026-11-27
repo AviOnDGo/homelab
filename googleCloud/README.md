@@ -291,7 +291,10 @@ container configuration; restrict host and Docker access. The workflow uses
 the `filedata-backup-gcp` Compose project and refuses to start if its
 `gpg-secrets` volume contains a `gpg-passphrase` file, which would otherwise
 override the supplied GitHub secret. Resolve that conflict without discarding
-an existing key. It does not modify existing host environment files.
+an existing key. After preflight checks, it stops and removes any existing
+`filedata-backup` container before starting the replacement; Docker volumes are
+preserved. An active backup in that container will be interrupted. It does not
+modify existing host environment files.
 
 Add the workflow ref to the WIF provider condition before running it. After
 the workflow is on the default branch, a manual run is:

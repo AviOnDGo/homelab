@@ -51,6 +51,9 @@ case "$1" in
     fi ;;
   build) ;;
   run) [[ "${SECRET_CONFLICT:-0}" != 1 ]] ;;
+  ps) [[ "${EXISTING_CONTAINER:-0}" != 1 ]] || echo existing-container ;;
+  stop) [[ "${FAIL_STOP:-0}" != 1 ]] ;;
+  rm) [[ "${FAIL_REMOVE:-0}" != 1 ]] ;;
   compose)
     cp "$3/docker-compose.yml" "$FIXTURE/compose.yml"
     cp "$3/workflow-input" "$FIXTURE/workflow-input"
@@ -113,6 +116,7 @@ esac
             self.assertEqual(values[f"{name}_DROPBOX_PATH"], f"/Apps/{name.lower()}")
 
     def test_missing_volume_or_conflicting_secret_prevents_start(self):
+        self.env["EXISTING_CONTAINER"] = "1"
         for variables in (
             {"MISSING_VOLUME": "pihole_filedata"},
             {"SECRET_VOLUME": "1", "SECRET_CONFLICT": "1"},
@@ -122,7 +126,10 @@ esac
                 result = self.invoke()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("ERROR:", result.stderr)
-                self.assertNotIn(" compose ", (self.work / "docker-calls").read_text())
+                calls = (self.work / "docker-calls").read_text()
+                self.assertNotIn(" compose ", calls)
+                self.assertNotIn(" stop ", calls)
+                self.assertNotIn(" rm ", calls)
                 for key in variables:
                     self.env.pop(key)
                 (self.work / "docker-calls").unlink()
@@ -145,6 +152,36 @@ esac
         result = self.invoke()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(" run --rm ", (self.work / "docker-calls").read_text())
+
+    def test_existing_container_is_stopped_and_removed_before_start(self):
+        self.env["EXISTING_CONTAINER"] = "1"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = (self.work / "docker-calls").read_text().splitlines()
+        self.assertIn(
+            "filedata-backup-gcp ps -a --filter name=^/filedata-backup$ "
+            "--format {{.ID}}",
+            calls,
+        )
+        stop = calls.index("filedata-backup-gcp stop existing-container")
+        remove = calls.index("filedata-backup-gcp rm existing-container")
+        compose = next(i for i, call in enumerate(calls) if " compose " in call)
+        self.assertLess(stop, remove)
+        self.assertLess(remove, compose)
+
+    def test_container_removal_failure_prevents_start(self):
+        self.env["EXISTING_CONTAINER"] = "1"
+        for failure in ("FAIL_STOP", "FAIL_REMOVE"):
+            with self.subTest(failure=failure):
+                self.env[failure] = "1"
+                result = self.invoke()
+                self.assertNotEqual(result.returncode, 0)
+                calls = (self.work / "docker-calls").read_text()
+                self.assertNotIn(" compose ", calls)
+                if failure == "FAIL_STOP":
+                    self.assertNotIn(" rm ", calls)
+                self.env.pop(failure)
+                (self.work / "docker-calls").unlink()
 
     def test_workflow_waits_for_all_source_restores(self):
         deployment = (ROOT / ".github/workflows/gcp-vm-deploy.yml").read_text()

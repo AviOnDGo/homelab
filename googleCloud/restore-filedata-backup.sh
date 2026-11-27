@@ -96,6 +96,12 @@ done
         exit 1
       fi
     fi
+    existing_container="$(docker ps -a --filter "name=^/filedata-backup$" --format "{{.ID}}")"
+    if [[ -n "$existing_container" ]]; then
+      echo "Replacing existing filedata-backup container."
+      docker stop "$existing_container"
+      docker rm "$existing_container"
+    fi
     bash "$workdir/start-backup.sh" prod
     echo "Filedata backup scheduler is healthy. Verify its crontab and first backup."
   '"'"''
