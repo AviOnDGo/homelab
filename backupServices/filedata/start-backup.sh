@@ -85,7 +85,7 @@ trap 'rm -f -- "$override"' EXIT
   previous=""
   for ((i = 0; i < ${#names[@]}; i++)); do
     if [[ "${categories[$i]}" != "$previous" ]]; then
-      printf '      # %s\n' "${categories[$i]}"
+      printf '      ## %s\n' "${categories[$i]}"
       previous="${categories[$i]}"
     fi
     printf '      - %s:/backup-sources/%s:ro\n' "${volumes[$i]}" "${names[$i]}"
@@ -135,7 +135,7 @@ EOF
   previous=""
   for ((i = 0; i < ${#volumes[@]}; i++)); do
     if [[ "${categories[$i]}" != "$previous" ]]; then
-      printf '  # %s\n' "${categories[$i]}"
+      printf '  ## %s\n' "${categories[$i]}"
       previous="${categories[$i]}"
     fi
     printf '  %s:\n    external: true\n    name: %s\n' "${volumes[$i]}" "${volumes[$i]}"
@@ -144,5 +144,5 @@ EOF
 
 echo "Starting ${#names[@]} backup job(s) for ${profile}; ${missing} missing volume(s) skipped."
 docker compose --project-directory "$script_dir" \
-  -f "${script_dir}/docker-compose.base.yml" -f "$override" \
+  -f "${script_dir}/docker-compose.yml" -f "$override" \
   up --build --force-recreate --wait --wait-timeout 60 filedata-backup

@@ -15,7 +15,7 @@ class StartBackupTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("start-backup.sh", "backup-volumes.conf", "docker-compose.base.yml"):
+        for name in ("start-backup.sh", "backup-volumes.conf", "docker-compose.yml"):
             shutil.copy(ROOT / name, self.root / name)
         self.bin = self.root / "bin"
         self.bin.mkdir()
@@ -143,7 +143,7 @@ else:
                 "--project-directory",
                 str(self.root),
                 "-f",
-                str(self.root / "docker-compose.base.yml"),
+                str(self.root / "docker-compose.yml"),
                 "-f",
                 str(self.root / "override.yml"),
                 "config",
@@ -206,6 +206,98 @@ else:
         )
         self.assertNotEqual(no_schedule.returncode, 0)
         self.assertIn("NPM_CRON_SCHEDULE is required", no_schedule.stderr)
+
+    @unittest.skipUnless(shutil.which("docker"), "Docker Compose is not installed")
+    def test_all_host_profiles_render_with_their_environment_examples(self):
+        entries = []
+        for line in (ROOT / "backup-volumes.conf").read_text().splitlines():
+            if line and not line.startswith("#"):
+                name, volume, profiles = line.split("|")
+                entries.append((name, volume, profiles.split(",")))
+
+        for profile in ("default", "local", "prod"):
+            with self.subTest(profile=profile):
+                environment_file = ROOT / (
+                    "env.acc.example" if profile == "local" else "env.prd.example"
+                )
+                environment = {
+                    "PATH": os.defpath,
+                    "HOME": str(self.root),
+                }
+                for line in environment_file.read_text().splitlines():
+                    if line and not line.startswith("#") and "=" in line:
+                        key, value = line.split("=", 1)
+                        environment[key] = value
+                selected = [
+                    (name, volume)
+                    for name, volume, profiles in entries
+                    if profile in profiles
+                ]
+                missing_schedules = [
+                    name.upper().replace("-", "_") + "_CRON_SCHEDULE"
+                    for name, _ in selected
+                    if not environment.get(
+                        name.upper().replace("-", "_") + "_CRON_SCHEDULE"
+                    )
+                ]
+                self.assertEqual(missing_schedules, [])
+
+                result = self.run_start(
+                    profile,
+                    MOCK_VOLUMES="\n".join(volume for _, volume in selected),
+                    **{
+                        key: value
+                        for key, value in environment.items()
+                        if key.endswith("_CRON_SCHEDULE")
+                    },
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+                compose = subprocess.run(
+                    [
+                        shutil.which("docker"),
+                        "compose",
+                        "--env-file",
+                        "/dev/null",
+                        "--project-directory",
+                        str(self.root),
+                        "-f",
+                        str(self.root / "docker-compose.yml"),
+                        "-f",
+                        str(self.root / "override.yml"),
+                        "config",
+                        "--no-env-resolution",
+                        "--format",
+                        "json",
+                    ],
+                    env=environment,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(compose.returncode, 0, compose.stderr)
+                model = json.loads(compose.stdout)
+                mounts = {
+                    mount["source"]: mount["target"]
+                    for mount in model["services"]["filedata-backup"]["volumes"]
+                    if mount["target"].startswith("/backup-sources/")
+                }
+                self.assertEqual(
+                    mounts,
+                    {
+                        volume: f"/backup-sources/{name}"
+                        for name, volume in selected
+                    },
+                )
+                service = model["services"]["filedata-backup"]
+                command = "\n".join(service["command"])
+                for name, _ in selected:
+                    self.assertIn(f"backup-script.sh {name}", command)
+                    schedule_key = name.upper().replace("-", "_") + "_CRON_SCHEDULE"
+                    self.assertEqual(
+                        service["environment"][schedule_key],
+                        environment[schedule_key],
+                    )
 
 
 if __name__ == "__main__":
