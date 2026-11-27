@@ -42,7 +42,9 @@ It stages the decrypted SQL in a private temporary directory and removes it on e
 stops `db-backup` if running, stops the Firefly Compose project, checks for
 other running users of the volume, clears the volume in place, imports the dump,
 and waits for the application health check. It uses the database container's
-configured PostgreSQL user and database name.
+configured PostgreSQL user and database name. PostgreSQL readiness is checked
+over TCP so the temporary initialization server is not mistaken for the final
+server.
 
 For GCP, the **Restore Firefly on GCP VM** GitHub Actions workflow runs the
 same script. A manual run skips an existing database volume by default; enable
@@ -66,7 +68,7 @@ unset PASSPHRASE
 
 ```bash
 docker compose ps
-docker exec firefly-db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+docker exec firefly-db sh -c 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 docker logs --tail 100 firefly
 ```
 
@@ -123,7 +125,7 @@ docker compose create
 docker start firefly-db
 ready=false
 for ((i = 1; i <= 60; i++)); do
-  if docker exec firefly-db sh -c 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; then
+  if docker exec firefly-db sh -c 'pg_isready -h 127.0.0.1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'; then
     ready=true
     break
   fi
