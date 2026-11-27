@@ -9,8 +9,8 @@ This guide restores RomM's `romm_filedata` volume from Filen and the
 - `rclone`, `gpg`, and `zstd` available on the host
 - Host rclone configured with a reachable `dropbox` remote
 - `backupServices/filedata/.env` configured with `FILEN_EMAIL`,
-  `FILEN_PASSWORD`, `FILEN_API_KEY`, `RCLONE_CRYPT_PASSWORD`, and
-  `ROMM_SYNC_CRYPT_REMOTE`
+  `FILEN_PASSWORD`, `FILEN_API_KEY`, and `RCLONE_CRYPT_PASSWORD`
+- `backupServices/filedata/path.local` configured with `ROMM_SYNC_CRYPT_REMOTE`
 - Filen filedata present at `filen-crypt:/Romm/current`
 - RomM PostgreSQL backups present at `dropbox:/App_acc/romm` (or custom
   `DROPBOX_PATH`), produced by the Local `db-backup` deployment
@@ -114,6 +114,7 @@ build the helper image and sync the Filen backup into the named volume:
 ```bash
 docker build -t homelab/filedata-backup:local backupServices/filedata
 docker run --rm --env-file backupServices/filedata/.env \
+  --env-file backupServices/filedata/path.local \
   --mount type=volume,source=romm_filedata,target=/restore \
   --entrypoint /bin/bash homelab/filedata-backup:local -ec '
     /usr/local/bin/configure-rclone.sh
