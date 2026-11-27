@@ -107,7 +107,7 @@ minimum 5-minute intervals. Postgres backup cron entries SHALL start no earlier 
 
 #### Scenario: Default filedata schedules are staggered from 02:00
 - **GIVEN** the filedata backup service is deployed with default schedule values
-- **WHEN** all per-service cron schedules are read from `env.acc.example`
+- **WHEN** all per-service cron schedules are read from `env.local.example`
 - **THEN** no two services SHALL share the same cron time
 - **AND** the earliest entry SHALL be at 02:00 or later
 
@@ -156,7 +156,8 @@ whose database it backs up. It SHALL NOT rely on host-mode or IP addresses.
 ### REQ-011: Vaultwarden volume is registered with filedata-backup
 The `vaultwarden_filedata` volume SHALL be mounted read-only in the `filedata-backup`
 container at `/backup-sources/vaultwarden`. A `VAULTWARDEN_CRON_SCHEDULE` and
-`VAULTWARDEN_RETENTION_DAYS` SHALL be declared in `env.acc.example` and `env.prd.example`.
+`VAULTWARDEN_RETENTION_DAYS` SHALL be declared in `env.local.example` and
+`env.prod.example`.
 
 #### Scenario: Vaultwarden backup runs on its own schedule
 - **GIVEN** `VAULTWARDEN_CRON_SCHEDULE` fires
@@ -226,13 +227,24 @@ these two standard files and removed.
 - **THEN** both `SERVICE_DOCUMENTATION.md` and `RESTORE_GUIDE.md` SHALL be present
 - **AND** `IMPLEMENTATION_DETAILS.md` and `QUICKSTART_GUIDE.md` SHALL NOT exist
 
-### REQ-016: Both backup services have env.acc.example and env.prd.example
-Both `backupServices/filedata/` and `backupServices/postgres/` SHALL provide `env.acc.example` and `env.prd.example`. Both files SHALL declare exactly the same variable names per service domain. Provider-specific path values SHALL be permitted to differ by environment and mode, and are not restricted to Dropbox for filedata services.
+### REQ-016: Backup services provide environment-specific example files
+`backupServices/filedata/` SHALL provide `env.local.example` and
+`env.prod.example`; `backupServices/postgres/` SHALL provide
+`.env.acc.example` and `.env.prd.example`. Each pair SHALL declare exactly the
+same variable names per service domain. Provider-specific path values SHALL be
+permitted to differ by environment and mode, and are not restricted to Dropbox
+for filedata services.
 
-#### Scenario: env examples cover all registered services
-- **GIVEN** `env.acc.example` and `env.prd.example` are compared for a backup service
+#### Scenario: Filedata examples cover all registered services
+- **GIVEN** `env.local.example` and `env.prod.example` are compared
 - **WHEN** checking variable names
-- **THEN** both files SHALL declare identical variable names for that backup service
+- **THEN** both files SHALL declare identical variable names for filedata backups
+- **AND** value differences SHALL be limited to environment-specific paths, schedules, or provider targets
+
+#### Scenario: PostgreSQL examples cover all registered services
+- **GIVEN** `.env.acc.example` and `.env.prd.example` are compared for PostgreSQL backups
+- **WHEN** checking variable names
+- **THEN** both files SHALL declare identical variable names
 - **AND** value differences SHALL be limited to environment-specific paths, schedules, or provider targets
 
 ### REQ-017: Backup health is verified on a three-tier schedule
@@ -304,7 +316,7 @@ only services deployed to that profile and SHALL NOT enable unrelated jobs.
 - **AND** other host profiles SHALL retain their configured service sets
 
 ### REQ-022: Paperless retained documents are registered with filedata-backup
-The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile. The filedata backup service SHALL declare Paperless-specific schedule, Dropbox path, and retention variables in both `env.acc.example` and `env.prd.example`.
+The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for every deployed host profile. The filedata backup service SHALL declare Paperless-specific schedule, Dropbox path, and retention variables in both `env.local.example` and `env.prod.example`.
 
 #### Scenario: Backup profiles preserve configuration during the category move
 - **GIVEN** Paperless backup configuration exists before the move to Knowledge Services
@@ -320,7 +332,7 @@ The `paperless_filedata` volume SHALL be registered in `backup-volumes.conf` for
 - **AND** every configured Paperless host profile SHALL include `default`
 
 #### Scenario: Paperless backup schedule variables are documented
-- **GIVEN** `backupServices/filedata/env.acc.example` and `env.prd.example` are inspected
+- **GIVEN** `backupServices/filedata/env.local.example` and `env.prod.example` are inspected
 - **WHEN** Paperless entries are reviewed
 - **THEN** `PAPERLESS_CRON_SCHEDULE`, `PAPERLESS_DROPBOX_PATH`, and `PAPERLESS_RETENTION_DAYS` SHALL be present in both files
 - **AND** the Dropbox paths SHALL follow the account-specific example-file convention used by the repo
