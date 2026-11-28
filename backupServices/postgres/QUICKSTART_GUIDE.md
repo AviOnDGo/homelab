@@ -84,6 +84,12 @@ The build context allowlist in `.dockerignore` excludes credentials and unrelate
 files. Compose reads `.env` only during creation/recreation; Docker uses the stored
 container environment when restarting it.
 
+The image includes PostgreSQL 19 client tools. `pg_dump` cannot back up a server
+with a newer major version; upgrade the backup client before upgrading any
+database server. Firefly's unpinned database image can advance to a new major
+version when pulled, so check both versions before updating it. A PostgreSQL major
+upgrade also requires a database migration; do not simply replace the server image.
+
 To migrate an existing container or apply script/dependency changes:
 
 ```bash
@@ -96,6 +102,11 @@ docker exec db-backup pidof crond
 Rebuild and recreate after script changes; restarting alone does not update the
 image. Leave the container running before reboot: `unless-stopped` preserves
 an explicit stop.
+
+For the GCP production profile, run `./start-backup.sh prod` from
+`backupServices/postgres`, then check `docker exec db-backup pg_dump --version`
+and manually run the Firefly backup as shown below. Copy any needed local backups
+out of the existing container before recreating it.
 
 ### Step 3: Verify Running
 ```bash
