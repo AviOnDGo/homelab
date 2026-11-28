@@ -75,10 +75,11 @@ The RomM application SHALL NOT map its web interface port to the host network in
 - **AND** any such mapping SHALL be commented out with a note that access is via NPM
 
 ### REQ-013: RomM PostgreSQL backup integration (Local profile only)
-The `romm_postgresdata` volume SHALL be registered with the Local-scoped Postgres backup compose file only (`backupServices/postgres/docker-compose.local.yml`).
+The `romm_postgresdata` volume SHALL be registered for the Local PostgreSQL backup
+profile only in `backupServices/postgres/backup-databases.conf`.
 
 #### Scenario: romm_postgresdata appears in the Local Postgres backup
-- **GIVEN** `backupServices/postgres/docker-compose.local.yml` is inspected
+- **GIVEN** the Local PostgreSQL backup profile is generated
 - **WHEN** reviewing the db-backup service volumes, networks, and cron entries
 - **THEN** `romm_postgresdata` SHALL be mounted as a read-only backup source
 - **AND** `db-backup` SHALL join `games_network`
@@ -91,10 +92,11 @@ The `romm_postgresdata` volume SHALL be registered with the Local-scoped Postgre
 - **AND** its generated Gaming Services cron job SHALL run the `romm` backup job
 
 #### Scenario: RomM PostgreSQL backup script supports RomM
-- **GIVEN** `backupServices/postgres/docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml` are inspected
-- **WHEN** reviewing their volumes, networks, cron entries, and script cases
-- **THEN** the Local profile SHALL reference `romm_postgresdata` and `romm-db`
-- **AND** the default and Remote profiles SHALL NOT reference `romm_postgresdata`
+- **GIVEN** `backupServices/postgres/backup-databases.conf`, the environment examples, and `db-backup-script.sh` are inspected
+- **WHEN** reviewing the registered profiles and script cases
+- **THEN** the Local profile SHALL reference `romm_postgresdata` and `games_network`
+- **AND** the environment examples SHALL use `romm-db` as the database host
+- **AND** the default and Prod profiles SHALL NOT reference `romm_postgresdata`
 - **AND** `db-backup-script.sh` SHALL contain a `romm` case block
 
 ### REQ-014: RomM filedata synchronization to Filen
