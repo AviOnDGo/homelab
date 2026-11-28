@@ -9,6 +9,10 @@ database from the latest Dropbox backup.
 - Rclone configured with a reachable `dropbox` remote
 - A valid `.env` file in `mediaServices/invidious/` (required)
 - GPG passphrase for backup decryption
+- Check the database backup destination in
+  [`path.local`](../../backupServices/postgres/path.local) or
+  [`path.prod`](../../backupServices/postgres/path.prod); set `DROPBOX_PATH`
+  to that value. The script defaults to `/Apps/invidious`.
 
 ## Restore Steps (Script-First)
 
@@ -16,7 +20,7 @@ database from the latest Dropbox backup.
 
 ```bash
 cd mediaServices/invidious
-bash restore.sh
+DROPBOX_PATH=/App_acc/invidious bash restore.sh
 ```
 
 The script performs:
@@ -75,8 +79,8 @@ docker compose down
 ### 2. Discover and download latest backup
 
 ```bash
-rclone lsf dropbox:/Apps/invidious --files-only | grep -E '\.sql\.zst\.gpg$' | sort | tail -n 1
-rclone copy "dropbox:/Apps/invidious/<filename>.sql.zst.gpg" .
+rclone lsf dropbox:/App_acc/invidious --files-only | grep -E '\.sql\.zst\.gpg$' | sort | tail -n 1
+rclone copy "dropbox:/App_acc/invidious/<filename>.sql.zst.gpg" .
 ```
 
 ### 3. Recreate volume and start database container
@@ -104,7 +108,7 @@ docker compose up -d
 
 ## Troubleshooting
 
-- Restore reports no backup files: confirm files exist in `dropbox:/Apps/invidious` and match `*.sql.zst.gpg`
+- Restore reports no backup files: confirm files exist in the selected Dropbox path and match `*.sql.zst.gpg`
 - GPG decryption fails: verify passphrase and file integrity
 - PostgreSQL readiness failures: inspect `docker logs invidious-db`
 - Failed restore validation: stack is intentionally left down; inspect DB container state and rerun after correction

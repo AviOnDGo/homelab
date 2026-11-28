@@ -78,9 +78,11 @@ in the three Immich entries in
    credentials and both crypt passwords as applicable. Review the three Immich
    destinations in `path.local` and their modes and schedules in
    `backup-volumes.conf`. Keep the crypt password and optional salt safe for recovery.
-3. Configure `backupServices/postgres/.env` using its matching example. Set
-   `IMMICH_DB_HOST=immich-db`, database credentials matching the Immich
-   service, `IMMICH_BACKUP_NAME=immich`, a Dropbox path, and a GPG passphrase.
+3. Configure `backupServices/postgres/.env` using `.env.example`. Set database
+   credentials matching the Immich service and a GPG passphrase. The host,
+   database, and backup names default to `immich-db`, `immich`, and `immich`.
+   Review the
+   Dropbox destination in `backupServices/postgres/path.local`.
    Set the database schedule in `backup-databases.conf` before the file
    schedules (the registry uses 02:00 versus 03:00, 03:15, and 03:30). Recreate
    the backup container after changing the registry.
