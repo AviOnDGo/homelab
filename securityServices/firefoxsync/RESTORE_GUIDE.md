@@ -19,7 +19,7 @@ What the script does:
 - Prompts for GPG passphrase
 - Selects latest `*.sql.zst.gpg` from `dropbox:/Apps/firefoxsync` (or `DROPBOX_PATH` override)
 - Prompts before deleting `firefoxsync_postgresdata`
-- Restores into database `syncserver` on `firefoxsync-db`
+- Restores into database `firefoxsync` on `firefoxsync-db`
 - Verifies PostgreSQL readiness, then starts full stack
 
 Safety behavior:
@@ -30,7 +30,7 @@ Safety behavior:
 
 ```bash
 docker compose -f securityServices/firefoxsync/docker-compose.yml ps
-docker exec firefoxsync-db pg_isready -U sync -d syncserver
+docker exec firefoxsync-db pg_isready -U sync -d firefoxsync
 curl -f https://sync.yourdomain.com/__heartbeat__
 ```
 
@@ -59,14 +59,14 @@ docker volume rm firefoxsync_postgresdata
 docker volume create firefoxsync_postgresdata
 docker compose -f securityServices/firefoxsync/docker-compose.yml create
 docker start firefoxsync-db
-docker exec -i firefoxsync-db psql -U sync -d syncserver < firefoxsync.sql
+docker exec -i firefoxsync-db psql -U sync -d firefoxsync < firefoxsync.sql
 ```
 
 ### 4. Start stack and verify
 
 ```bash
 docker compose -f securityServices/firefoxsync/docker-compose.yml up -d
-docker exec firefoxsync-db pg_isready -U sync -d syncserver
+docker exec firefoxsync-db pg_isready -U sync -d firefoxsync
 ```
 
 ## Notes

@@ -17,6 +17,10 @@ Self-hosted Firefox Sync server (`syncstorage-rs`) running in `securityServices/
 |--------|-----------|---------|----------------|
 | `firefoxsync_postgresdata` | `/var/lib/postgresql/data` (in `firefoxsync-db`) | PostgreSQL data directory | `docker volume create firefoxsync_postgresdata` |
 
+The PostgreSQL database is named `firefoxsync`. Changing `POSTGRES_DB` does not
+rename a database in an existing volume; migrate or restore any existing data
+before using this configuration with an older volume.
+
 ## Network
 
 - Both containers join `security_network` (external)

@@ -221,7 +221,7 @@ Retention:    IMMICH_BACKUP_RETENTION_DAYS
 ### Firefox Sync
 ```
 Host:         firefoxsync-db
-Database:     syncserver
+Database:     firefoxsync
 User:         sync
 Schedule Var: FIREFOXSYNC_CRON_SCHEDULE
 Retention:    FIREFOXSYNC_BACKUP_RETENTION_DAYS
