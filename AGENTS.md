@@ -368,8 +368,7 @@ This pattern runs scheduled tasks within the container without external cron dae
 ### Backup Compose Ordering (Mandatory)
 For `backupServices/postgres/`, use `backup-databases.conf` and `start-backup.sh`
 to generate host-specific mounts, network declarations, and cron jobs from the
-neutral `docker-compose.yml`. The legacy local and remote Compose files remain
-in the repository but are no longer supported.
+neutral `docker-compose.yml`.
 For `backupServices/filedata/`, keep one canonical `docker-compose.yml` and use
 `backup-volumes.conf` plus `start-backup.sh` to generate host-specific mounts,
 volume declarations, and cron jobs:
