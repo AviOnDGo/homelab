@@ -89,7 +89,7 @@ in the three Immich entries in
 
    ```bash
    ../../backupServices/filedata/start-backup.sh local
-   docker compose -f ../../backupServices/postgres/docker-compose.local.yml up -d --build --force-recreate db-backup
+   ../../backupServices/postgres/start-backup.sh local
    ```
 
 5. From `mediaServices/immich`, test the database first and then each file lane:
