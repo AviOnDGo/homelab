@@ -1,0 +1,86 @@
+name: "GCP Restore: Database Backup"
+
+on:
+  workflow_call:
+    secrets:
+      DROPBOX_AUTH_TOKEN:
+        required: false
+      DROPBOX_REFRESH_TOKEN:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+      DISCORD_WEBHOOK_URL:
+        required: false
+      FIREFLY_DB_USERNAME:
+        required: false
+      FIREFLY_DB_PASSWORD:
+        required: false
+      ROMM_DB_USER:
+        required: false
+      ROMM_DB_PASSWORD:
+        required: false
+      PAPERLESS_DB_USER:
+        required: false
+      PAPERLESS_DB_PASSWORD:
+        required: false
+      IMMICH_DB_USER:
+        required: false
+      IMMICH_DB_PASSWORD:
+        required: false
+      INVIDIOUS_DB_USER:
+        required: false
+      INVIDIOUS_DB_PASSWORD:
+        required: false
+      FIREFOXSYNC_DB_USER:
+        required: false
+      FIREFOXSYNC_DB_PASSWORD:
+        required: false
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  restore:
+    name: Restore Database Backup
+    runs-on: ubuntu-latest
+    environment: prod
+    concurrency:
+      group: service-restore
+      queue: max
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare GCP restore
+        uses: ./.github/actions/gcp-restore
+        with:
+          workload-identity-provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service-account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+          project-id: ${{ vars.GCP_PROJECT_ID }}
+          zone: ${{ vars.GCP_ZONE }}
+          vm-name: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+
+      - name: Restore database backup on VM
+        env:
+          VM_NAME: ${{ vars.GCP_VM_NAME || 'gcp-debian-free-tier-vm' }}
+          PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+          ZONE: ${{ vars.GCP_ZONE }}
+          DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          FIREFLY_DB_USER: ${{ secrets.FIREFLY_DB_USERNAME }}
+          FIREFLY_DB_PASSWORD: ${{ secrets.FIREFLY_DB_PASSWORD }}
+          ROMM_DB_USER: ${{ secrets.ROMM_DB_USER }}
+          ROMM_DB_PASSWORD: ${{ secrets.ROMM_DB_PASSWORD }}
+          PAPERLESS_DB_USER: ${{ secrets.PAPERLESS_DB_USER }}
+          PAPERLESS_DB_PASSWORD: ${{ secrets.PAPERLESS_DB_PASSWORD }}
+          IMMICH_DB_USER: ${{ secrets.IMMICH_DB_USER }}
+          IMMICH_DB_PASSWORD: ${{ secrets.IMMICH_DB_PASSWORD }}
+          INVIDIOUS_DB_USER: ${{ secrets.INVIDIOUS_DB_USER }}
+          INVIDIOUS_DB_PASSWORD: ${{ secrets.INVIDIOUS_DB_PASSWORD }}
+          FIREFOXSYNC_DB_USER: ${{ secrets.FIREFOXSYNC_DB_USER }}
+          FIREFOXSYNC_DB_PASSWORD: ${{ secrets.FIREFOXSYNC_DB_PASSWORD }}
+        run: ./googleCloud/restore-db-backup.sh
