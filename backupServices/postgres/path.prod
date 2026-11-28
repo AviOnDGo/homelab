@@ -1,0 +1,15 @@
+# PostgreSQL backup destinations for the production environment.
+# Staged values only: existing deployments still use environment settings.
+# This file is tracked; do not put credentials here.
+
+# Financial Services
+FIREFLY_DROPBOX_BACKUP_PATH=/Apps/firefly
+# Gaming Services
+ROMM_DROPBOX_BACKUP_PATH=/Apps/romm
+# Knowledge Services
+PAPERLESS_DROPBOX_BACKUP_PATH=/Apps/paperless
+# Media Services
+IMMICH_DROPBOX_BACKUP_PATH=/Apps/immich
+INVIDIOUS_DROPBOX_BACKUP_PATH=/Apps/invidious
+# Security Services
+FIREFOXSYNC_DROPBOX_BACKUP_PATH=/Apps/firefoxsync
