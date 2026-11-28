@@ -368,7 +368,7 @@ When a service deploys a companion PostgreSQL container, the PostgreSQL data vol
 - **AND** `docker compose up` SHALL create the volume automatically if it does not exist
 
 #### Scenario: Backup service is permitted to reference postgres volume as external
-- **GIVEN** `backupServices/postgres/docker-compose.yml` mounts a service's postgres data volume
+- **GIVEN** a generated PostgreSQL backup profile mounts a service's postgres data volume
 - **WHEN** the backup compose volumes block is inspected
 - **THEN** the volume SHALL be permitted to reference the same volume as `external: true` in the backup compose file
 - **AND** this is permitted because the backup service does not own the volume lifecycle
