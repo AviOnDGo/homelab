@@ -231,9 +231,9 @@ these two standard files and removed.
 ### REQ-016: Backup services provide credential and destination configuration
 `backupServices/filedata/` SHALL provide a credentials-only `.env.example` and
 destination files `path.local` and `path.prod`; `backupServices/postgres/` SHALL
-provide `.env.acc.example` and `.env.prd.example`. The filedata path files and
-the PostgreSQL examples SHALL each declare matching variable names per pair.
-Filedata destinations SHALL be permitted to differ by environment and mode.
+provide a credentials-only `.env.example` and destination files `path.local` and
+`path.prod`. Each service's path files SHALL declare matching destination variable
+names. Destinations SHALL be permitted to differ by environment.
 
 #### Scenario: Filedata path files cover all registered services
 - **GIVEN** `path.local` and `path.prod` are compared
@@ -241,11 +241,16 @@ Filedata destinations SHALL be permitted to differ by environment and mode.
 - **THEN** both files SHALL declare identical destination variable names
 - **AND** `.env.example` SHALL contain credentials rather than destination paths
 
-#### Scenario: PostgreSQL examples cover all registered services
-- **GIVEN** `.env.acc.example` and `.env.prd.example` are compared for PostgreSQL backups
+#### Scenario: PostgreSQL example covers registered services
+- **GIVEN** the PostgreSQL `.env.example` is inspected
 - **WHEN** checking variable names
-- **THEN** both files SHALL declare identical variable names
-- **AND** value differences SHALL be limited to environment-specific paths, schedules, or provider targets
+- **THEN** it SHALL declare database credentials for registered services
+- **AND** it SHALL NOT declare Dropbox destination paths
+
+#### Scenario: PostgreSQL path files cover registered databases
+- **GIVEN** PostgreSQL `path.local` and `path.prod` are compared
+- **WHEN** checking variable names
+- **THEN** both files SHALL declare identical destination variables for registered databases
 
 ### REQ-017: Backup health is verified on a three-tier schedule
 Operators SHALL follow a three-tier verification schedule: daily (check container logs
@@ -636,8 +641,13 @@ a temporary override from `backup-databases.conf` for the selected host profile.
 The startup script SHALL remove the override on exit and SHALL pass each selected
 database's registry schedule and retention to the container. Generated policy
 SHALL override legacy environment settings.
+The startup script SHALL select `path.local` for `local`, `path.prod` for `prod`,
+and an explicitly selected path file for `default`. The selected path file SHALL
+override legacy environment destinations.
 The backup script SHALL reject execution when the selected database has no
-generated retention value.
+generated retention value or Dropbox destination.
+Database host, name, and backup name SHALL default to `<service>-db`, `<service>`,
+and `<service>`, respectively. Existing environment overrides SHALL be honored.
 
 #### Scenario: Selected database resources are generated
 - **GIVEN** all source volumes and networks for a selected host profile exist
@@ -671,7 +681,29 @@ generated retention value.
 - **WHEN** a scheduled or manual backup completes
 - **THEN** local and Dropbox cleanup SHALL use the generated policy
 
+#### Scenario: Database configuration uses naming defaults
+- **GIVEN** a selected database has no host, database-name, or backup-name overrides
+- **WHEN** its backup runs
+- **THEN** its host SHALL be `<service>-db`
+- **AND** its database and backup names SHALL be `<service>`
+
+#### Scenario: Existing database configuration overrides are preserved
+- **GIVEN** a selected database has host, database-name, or backup-name overrides
+- **WHEN** its backup runs
+- **THEN** the backup SHALL use the configured overrides
+
 #### Scenario: Generated retention is missing
 - **GIVEN** a database backup is invoked without retention for the selected database
 - **WHEN** the backup script starts
 - **THEN** it SHALL report an error and stop before creating a backup
+
+#### Scenario: Selected database destination is missing
+- **GIVEN** the selected path file has no destination for a selected database
+- **WHEN** the PostgreSQL startup script validates destinations
+- **THEN** it SHALL report an error
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Selected path file overrides older destinations
+- **GIVEN** the credentials environment file contains an older destination
+- **WHEN** the PostgreSQL backup profile is started
+- **THEN** uploads and remote cleanup SHALL use the destination in the selected path file
