@@ -69,27 +69,29 @@ else:
             check=False,
         )
 
-    def merged_config(self):
+    def merged_config(self, resolve_env=False):
         docker = shutil.which("docker")
         if docker is None:
             self.skipTest("Docker Compose is not available")
+        args = [
+            docker,
+            "compose",
+            "--env-file",
+            "/dev/null",
+            "--project-directory",
+            str(self.root),
+            "-f",
+            str(self.root / "docker-compose.yml"),
+            "-f",
+            str(self.root / "override.yml"),
+            "config",
+            "--format",
+            "json",
+        ]
+        if not resolve_env:
+            args.append("--no-env-resolution")
         result = subprocess.run(
-            [
-                docker,
-                "compose",
-                "--env-file",
-                "/dev/null",
-                "--project-directory",
-                str(self.root),
-                "-f",
-                str(self.root / "docker-compose.yml"),
-                "-f",
-                str(self.root / "override.yml"),
-                "config",
-                "--no-env-resolution",
-                "--format",
-                "json",
-            ],
+            args,
             env={"PATH": os.defpath, "HOME": str(self.root)},
             text=True,
             capture_output=True,
@@ -99,6 +101,11 @@ else:
         return json.loads(result.stdout)
 
     def test_profiles_generate_exact_resources_and_cron_jobs(self):
+        policies = {}
+        for line in (self.root / "backup-databases.conf").read_text().splitlines():
+            if line and not line.startswith("#"):
+                name, _, _, _, retention, schedule = line.split("|")
+                policies[name] = (retention, schedule)
         cases = {
             "default": (
                 {"firefly", "paperless", "immich", "invidious", "firefoxsync"},
@@ -128,9 +135,17 @@ else:
                     self.assertTrue(mount["read_only"])
                 self.assertTrue(mounts["/run/secrets"]["read_only"])
                 command = service["command"][2]
+                environment = service["environment"]
                 for name in names:
                     self.assertIn(f"${{{name.upper()}_CRON_SCHEDULE:-}}", command)
                     self.assertIn(f"backup-script.sh {name}", command)
+                    retention, schedule = policies[name]
+                    self.assertEqual(environment[f"{name.upper()}_CRON_SCHEDULE"], schedule)
+                    self.assertEqual(
+                        environment[f"DB_BACKUP_{name.upper()}_RETENTION_DAYS"],
+                        retention,
+                    )
+                self.assertEqual(len(environment), 2 * len(names))
                 self.assertEqual(command.count("backup-script.sh "), len(names))
                 self.assertIn("--project-directory", (self.root / "args").read_text())
                 self.assertFalse(list(self.root.glob("postgres-compose.*.yml")))
@@ -166,19 +181,86 @@ else:
                 self.assertIn("ERROR: Cannot list Docker", result.stderr)
                 self.assertFalse((self.root / "args").exists())
 
+    def test_rejects_nonpositive_retention_before_compose(self):
+        registry = self.root / "backup-databases.conf"
+        original = registry.read_text()
+        for network, value in (
+            ("finance_network", "0"),
+            ("finance_network", "-1"),
+            ("games_network", "0"),
+        ):
+            with self.subTest(network=network, value=value):
+                current = "120" if network == "finance_network" else "30"
+                registry.write_text(
+                    original.replace(f"{network}|{current}|", f"{network}|{value}|")
+                )
+                result = self.run_start("prod")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("must be at least one day", result.stderr)
+                self.assertFalse((self.root / "args").exists())
+
+    def test_one_day_retention_is_generated(self):
+        registry = self.root / "backup-databases.conf"
+        registry.write_text(
+            registry.read_text().replace("finance_network|120|", "finance_network|1|")
+        )
+        result = self.run_start("prod")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = self.merged_config()["services"]["db-backup"]["environment"]
+        self.assertEqual(environment["DB_BACKUP_FIREFLY_RETENTION_DAYS"], "1")
+
+    def test_schedule_validation_checks_field_count_and_characters(self):
+        registry = self.root / "backup-databases.conf"
+        original = registry.read_text()
+        for schedule in (
+            "5 3 * *",
+            "5 3 * * * *",
+            "5 3 * * *;invalid",
+        ):
+            with self.subTest(schedule=schedule):
+                registry.write_text(original.replace("5 3 * * *", schedule))
+                result = self.run_start("prod")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Invalid entry", result.stderr)
+                self.assertFalse((self.root / "args").exists())
+
+        schedule = "0,30 1-3/2 * JAN,MAR MON-FRI"
+        registry.write_text(original.replace("5 3 * * *", schedule))
+        result = self.run_start("prod")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = self.merged_config()["services"]["db-backup"]["environment"]
+        self.assertEqual(environment["FIREFLY_CRON_SCHEDULE"], schedule)
+
+    def test_registry_schedule_overrides_legacy_environment(self):
+        base = self.root / "docker-compose.yml"
+        base.write_text(
+            base.read_text().replace("env_file: .env", "env_file: settings.txt")
+        )
+        (self.root / "settings.txt").write_text(
+            "FIREFLY_CRON_SCHEDULE=0 0 * * *\nFIREFLY_BACKUP_RETENTION_DAYS=90\n"
+        )
+        result = self.run_start("prod")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = self.merged_config(resolve_env=True)["services"]["db-backup"][
+            "environment"
+        ]
+        self.assertEqual(environment["FIREFLY_CRON_SCHEDULE"], "5 3 * * *")
+        self.assertEqual(environment["DB_BACKUP_FIREFLY_RETENTION_DAYS"], "120")
+        self.assertEqual(environment["FIREFLY_BACKUP_RETENTION_DAYS"], "90")
+
     def test_generated_command_validates_and_writes_schedule(self):
         result = self.run_start("prod")
         self.assertEqual(result.returncode, 0, result.stderr)
-        command = self.merged_config()["services"]["db-backup"]["command"][2]
+        service = self.merged_config()["services"]["db-backup"]
+        command = service["command"][2]
         crontab = self.root / "crontab"
         command = command.replace("$$", "$").replace("/etc/crontabs/root", str(crontab))
         crond = self.bin / "crond"
         crond.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         crond.chmod(0o755)
         for schedule, expected_status in (
-            ("5 3 * * *", 0),
+            (service["environment"]["FIREFLY_CRON_SCHEDULE"], 0),
             ("5 3 * *", 1),
-            ("5 3 * * *;invalid", 1),
         ):
             with self.subTest(schedule=schedule):
                 result = subprocess.run(

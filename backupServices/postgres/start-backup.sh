@@ -10,7 +10,7 @@ profile="$1"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 config="${script_dir}/backup-databases.conf"
 
-declare -a names=() volumes=() categories=() networks=()
+declare -a names=() volumes=() categories=() networks=() retentions=() schedules=()
 declare -A seen_names=() seen_volumes=() seen_keys=() selected_networks=()
 category=""
 
@@ -20,7 +20,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     continue
   fi
   [[ -z "$line" || "$line" == \#* ]] && continue
-  if [[ ! "$line" =~ ^([a-z0-9]+(-[a-z0-9]+)*)\|([a-z0-9_]+)\|([a-z]+(,[a-z]+)*)\|([a-z0-9_]+)\|(0|[1-9][0-9]*)\|(([a-zA-Z0-9*/,-]+\ ){4}[a-zA-Z0-9*/,-]+)$ ]]; then
+  if [[ ! "$line" =~ ^([a-z0-9]+(-[a-z0-9]+)*)\|([a-z0-9_]+)\|([a-z]+(,[a-z]+)*)\|([a-z0-9_]+)\|(-?[0-9]+)\|(([a-zA-Z0-9*/,-]+\ ){4}[a-zA-Z0-9*/,-]+)$ ]]; then
     echo "ERROR: Invalid entry in ${config}: ${line}" >&2
     exit 1
   fi
@@ -28,6 +28,12 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   volume="${BASH_REMATCH[3]}"
   profiles="${BASH_REMATCH[4]}"
   network="${BASH_REMATCH[6]}"
+  retention="${BASH_REMATCH[7]}"
+  schedule="${BASH_REMATCH[8]}"
+  if [[ ! "$retention" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: Retention for ${name} must be at least one day." >&2
+    exit 1
+  fi
   key="${name//-/_}"
   key="${key^^}"
   if [[ -z "$category" || -v "seen_names[$name]" || -v "seen_volumes[$volume]" ||
@@ -54,6 +60,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
   names+=("$name")
   volumes+=("$volume")
   categories+=("$category")
+  retentions+=("$retention")
+  schedules+=("$schedule")
   selected_networks["$network"]=1
 done < "$config"
 
@@ -107,6 +115,13 @@ trap 'rm -f -- "$override"' EXIT
     printf '      - %s:/var/lib/postgresql/%s:ro\n' "${volumes[$i]}" "${names[$i]}"
   done
   printf '      - gpg-secrets:/run/secrets:ro\n'
+  printf '    environment:\n'
+  for ((i = 0; i < ${#names[@]}; i++)); do
+    key="${names[$i]//-/_}"
+    key="${key^^}"
+    printf '      %s_CRON_SCHEDULE: "%s"\n' "$key" "${schedules[$i]}"
+    printf '      DB_BACKUP_%s_RETENTION_DAYS: "%s"\n' "$key" "${retentions[$i]}"
+  done
   cat <<'EOF'
     command:
       - /bin/sh
@@ -126,7 +141,6 @@ EOF
     fi
     printf '        set -- $${%s:-}\n' "$key"
     printf '        if [ "$$#" -ne 5 ]; then echo "ERROR: %s must have five cron fields" >&2; exit 1; fi\n' "$key"
-    printf '        for field do case "$$field" in *[!a-zA-Z0-9*/,-]*|"") echo "ERROR: Invalid %s" >&2; exit 1;; esac; done\n' "$key"
     printf '        printf "%%s %%s %%s %%s %%s sh /usr/local/bin/backup-script.sh %s\\n" "$$1" "$$2" "$$3" "$$4" "$$5" >> /etc/crontabs/root\n' "$name"
   done
   cat <<'EOF'

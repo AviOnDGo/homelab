@@ -7,12 +7,22 @@
 
 set -eo pipefail
 
-# Source environment variables
-[ -f /etc/environment ] && source /etc/environment
-
 # Get database name from argument
 DB_NAME=${1:-invidious}
 DB_NAME_LOWER=$(echo "$DB_NAME" | tr '[:upper:]' '[:lower:]')
+
+# Preserve generated policy before loading environment settings.
+case "$DB_NAME_LOWER" in
+  invidious) REGISTRY_RETENTION="${DB_BACKUP_INVIDIOUS_RETENTION_DAYS:-}" ;;
+  immich) REGISTRY_RETENTION="${DB_BACKUP_IMMICH_RETENTION_DAYS:-}" ;;
+  firefly) REGISTRY_RETENTION="${DB_BACKUP_FIREFLY_RETENTION_DAYS:-}" ;;
+  paperless) REGISTRY_RETENTION="${DB_BACKUP_PAPERLESS_RETENTION_DAYS:-}" ;;
+  firefoxsync) REGISTRY_RETENTION="${DB_BACKUP_FIREFOXSYNC_RETENTION_DAYS:-}" ;;
+  romm) REGISTRY_RETENTION="${DB_BACKUP_ROMM_RETENTION_DAYS:-}" ;;
+esac
+
+# Source environment variables
+[ -f /etc/environment ] && source /etc/environment
 
 # Determine configuration based on database name
 case "$DB_NAME_LOWER" in
@@ -24,7 +34,6 @@ case "$DB_NAME_LOWER" in
     BACKUP_NAME="${INVIDIOUS_BACKUP_NAME}"
     DROPBOX_PATH="${INVIDIOUS_DROPBOX_BACKUP_PATH}"
     BACKUP_DIR="/backups/invidious"
-    BACKUP_RETENTION_DAYS="${INVIDIOUS_BACKUP_RETENTION_DAYS:-7}"
     ;;
   immich)
     DB_HOST="${IMMICH_DB_HOST}"
@@ -34,7 +43,6 @@ case "$DB_NAME_LOWER" in
     BACKUP_NAME="${IMMICH_BACKUP_NAME}"
     DROPBOX_PATH="${IMMICH_DROPBOX_BACKUP_PATH}"
     BACKUP_DIR="/backups/immich"
-    BACKUP_RETENTION_DAYS="${IMMICH_BACKUP_RETENTION_DAYS:-30}"
     ;;
   firefly)
     DB_HOST="${FIREFLY_DB_HOST}"
@@ -44,7 +52,6 @@ case "$DB_NAME_LOWER" in
     BACKUP_NAME="${FIREFLY_BACKUP_NAME}"
     DROPBOX_PATH="${FIREFLY_DROPBOX_BACKUP_PATH}"
     BACKUP_DIR="/backups/firefly"
-    BACKUP_RETENTION_DAYS="${FIREFLY_BACKUP_RETENTION_DAYS:-120}"
     ;;
   paperless)
     DB_HOST="${PAPERLESS_DB_HOST}"
@@ -54,7 +61,6 @@ case "$DB_NAME_LOWER" in
     BACKUP_NAME="${PAPERLESS_BACKUP_NAME}"
     DROPBOX_PATH="${PAPERLESS_DROPBOX_BACKUP_PATH}"
     BACKUP_DIR="/backups/paperless"
-    BACKUP_RETENTION_DAYS="${PAPERLESS_BACKUP_RETENTION_DAYS:-30}"
     ;;
   firefoxsync)
     DB_HOST="${FIREFOXSYNC_DB_HOST}"
@@ -64,7 +70,6 @@ case "$DB_NAME_LOWER" in
     BACKUP_NAME="${FIREFOXSYNC_BACKUP_NAME}"
     DROPBOX_PATH="${FIREFOXSYNC_DROPBOX_BACKUP_PATH}"
     BACKUP_DIR="/backups/firefoxsync"
-    BACKUP_RETENTION_DAYS="${FIREFOXSYNC_BACKUP_RETENTION_DAYS:-30}"
     ;;
   romm)
     DB_HOST="${ROMM_DB_HOST}"
@@ -74,13 +79,18 @@ case "$DB_NAME_LOWER" in
     BACKUP_NAME="${ROMM_BACKUP_NAME}"
     DROPBOX_PATH="${ROMM_DROPBOX_BACKUP_PATH}"
     BACKUP_DIR="/backups/romm"
-    BACKUP_RETENTION_DAYS="${ROMM_BACKUP_RETENTION_DAYS:-30}"
     ;;
   *)
     echo "❌ Unknown database: $DB_NAME"
     exit 1
     ;;
 esac
+
+BACKUP_RETENTION_DAYS="${REGISTRY_RETENTION:-}"
+if [ -z "$BACKUP_RETENTION_DAYS" ]; then
+  echo "ERROR: No registry retention policy for ${DB_NAME_LOWER} in this profile" >&2
+  exit 1
+fi
 
 # Load GPG passphrase from secrets if it exists
 if [ -f /run/secrets/gpg-passphrase ]; then
