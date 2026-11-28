@@ -337,6 +337,12 @@ volumes:
 ### Volume Naming Convention
 Named external Docker volumes use the pattern **`<service_name>_filedata`** (e.g., `freshrss_filedata`, `vaultwarden_filedata`). Services with multiple distinct volumes append a purpose suffix instead: `<service>_<purpose>` (e.g., `immich_library`, `immich_profile`). Never use generic names like `data` or `config` without a service prefix.
 
+### Database Naming Convention
+Use the logical service identifier (normally the service directory name) for the
+database name and `<service>-db` for its database service and connection hostname.
+For example, Firefox Sync uses database `firefoxsync` and host `firefoxsync-db`.
+Keep backup configuration and restore procedures aligned with these names.
+
 ### Environment & Secrets
 - `PUID: 1000`, `PGID: 1000` standard for linuxserver.io images
 - `TZ: UTC` is the generic timezone default — inline it directly in `docker-compose.yml` under `environment:`, do NOT put it in `.env`

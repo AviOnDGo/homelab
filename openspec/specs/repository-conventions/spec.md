@@ -275,7 +275,9 @@ container naming.
 
 ### REQ-015: Database companion services use the `<service>-db` naming pattern
 When a service requires a dedicated PostgreSQL (or other relational database) container,
-the database service SHALL be named `<primary-service>-db` using a hyphen separator.
+the database service SHALL be named `<service>-db` using the logical service identifier
+(normally its directory name) and a hyphen separator. Database connection hostnames
+SHALL use that database service name.
 
 #### Scenario: PostgreSQL companion service is named correctly
 - **GIVEN** a service named `firefly` requires a PostgreSQL database
@@ -474,3 +476,15 @@ print credential values.
 - **WHEN** the local secret gate runs
 - **THEN** those values SHALL NOT be treated as literal credentials
 - **AND** a literal credential in the same example file SHALL still fail the gate
+
+### REQ-030: Application database names match their service identifiers
+A service's dedicated application database SHALL be named after its logical service
+identifier, normally the service directory name. Backup and restore configuration
+SHALL use the same name.
+
+#### Scenario: Firefox Sync database naming
+- **GIVEN** Firefox Sync uses the logical service identifier `firefoxsync`
+- **WHEN** its database and connection settings are configured
+- **THEN** the database SHALL be named `firefoxsync`
+- **AND** its database hostname SHALL be `firefoxsync-db`
+- **AND** backup and restore configuration SHALL target that database
