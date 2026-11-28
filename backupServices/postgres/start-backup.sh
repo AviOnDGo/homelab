@@ -83,6 +83,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
     entry_profiles["$entry_profile"]=1
   done
+  if [[ ! -v 'entry_profiles[default]' ]]; then
+    echo "ERROR: ${name} must include the default profile." >&2
+    exit 1
+  fi
   [[ -v "entry_profiles[$profile]" ]] || continue
   destination_key="${key}_DROPBOX_BACKUP_PATH"
   if [[ -z "${destinations[$destination_key]:-}" ]]; then

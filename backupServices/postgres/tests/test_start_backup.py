@@ -114,12 +114,13 @@ else:
                 policies[name] = (retention, schedule)
         cases = {
             "default": (
-                {"firefly", "paperless", "immich", "invidious", "firefoxsync"},
-                {"finance_network", "knowledge_network", "media_network", "security_network"},
+                {"firefly", "romm", "paperless", "immich", "invidious", "firefoxsync"},
+                {"finance_network", "games_network", "knowledge_network", "media_network",
+                 "security_network"},
             ),
             "local": (
-                {"romm", "paperless", "immich", "invidious", "firefoxsync"},
-                {"games_network", "knowledge_network", "media_network", "security_network"},
+                {"romm", "paperless", "immich", "invidious"},
+                {"games_network", "knowledge_network", "media_network"},
             ),
             "prod": ({"firefly"}, {"finance_network"}),
         }
@@ -159,12 +160,16 @@ else:
 
     def test_missing_resources_or_invalid_registry_fail_before_compose(self):
         cases = (
-            {"MOCK_VOLUMES": VOLUMES.replace("firefoxsync_postgresdata", "")},
-            {"MOCK_NETWORKS": NETWORKS.replace("security_network", "")},
+            (("local",), {"MOCK_VOLUMES": VOLUMES.replace("immich_postgresdata", "")}),
+            (("local",), {"MOCK_NETWORKS": NETWORKS.replace("knowledge_network", "")}),
+            (("default", "local"),
+             {"MOCK_VOLUMES": VOLUMES.replace("firefoxsync_postgresdata", "")}),
+            (("default", "local"),
+             {"MOCK_NETWORKS": NETWORKS.replace("security_network", "")}),
         )
-        for env in cases:
-            with self.subTest(env=env):
-                result = self.run_start("local", **env)
+        for args, env in cases:
+            with self.subTest(args=args, env=env):
+                result = self.run_start(*args, **env)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("ERROR: Required", result.stderr)
                 self.assertFalse((self.root / "args").exists())
@@ -173,6 +178,27 @@ else:
         result = self.run_start("local")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Invalid entry", result.stderr)
+        self.assertFalse((self.root / "args").exists())
+
+    def test_local_does_not_require_firefoxsync_resources(self):
+        result = self.run_start(
+            "local",
+            MOCK_VOLUMES=VOLUMES.replace("firefoxsync_postgresdata", ""),
+            MOCK_NETWORKS=NETWORKS.replace("security_network", ""),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_each_registry_entry_requires_default_profile(self):
+        registry = self.root / "backup-databases.conf"
+        registry.write_text(
+            registry.read_text().replace(
+                "romm|romm_postgresdata|default,local|",
+                "romm|romm_postgresdata|local|",
+            )
+        )
+        result = self.run_start("prod")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("romm must include the default profile", result.stderr)
         self.assertFalse((self.root / "args").exists())
 
     def test_compose_failure_removes_temporary_override(self):
