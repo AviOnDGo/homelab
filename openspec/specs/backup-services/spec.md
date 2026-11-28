@@ -264,18 +264,18 @@ to verify files exist), monthly (full test-restore to a non-production environme
 - **THEN** database row counts SHALL match known baselines
 - **AND** Vaultwarden vault SHALL unlock successfully from the restored data
 
-### REQ-018: Remote backup services SHALL be deployed from dedicated scoped compose files
-When deploying backup services to a remote host, the operator SHALL use
-`backupServices/postgres/docker-compose.remote.yml` for PostgreSQL and
+### REQ-018: Prod backup services use host-scoped startup
+When deploying backup services to a prod host, the operator SHALL use
+`backupServices/postgres/start-backup.sh prod` for PostgreSQL and
 `backupServices/filedata/start-backup.sh prod` for filedata.
 
-#### Scenario: Remote postgres backup deployed with correct scope
-- **GIVEN** a remote host is configured for the remote PostgreSQL backup profile
+#### Scenario: Prod postgres backup deployed with correct scope
+- **GIVEN** a host is configured for the prod PostgreSQL backup profile
 - **WHEN** the operator starts the postgres backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.remote.yml up -d`
-- **AND** only `firefly_postgresdata` and `firefoxsync_postgresdata` volumes SHALL be mounted
-- **AND** only `finance_network` and `security_network` SHALL be joined
-- **AND** `firefly` and `firefoxsync` SHALL each have a scheduled backup job
+- **THEN** the command SHALL be `./start-backup.sh prod`
+- **AND** only `firefly_postgresdata` SHALL be mounted as a database source
+- **AND** only `finance_network` SHALL be joined
+- **AND** `firefly` SHALL have a scheduled backup job
 
 #### Scenario: Prod filedata backup deployed with correct scope
 - **GIVEN** a remote host is configured for the prod filedata backup profile
@@ -306,11 +306,11 @@ without requiring a separate profile Compose file.
 - **THEN** the command SHALL produce a valid Compose model
 
 ### REQ-021: Scoped backup profile changes SHALL remain deployment-scoped
-Changes to a remote PostgreSQL profile or a filedata host selection SHALL affect
+Changes to a PostgreSQL profile or a filedata host selection SHALL affect
 only services deployed to that profile and SHALL NOT enable unrelated jobs.
 
 #### Scenario: Scoped profile addition preserves default and Local scope
-- **GIVEN** a backup job is added to the remote PostgreSQL profile or filedata registry
+- **GIVEN** a backup job is added to a PostgreSQL profile or filedata registry
 - **WHEN** the relevant backup configuration is inspected
 - **THEN** the changed profile SHALL contain only that profile's deployed jobs
 - **AND** other host profiles SHALL retain their configured service sets
@@ -353,17 +353,19 @@ The `filedata-backup` pipeline SHALL back up only the canonical retained Paperle
 - **THEN** files under `documents/thumbnails/` SHALL NOT be included
 - **AND** runtime lock artifacts such as `media.lock` SHALL NOT be included
 
-### REQ-024: Local backup services SHALL be deployed from dedicated local-scoped compose files
+### REQ-024: Local backup services use host-scoped startup
 When deploying backup services to the Local environment, the operator SHALL use
-`docker-compose.local.yml` for PostgreSQL and `start-backup.sh local` for filedata.
+`start-backup.sh local` in each backup service directory.
 
 #### Scenario: Local postgres backup deployed with correct scope
 - **GIVEN** the Local environment is configured
 - **WHEN** the operator starts the postgres backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.local.yml up -d`
+- **THEN** the command SHALL be `./start-backup.sh local`
 - **AND** the database source volumes SHALL be `romm_postgresdata`,
-  `paperless_postgresdata`, and `invidious_postgresdata`, in that order
-- **AND** only `games_network`, `knowledge_network`, and `media_network` SHALL be joined
+  `paperless_postgresdata`, `immich_postgresdata`, `invidious_postgresdata`,
+  and `firefoxsync_postgresdata`, in that order
+- **AND** only `games_network`, `knowledge_network`, `media_network`, and
+  `security_network` SHALL be joined
 
 #### Scenario: Local filedata backup deployed with correct scope
 - **GIVEN** the Local environment is configured
@@ -440,8 +442,8 @@ and SHALL NOT be selected by Local or Prod.
 Backup services SHALL group source-volume mounts, top-level source-volume
 declarations, and cron jobs alphabetically by service category, then by service
 name. Multiple volumes of one service SHALL be sorted by purpose suffix. The
-filedata registry and its generated override SHALL preserve this ordering.
-PostgreSQL Compose profiles SHALL preserve the ordering in their source files.
+filedata and PostgreSQL registries and their generated overrides SHALL preserve
+this ordering.
 Network references and declarations SHALL be sorted by network name. Shared
 secrets mounts SHALL follow grouped source volumes.
 
@@ -627,3 +629,22 @@ replacing the existing container when no production source volumes are available
 - **GIVEN** no production source volumes exist
 - **WHEN** the filedata backup restore workflow checks source volumes
 - **THEN** it SHALL fail without replacing an existing backup container
+
+### REQ-040: PostgreSQL backup profiles use a generated Compose override
+The PostgreSQL backup service SHALL use a neutral base Compose file and generate
+a temporary override from `backup-databases.conf` for the selected host profile.
+The startup script SHALL remove the override on exit and SHALL retain per-service
+environment settings for cron schedules and retention.
+
+#### Scenario: Selected database resources are generated
+- **GIVEN** all source volumes and networks for a selected host profile exist
+- **WHEN** the PostgreSQL startup script deploys the profile
+- **THEN** the generated configuration SHALL include only its registered database
+  mounts, networks, and cron jobs
+- **AND** database source volumes SHALL be mounted read-only
+
+#### Scenario: A selected database resource is missing
+- **GIVEN** a selected source volume or network is missing
+- **WHEN** the PostgreSQL startup script checks its resources
+- **THEN** it SHALL report the missing resource
+- **AND** it SHALL fail without replacing the existing backup container
