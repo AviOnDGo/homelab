@@ -30,11 +30,11 @@ using its registered cron schedule.
 ### REQ-012: Postgres database backups run on staggered cron schedules
 The postgres backup service SHALL schedule database backups using per-service cron schedule environment variables, with each configured service having exactly one `*_CRON_SCHEDULE` variable shared across compose profiles.
 
-#### Scenario: Compose files reference per-service cron variables
-- **GIVEN** `backupServices/postgres/docker-compose.yml`, `docker-compose.remote.yml`, and `docker-compose.local.yml` are inspected
-- **WHEN** reviewing the cron `echo` entries in the `db-backup` command blocks
+#### Scenario: Generated jobs reference per-service cron variables
+- **GIVEN** `backupServices/postgres/start-backup.sh` and `backup-databases.conf` are inspected
+- **WHEN** reviewing the generated `db-backup` cron jobs
 - **THEN** each scheduled database SHALL reference a per-service variable named `{SERVICE}_CRON_SCHEDULE`
-- **AND** the first cron `echo` in each postgres command block SHALL rewrite `/etc/crontabs/root` with `>` so container starts remain idempotent
+- **AND** the first cron `echo` in the generated command SHALL rewrite `/etc/crontabs/root` with `>` so container starts remain idempotent
 - **AND** profile-specific variables such as `*_REMOTE_CRON_SCHEDULE` and `*_LOCAL_CRON_SCHEDULE` SHALL NOT be used
 
 #### Scenario: Environment examples define one cron variable per postgres service
@@ -75,7 +75,7 @@ The backup mechanism is determined by the type of persistent data:
 
 | Data type | Backup service | Configuration location |
 |---|---|---|
-| PostgreSQL database | `backupServices/postgres/` (`db-backup` service) | Add cron entry + case block to `db-backup-script.sh`; mount the postgres volume |
+| PostgreSQL database | `backupServices/postgres/` (`db-backup` service) | Register the database profile and add a case block to `db-backup-script.sh` |
 | Docker volume / filesystem data | `backupServices/filedata/` (`filedata-backup` service) | Register the volume and host profiles in `backup-volumes.conf`; generated mounts and jobs are merged with `docker-compose.yml` by `start-backup.sh` |
 
 A service with both PostgreSQL and filedata persistence SHALL use both
@@ -90,7 +90,8 @@ mechanisms.
 #### Scenario: PostgreSQL-backed service backup integration
 - **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** a service uses a PostgreSQL database
-- **THEN** the service's postgres volume SHALL be mounted into `db-backup` in `backupServices/postgres/docker-compose.yml`
+- **THEN** the service's postgres volume SHALL be registered in `backupServices/postgres/backup-databases.conf`
+- **AND** the selected profile SHALL mount that volume into `db-backup`
 - **AND** a cron entry SHALL be present in the `db-backup` command for that service
 - **AND** a case block SHALL exist in `backupServices/postgres/db-backup-script.sh` for that service's database
 
