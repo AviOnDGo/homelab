@@ -81,9 +81,9 @@ in the three Immich entries in
 3. Configure `backupServices/postgres/.env` using its matching example. Set
    `IMMICH_DB_HOST=immich-db`, database credentials matching the Immich
    service, `IMMICH_BACKUP_NAME=immich`, a Dropbox path, and a GPG passphrase.
-   Set the database schedule before the file schedules (examples use 02:00
-   versus 03:00, 03:15, and 03:30). Existing runtime configurations are not
-   automatically updated when the examples change.
+   Set the database schedule in `backup-databases.conf` before the file
+   schedules (the registry uses 02:00 versus 03:00, 03:15, and 03:30). Recreate
+   the backup container after changing the registry.
 4. Rebuild and recreate the Local filedata backup container, and recreate the
    Local PostgreSQL backup container:
 
