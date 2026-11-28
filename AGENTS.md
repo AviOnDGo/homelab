@@ -369,7 +369,7 @@ This pattern runs scheduled tasks within the container without external cron dae
 For `backupServices/postgres/`, use `backup-databases.conf` and `start-backup.sh`
 to generate host-specific mounts, network declarations, and cron jobs from the
 neutral `docker-compose.yml`. The legacy local and remote Compose files remain
-available during migration.
+in the repository but are no longer supported.
 For `backupServices/filedata/`, keep one canonical `docker-compose.yml` and use
 `backup-volumes.conf` plus `start-backup.sh` to generate host-specific mounts,
 volume declarations, and cron jobs:
@@ -395,8 +395,9 @@ volume declarations, and cron jobs:
   `.env.example` if needed, backup scripts, specs, and operator documentation together.
   Do not enable a service in a profile where it is not deployed.
 - Register database backups in `backupServices/postgres/backup-databases.conf` with
-  their applicable profiles and network. Until the schedule and retention migration,
-  database jobs continue to use their existing environment settings.
+  their applicable profiles, network, schedule, and positive retention days.
+  Generated profiles use those policy values; the backup script requires a
+  generated profile.
 - Filedata backup modes, retention, and schedules come from `backup-volumes.conf` and are passed
   to the container by the generated Compose override. Specify `sync-crypt` for every volume
   that requires it, including Immich and Paperless; do not configure these policies in the
@@ -501,7 +502,7 @@ Authoring rules:
 - Dropbox primary cloud target; Invidious/Firefly use `/Apps/invidious`, `/Apps/firefly` paths
 - Rclone remotes configurable via environment (Google Drive/OneDrive as fallbacks)
 - Filedata retention days per service are in `backupServices/filedata/backup-volumes.conf`;
-  database retention is configured through environment variables.
+  generated database backup retention is in `backupServices/postgres/backup-databases.conf`.
 
 ---
 
