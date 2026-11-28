@@ -26,7 +26,7 @@ and per-service retention policies. Profiles use schedules and retention from
 │  1. pg_dump via network → service DB host                  │
 │  2. zstd -6 -T1 compression → .sql.zst                     │
 │  3. GPG symmetric encryption (AES256) → .sql.zst.gpg       │
-│  4. Store locally in ./backups/{service}/                   │
+│  4. Store in container /backups/{service}/                 │
 │  5. Upload to Dropbox via rclone                           │
 │  6. Delete backups past their per-service retention         │
 │  7. Send Discord notification                               │
@@ -45,7 +45,7 @@ and per-service retention policies. Profiles use schedules and retention from
 ### 1. docker-compose.yml
 Defines the `db-backup` service with the following features:
 - Single reusable service for backing up multiple databases
-- Mounts backup directories for local storage
+- Stores local backups in the container's writable layer, without a `/backups` mount
 - Uses named volume `gpg-secrets` for secure passphrase storage
 - Joins media, finance, knowledge, and security networks for database connectivity
 - Runs cron jobs from per-service `*_CRON_SCHEDULE` variables
@@ -253,6 +253,11 @@ rclone delete --min-age 7d dropbox:/service_backups/
 - Runs after each backup to maintain retention policy
 - Prevents unlimited storage growth
 
+Local files survive a container restart but not recreation. `start-backup.sh`
+recreates the container, so copy any needed local files out first. An
+interrupted or failed dump can leave an unencrypted intermediate file in the
+container. Dropbox is the durable backup destination.
+
 ### Phase 5: Notification
 ```bash
 curl -X POST $DISCORD_WEBHOOK_URI \
@@ -280,8 +285,7 @@ curl -X POST $DISCORD_WEBHOOK_URI \
 
 ### Access Control
 - **File Permissions**: Recommended `chmod 600 .env`
-- **Directory Permissions**: Recommended `chmod 700 ./backups/`
-- **Gitignore**: Should exclude `.env`, `backups/`, `secrets/`
+- **Gitignore**: Should exclude `.env` and `secrets/`
 - **Dropbox Tokens**: Use app-restricted tokens when possible
 
 ## Monitoring & Maintenance
@@ -289,17 +293,18 @@ curl -X POST $DISCORD_WEBHOOK_URI \
 ### Discord Notifications
 - **Success**: `✅ Backup successful: service_name - size - timestamp`
 - **Failure**: `❌ Backup failed: service_name - error details`
-- **Partial**: `⚠️ Backup stored locally but upload failed - will retry`
+- **Upload failure**: The encrypted backup remains in the container until it is
+  removed or the container is recreated; the saved file is not retried later.
 
 ### Local Monitoring
 ```bash
 # Check recent backups
-ls -lt ./backups/invidious/ | head -5
-ls -lt ./backups/firefly/ | head -5
+docker exec db-backup ls -lt /backups/invidious/ | head -5
+docker exec db-backup ls -lt /backups/firefly/ | head -5
 
 # Disk usage
-du -sh ./backups/invidious/
-du -sh ./backups/firefly/
+docker exec db-backup du -sh /backups/invidious/
+docker exec db-backup du -sh /backups/firefly/
 
 # Container logs
 docker logs -f db-backup
@@ -361,23 +366,18 @@ NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
 ```
 
-2. **Create backup directory:**
-```bash
-mkdir -p ./backups/newdb
-```
-
-3. **Register the database in `backup-databases.conf`:**
+2. **Register the database in `backup-databases.conf`:**
 Add its source volume, applicable profiles, network, retention, and schedule in
 category and service-name order. Add its Dropbox destination to both path files.
 The startup script generates the Compose mounts, network declarations, cron job,
 and policy environment. Retention must be at least one day.
 
-4. **Register the database in `db-backup-script.sh`:**
+3. **Register the database in `db-backup-script.sh`:**
 Add a `newdb` case that resolves its connection, plus its generated-policy
 retention and destination mappings before environment loading. Update backup
 specs and operator documentation in the same change.
 
-5. **Recreate the affected profile:**
+4. **Recreate the affected profile:**
 ```bash
 ./start-backup.sh local
 ```

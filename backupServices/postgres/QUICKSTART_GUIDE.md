@@ -123,9 +123,9 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefly
 # Test Firefox Sync backup
 docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
 
-# Check backed up files
-ls -lah ./backups/invidious/
-ls -lah ./backups/firefly/
+# Check backed up files inside the container
+docker exec db-backup ls -lah /backups/invidious/
+docker exec db-backup ls -lah /backups/firefly/
 ```
 
 For the local environment:
@@ -180,6 +180,13 @@ a database not selected by the profile fails rather than using a fallback policy
 
 Automatic cleanup uses each database's configured retention for local and
 Dropbox backups.
+
+Local files in `/backups` are stored in the container's writable layer, not a
+host directory or volume. They survive a container restart but are lost when
+the container is recreated, including by `start-backup.sh`. Copy any needed
+local files out before recreating the container; Dropbox is the durable backup
+destination. A failed or interrupted dump can leave an unencrypted intermediate
+file in the container.
 
 ## 🔧 Common Commands
 
@@ -263,13 +270,13 @@ docker exec -i firefly-db psql -U firefly -d firefly < backup.sql
 
 ### Check Local Backups
 ```bash
-# List recent backups
-ls -lt ./backups/invidious/ | head -5
-ls -lt ./backups/firefly/ | head -5
+# List recent backups in the container
+docker exec db-backup ls -lt /backups/invidious/ | head -5
+docker exec db-backup ls -lt /backups/firefly/ | head -5
 
 # Check disk usage
-du -sh ./backups/invidious/
-du -sh ./backups/firefly/
+docker exec db-backup du -sh /backups/invidious/
+docker exec db-backup du -sh /backups/firefly/
 ```
 
 ### Check Dropbox Backups
@@ -282,18 +289,17 @@ docker exec db-backup rclone ls dropbox:/firefly_backups
 Backups send automatic notifications:
 - ✅ **Success**: Includes timestamp, file size, Dropbox path
 - ❌ **Failure**: Includes error details for troubleshooting
-- ⚠️ **Partial Success**: Backup stored locally but Dropbox upload failed
+- ❌ **Upload failure**: Encrypted backup remains in the container until it is
+  removed or the container is recreated; the saved file is not retried later.
 
 ## 🔐 Security Best Practices
 
 ```bash
 # Add sensitive files to .gitignore
 echo ".env" >> .gitignore
-echo "backups/" >> .gitignore
 echo "secrets/" >> .gitignore
 
-# Secure backup directories
-chmod 700 ./backups/
+# Secure environment credentials
 chmod 600 .env
 ```
 
@@ -311,17 +317,12 @@ NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
 ```
 
-### 2. Create backup directory:
-```bash
-mkdir -p ./backups/newdb
-```
-
-### 3. Register the database:
+### 2. Register the database:
 Add its volume, profiles, network, retention and schedule to
 `backup-databases.conf`, add its destination to both `path.local` and `path.prod`,
 and add its configuration case to `db-backup-script.sh`.
 
-### 4. Recreate the selected profile:
+### 3. Recreate the selected profile:
 ```bash
 ./start-backup.sh local
 ```
@@ -332,13 +333,7 @@ and add its configuration case to `db-backup-script.sh`.
 backupServices/postgres/
 ├── docker-compose.yml        # Service definition
 ├── .env                      # Configuration & credentials
-├── db-backup-script.sh      # Backup orchestration
-└── backups/                 # Local backup storage
-  ├── invidious/           # Invidious backups (*.sql.zst.gpg)
-  ├── firefly/             # Firefly backups (*.sql.zst.gpg)
-  ├── paperless/           # Paperless backups (*.sql.zst.gpg)
-  ├── immich/              # Immich backups (*.sql.zst.gpg)
-  └── firefoxsync/         # Firefox Sync backups (*.sql.zst.gpg)
+└── db-backup-script.sh       # Backup orchestration
 ```
 
 ## 📝 Configuration Files
