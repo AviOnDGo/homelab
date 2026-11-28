@@ -721,3 +721,31 @@ and `<service>`, respectively. Existing environment overrides SHALL be honored.
 - **GIVEN** the credentials environment file contains an older destination
 - **WHEN** the PostgreSQL backup profile is started
 - **THEN** uploads and remote cleanup SHALL use the destination in the selected path file
+
+### REQ-041: GCP database backup scheduler recovery
+The GCP database backup workflow SHALL deploy the production profile after a
+successful apply and NPM restore when the service restore group completes,
+whether the group succeeds or fails. It SHALL also support manual dispatch. It
+SHALL report and skip databases whose source volume or network is missing,
+and SHALL notify Discord when configured. It SHALL preserve an existing
+scheduler if no production database is available or preflight fails. Secrets
+SHALL be transferred over SSH standard input and SHALL NOT be stored in tracked
+files or exposed in command arguments.
+
+#### Scenario: Some database resources are missing
+- **GIVEN** at least one production database has its volume and network
+- **AND** another production database is missing a required resource
+- **WHEN** the database backup workflow runs
+- **THEN** the scheduler SHALL include only available databases
+- **AND** the workflow SHALL report the skipped database and alert Discord when configured
+
+#### Scenario: No production databases are available
+- **GIVEN** all production databases lack a source volume or network
+- **WHEN** the database backup workflow runs
+- **THEN** it SHALL fail without replacing an existing backup container
+
+#### Scenario: A missing-resource alert cannot be delivered
+- **GIVEN** at least one production database is available and another is skipped
+- **WHEN** sending the configured Discord alert fails
+- **THEN** the available database scheduler SHALL start
+- **AND** the workflow SHALL report failure
