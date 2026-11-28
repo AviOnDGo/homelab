@@ -90,27 +90,51 @@ docker compose down
 ### 2. Discover and download latest backup
 
 ```bash
-: "${DROPBOX_PATH:?Set the selected Dropbox destination first}" \
-  && rclone lsf "dropbox:${DROPBOX_PATH}" --files-only | grep -E '\.sql\.zst\.gpg$' | sort
-read -r -p "Backup filename to restore: " BACKUP_FILE
-: "${DROPBOX_PATH:?Set the selected Dropbox destination first}" \
-  && : "${BACKUP_FILE:?A backup filename is required}" \
-  && rclone copy "dropbox:${DROPBOX_PATH}/${BACKUP_FILE}" .
+unset RESTORE_BACKUP BACKUP_LIST BACKUP_FILE
+if [[ -z "${DROPBOX_PATH:-}" ]]; then
+  echo "ERROR: Set the selected Dropbox destination first." >&2
+elif ! BACKUP_LIST="$(rclone lsf "dropbox:${DROPBOX_PATH}" --files-only)"; then
+  echo "ERROR: Could not list remote backups; do not continue." >&2
+else
+  printf '%s\n' "$BACKUP_LIST" | grep -E '\.sql\.zst\.gpg$' | sort
+  if ! read -r -p "Backup filename to restore: " BACKUP_FILE \
+    || [[ "$BACKUP_FILE" != *.sql.zst.gpg || "$BACKUP_FILE" == */* ]] \
+    || ! grep -Fxq -- "$BACKUP_FILE" <<< "$BACKUP_LIST"; then
+    echo "ERROR: Select a backup filename from the listing." >&2
+  elif RESTORE_DIR="$(mktemp -d)"; then
+    if rclone copyto "dropbox:${DROPBOX_PATH}/${BACKUP_FILE}" "$RESTORE_DIR/backup.sql.zst.gpg" \
+      && test -s "$RESTORE_DIR/backup.sql.zst.gpg"; then
+      RESTORE_BACKUP="$RESTORE_DIR/backup.sql.zst.gpg"
+      echo "Download verified: $RESTORE_BACKUP"
+    else
+      echo "ERROR: Backup download failed or was empty; do not continue." >&2
+    fi
+  else
+    echo "ERROR: Could not create a temporary download directory; do not continue." >&2
+  fi
+fi
 ```
+
+Continue only after seeing `Download verified`. A failed or empty download
+does not set `RESTORE_BACKUP`; correct the problem and repeat step 2.
 
 ### 3. Recreate volume and start database container
 
 ```bash
-docker volume rm invidious_postgresdata
-docker volume create invidious_postgresdata
-docker compose create
-docker start invidious-db
+if [[ -n "${RESTORE_BACKUP:-}" ]] && test -s "$RESTORE_BACKUP"; then
+  docker volume rm invidious_postgresdata \
+    && docker volume create invidious_postgresdata \
+    && docker compose create \
+    && docker start invidious-db
+else
+  echo "ERROR: No verified download; volume was not removed." >&2
+fi
 ```
 
 ### 4. Restore database
 
 ```bash
-gpg --batch --yes --passphrase "$PASSPHRASE" -d "$BACKUP_FILE" \
+gpg --batch --yes --passphrase "$PASSPHRASE" -d "$RESTORE_BACKUP" \
   | zstd -d \
   | docker exec -i invidious-db psql -U kemal -d invidious
 ```
@@ -119,6 +143,13 @@ gpg --batch --yes --passphrase "$PASSPHRASE" -d "$BACKUP_FILE" \
 
 ```bash
 docker compose up -d
+```
+
+Remove the downloaded archive and its temporary directory after recovery:
+
+```bash
+rm -f -- "$RESTORE_BACKUP" && rmdir -- "$RESTORE_DIR"
+unset RESTORE_BACKUP RESTORE_DIR BACKUP_FILE
 ```
 
 ## Troubleshooting
