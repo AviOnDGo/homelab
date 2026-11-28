@@ -367,10 +367,9 @@ When deploying backup services to the Local environment, the operator SHALL use
 - **WHEN** the operator starts the postgres backup service
 - **THEN** the command SHALL be `./start-backup.sh local`
 - **AND** the database source volumes SHALL be `romm_postgresdata`,
-  `paperless_postgresdata`, `immich_postgresdata`, `invidious_postgresdata`,
-  and `firefoxsync_postgresdata`, in that order
-- **AND** only `games_network`, `knowledge_network`, `media_network`, and
-  `security_network` SHALL be joined
+  `paperless_postgresdata`, `immich_postgresdata`, and `invidious_postgresdata`,
+  in that order
+- **AND** only `games_network`, `knowledge_network`, and `media_network` SHALL be joined
 
 #### Scenario: Local filedata backup deployed with correct scope
 - **GIVEN** the Local environment is configured
@@ -644,6 +643,8 @@ SHALL override legacy environment settings.
 The startup script SHALL select `path.local` for `local`, `path.prod` for `prod`,
 and an explicitly selected path file for `default`. The selected path file SHALL
 override legacy environment destinations.
+Every database registry entry SHALL include the `default` profile. Firefox Sync
+SHALL be selected only by `default`.
 The backup script SHALL reject execution when the selected database has no
 generated retention value or Dropbox destination.
 Database host, name, and backup name SHALL default to `<service>-db`, `<service>`,
@@ -661,6 +662,18 @@ and `<service>`, respectively. Existing environment overrides SHALL be honored.
 - **WHEN** the PostgreSQL startup script checks its resources
 - **THEN** it SHALL report the missing resource
 - **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Database entry omits the default profile
+- **GIVEN** any database registry entry omits `default`
+- **WHEN** the PostgreSQL startup script validates the registry
+- **THEN** it SHALL report an error
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Firefox Sync is not selected locally
+- **GIVEN** Firefox Sync resources are unavailable on the Local host
+- **WHEN** the PostgreSQL startup script generates the Local profile
+- **THEN** Firefox Sync's volume, network, and cron job SHALL NOT be included
+- **AND** their absence SHALL NOT prevent Local deployment
 
 #### Scenario: Invalid database retention is rejected
 - **GIVEN** a database registry entry specifies zero or a negative retention
