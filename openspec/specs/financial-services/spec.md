@@ -144,7 +144,7 @@ The `firefly_postgresdata` volume SHALL be registered with `backupServices/postg
 - **AND** uploaded to the configured cloud storage target
 
 #### Scenario: backup service mounts the firefly volume
-- **GIVEN** `backupServices/postgres/docker-compose.yml` is inspected
+- **GIVEN** a PostgreSQL backup profile containing Firefly is generated
 - **WHEN** reviewing the db-backup service volumes
 - **THEN** `firefly_postgresdata` SHALL be mounted read-only for backup access
 
