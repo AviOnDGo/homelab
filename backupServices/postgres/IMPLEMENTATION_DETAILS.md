@@ -312,13 +312,16 @@ docker logs -f db-backup
 
 ### Remote Monitoring
 ```bash
-# List Dropbox backups
-docker exec db-backup rclone ls dropbox:/invidious_backups
-docker exec db-backup rclone ls dropbox:/firefly_backups
+# List backups in the destinations selected by the running profile
+docker exec db-backup sh -c 'rclone lsf "dropbox:${INVIDIOUS_DROPBOX_BACKUP_PATH}/"'
+docker exec db-backup sh -c 'rclone lsf "dropbox:${FIREFLY_DROPBOX_BACKUP_PATH}/"'
 
 # Check Dropbox quota
 docker exec db-backup rclone about dropbox:
 ```
+
+The rclone remote is configured when a database backup runs. Inspect only the
+destinations for databases selected by the running profile.
 
 ## Backup & Restore Procedures
 
@@ -329,11 +332,8 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefly
 ```
 
 ### Download from Dropbox
-```bash
-docker exec db-backup rclone copy \
-  dropbox:/invidious_backups/backup.sql.zst.gpg \
-  /backups/invidious/
-```
+Use the selected destination from `path.local` or `path.prod` and follow the
+relevant service's restore guide to download and restore the chosen archive.
 
 ### Decrypt Backup
 ```bash
@@ -417,15 +417,12 @@ docker compose -f docker-compose.yml config
 # Test database connectivity
 docker exec db-backup pg_isready -h invidious-db -U kemal
 
-# Verify credentials
-docker exec db-backup env | grep DB_
+# Compare the configured credentials with the database configuration without
+# displaying them in terminal output.
 ```
 
 **Issue**: Dropbox upload fails
 ```bash
-# Check rclone config
-docker exec db-backup rclone config show dropbox
-
 # Test connectivity
 docker exec db-backup rclone ls dropbox:/
 
@@ -435,12 +432,16 @@ docker exec db-backup rclone ls dropbox:/
 
 **Issue**: GPG encryption fails
 ```bash
-# Verify passphrase file
-docker exec db-backup cat /run/secrets/gpg-passphrase
+# Check whether the mounted passphrase file is nonempty without printing it
+docker exec db-backup test -s /run/secrets/gpg-passphrase
 
 # Test GPG manually
 docker exec db-backup gpg --version
 ```
+
+If the passphrase is supplied by the environment instead of the secret file,
+check its configuration without printing it. An existing empty secret file takes
+precedence over the environment and causes the backup to fail.
 
 ## Deployment Checklist
 

@@ -15,8 +15,7 @@ and removes it after deployment. It fails before deployment if a selected source
 volume or network is missing. The base Compose file cannot start backups alone.
 Every registered database is included in `default`, so all registered volumes
 and networks, including Firefox Sync's, are required when starting that profile.
-The old Local and Remote Compose files remain in the repository but are no
-longer supported. Start backups with `start-backup.sh`.
+Start backups with `start-backup.sh`, not the base Compose file alone.
 
 Generated profiles use schedules and retention from `backup-databases.conf`.
 Retention must be a positive number of days. The backup script requires the
@@ -235,9 +234,6 @@ curl -X POST "YOUR_WEBHOOK_URL" \
 
 ### Dropbox upload fails
 ```bash
-# Check rclone config
-docker exec db-backup rclone config show dropbox
-
 # Test Dropbox access
 docker exec db-backup rclone ls dropbox:/
 ```
@@ -281,9 +277,13 @@ docker exec db-backup du -sh /backups/firefly/
 
 ### Check Dropbox Backups
 ```bash
-docker exec db-backup rclone ls dropbox:/invidious_backups
-docker exec db-backup rclone ls dropbox:/firefly_backups
+# Use the destination selected for the running profile
+docker exec db-backup sh -c 'rclone lsf "dropbox:${INVIDIOUS_DROPBOX_BACKUP_PATH}/"'
+docker exec db-backup sh -c 'rclone lsf "dropbox:${FIREFLY_DROPBOX_BACKUP_PATH}/"'
 ```
+
+The rclone remote is configured when a database backup runs. Inspect only the
+destinations for databases selected by the running profile.
 
 ### Discord Notifications
 Backups send automatic notifications:
