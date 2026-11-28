@@ -9,8 +9,8 @@ services:
     environment:
       SYNC_HOST: "0.0.0.0"
       SYNC_PORT: "8000"
-      SYNC_SYNCSTORAGE__DATABASE_URL: "postgres://sync:${SYNC_POSTGRES_PASSWORD}@firefoxsync-db:5432/syncserver"
-      SYNC_TOKENSERVER__DATABASE_URL: "postgres://sync:${SYNC_POSTGRES_PASSWORD}@firefoxsync-db:5432/syncserver"
+      SYNC_SYNCSTORAGE__DATABASE_URL: "postgres://sync:${SYNC_POSTGRES_PASSWORD}@firefoxsync-db:5432/firefoxsync"
+      SYNC_TOKENSERVER__DATABASE_URL: "postgres://sync:${SYNC_POSTGRES_PASSWORD}@firefoxsync-db:5432/firefoxsync"
       SYNC_TOKENSERVER__ENABLED: "true"
       SYNC_TOKENSERVER__RUN_MIGRATIONS: "true"
       SYNC_TOKENSERVER__FXA_EMAIL_DOMAIN: "api.accounts.firefox.com"
@@ -36,11 +36,11 @@ services:
     environment:
       POSTGRES_USER: sync
       POSTGRES_PASSWORD: ${SYNC_POSTGRES_PASSWORD}
-      POSTGRES_DB: syncserver
+      POSTGRES_DB: firefoxsync
     volumes:
       - firefoxsync_postgresdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sync -d syncserver"]
+      test: ["CMD-SHELL", "pg_isready -U sync -d firefoxsync"]
       interval: 10s
       timeout: 5s
       retries: 5

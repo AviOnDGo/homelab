@@ -2,22 +2,41 @@
 
 ## Compose Profile Selection
 
-Choose the compose file that matches your deployment target:
+Select the deployment profile when starting the service:
 
-| Environment | Compose File | Current backup scope |
+| Environment | Command | Current backup scope |
 |-------------|--------------|----------------------|
-| Default homelab | `docker-compose.yml` | Main postgres backup set |
-| Remote | `docker-compose.remote.yml` | `firefly`, `firefoxsync` |
-| Local | `docker-compose.local.yml` | `romm`, `invidious`, `immich`, `paperless` |
+| Default homelab | `./start-backup.sh default local` or `./start-backup.sh default prod` | `firefly`, `romm`, `paperless`, `immich`, `invidious`, `firefoxsync` |
+| Prod | `./start-backup.sh prod` | `firefly` |
+| Local | `./start-backup.sh local` | `romm`, `paperless`, `immich`, `invidious` |
 
-All profiles use the same per-service cron variables from `.env`:
-`FIREFLY_CRON_SCHEDULE`, `ROMM_CRON_SCHEDULE`,
-`IMMICH_CRON_SCHEDULE`, `INVIDIOUS_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`,
-and `FIREFOXSYNC_CRON_SCHEDULE`, as applicable to the selected profile.
+The script generates a temporary Compose override from `backup-databases.conf`
+and removes it after deployment. It fails before deployment if a selected source
+volume or network is missing. The base Compose file cannot start backups alone.
+Every registered database is included in `default`, so all registered volumes
+and networks, including Firefox Sync's, are required when starting that profile.
+Start backups with `start-backup.sh`, not the base Compose file alone.
+
+Generated profiles use schedules and retention from `backup-databases.conf`.
+Retention must be a positive number of days. The backup script requires the
+generated policy and ignores older retention settings. The `local` and `prod`
+profiles load `path.local` and `path.prod` respectively; `default` requires an
+explicit destination choice. The selected path file overrides older destination
+settings. Missing or invalid path entries stop deployment.
+Schedules use five BusyBox cron fields; weekday numbers range from 0 (Sunday)
+through 6 (Saturday). Startup checks the field count and allowed characters,
+but not field ranges or steps; verify schedules before deployment.
+
+Before migrating an existing deployment, compare its current schedules and
+retention values with the registry and adjust the registry if necessary. Retention
+controls deletion of local and Dropbox backups. Compare existing Dropbox paths
+with the selected path file before recreating the container: the selected paths
+control both uploads and remote cleanup. In particular, the previous Invidious
+script default was 7 days, while the registry specifies 30 days.
 
 ### Compose And Crontab Ordering
 
-All profiles order source mounts, top-level volumes, and cron jobs by service
+The generated profiles order source mounts, top-level volumes, and cron jobs by service
 category, then name: Financial, Gaming, Knowledge, Media, and Security Services,
 as applicable. Source-volume sections use `## <Category> Services` comments;
 generated crontabs use matching `# <Category> Services` comments. The crontab
@@ -29,31 +48,23 @@ retain their sorted positions. Shared secrets follow source
 volumes, and `gpg-secrets` follows top-level source-volume declarations. These
 ordering rules do not change configured cron execution times.
 
-When adding a database-backed service, insert its mounts, volume declarations,
-required networks, and cron job in their sorted positions in every profile that
-deploys it. Add its case to `db-backup-script.sh`, update environment examples,
-specs, and service documentation, and leave unrelated disabled entries unchanged.
-
-Set your compose file once per terminal session:
-
-```bash
-export BACKUP_COMPOSE_FILE=docker-compose.local.yml
-# Use docker-compose.yml or docker-compose.remote.yml in other environments
-```
+When adding a database-backed service, register it in `backup-databases.conf`,
+add its case to `db-backup-script.sh`, and update the environment example, specs,
+and service documentation. The backup script needs both a database case and a
+registry-retention mapping for each added database.
 
 ## 🚀 Setup (5 minutes)
 
-### Step 1: Run Setup Script
-```bash
-# Run from the repository root
-cd backupServices/postgres
-bash setup-backup.sh
-```
+### Step 1: Configure Credentials
 
-Provide when prompted:
-- **Dropbox Auth Token**: Get from [Dropbox App Console](https://www.dropbox.com/developers/apps)
-- **Discord Webhook URI**: Create in Discord Server Settings > Integrations > Webhooks
-- **GPG Passphrase**: Choose a strong passphrase (min 16 chars recommended)
+From `backupServices/postgres`, create `.env` from `.env.example` if it does not
+already exist. Configure the selected databases' usernames and passwords, Dropbox
+credentials, and GPG passphrase; the Discord webhook is optional. Do not overwrite
+an existing `.env`.
+
+Database hosts default to `<service>-db`; database names and backup names default
+to `<service>`. Existing `{SERVICE}_DB_HOST`, `{SERVICE}_DB_NAME`, and
+`{SERVICE}_BACKUP_NAME` settings remain supported as overrides.
 
 Every database backup requires a nonempty GPG passphrase. The
 `/run/secrets/gpg-passphrase` file takes precedence over `GPG_PASSPHRASE`,
@@ -62,11 +73,11 @@ fails before creating or uploading a dump.
 
 ### Step 2: Start the Service
 ```bash
-docker compose -f "$BACKUP_COMPOSE_FILE" up -d --build
+./start-backup.sh local
 ```
 
 The local `homelab/db-backup:local` image includes the backup script and all tools,
-including `zstd`, on a digest-pinned PostgreSQL 18.6 Alpine base. No scripts are
+including `zstd`, on a digest-pinned PostgreSQL Alpine base. No scripts are
 bind-mounted from the host and no packages are installed during startup. This
 allows Docker to restart it before an encrypted home directory is unlocked.
 The build context allowlist in `.dockerignore` excludes credentials and unrelated
@@ -76,7 +87,7 @@ container environment when restarting it.
 To migrate an existing container or apply script/dependency changes:
 
 ```bash
-docker compose -f "$BACKUP_COMPOSE_FILE" up -d --build --force-recreate db-backup
+./start-backup.sh local
 docker inspect --format '{{.State.Status}} {{.HostConfig.RestartPolicy.Name}}' db-backup
 docker inspect --format '{{range .Mounts}}{{println .Type .Destination}}{{end}}' db-backup
 docker exec db-backup pidof crond
@@ -108,9 +119,12 @@ docker exec db-backup /usr/local/bin/backup-script.sh invidious
 # Test Firefly backup
 docker exec db-backup /usr/local/bin/backup-script.sh firefly
 
-# Check backed up files
-ls -lah ./backups/invidious/
-ls -lah ./backups/firefly/
+# Test Firefox Sync backup
+docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
+
+# Check backed up files inside the container
+docker exec db-backup ls -lah /backups/invidious/
+docker exec db-backup ls -lah /backups/firefly/
 ```
 
 For the local environment:
@@ -129,50 +143,61 @@ docker exec db-backup /usr/local/bin/backup-script.sh immich
 
 ```
 
-For the remote environment:
+For the prod environment:
 ```bash
 # Test Firefly backup
 docker exec db-backup /usr/local/bin/backup-script.sh firefly
-
-# Test Firefox Sync backup
-docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
 ```
 
 ## 📅 Backup Schedule
 
-### Effective Schedule (from `.env`)
+### Effective Schedule (from `backup-databases.conf`)
 
-| Database    | Cron Variable               | Example Value  | Retention |
-|-------------|-----------------------------|----------------|-----------|
-| Invidious   | `INVIDIOUS_CRON_SCHEDULE`   | `0 3 */2 * *`  | 30 days   |
-| Firefly     | `FIREFLY_CRON_SCHEDULE`     | `5 3 * * *`    | 120 days  |
-| Paperless   | `PAPERLESS_CRON_SCHEDULE`   | `10 3 * * *`   | 30 days   |
-| Immich      | `IMMICH_CRON_SCHEDULE`      | `0 4 * * *`    | 30 days   |
-| FirefoxSync | `FIREFOXSYNC_CRON_SCHEDULE` | `20 3 * * *`   | 30 days   |
+| Database | Schedule | Retention |
+|----------|----------|-----------|
+| Firefly | `5 3 * * *` | 120 days |
+| RomM | `25 3 * * *` | 30 days |
+| Paperless | `10 3 * * *` | 30 days |
+| Immich | `0 2 * * *` | 30 days |
+| Invidious | `0 3 */2 * *` | 30 days |
+| Firefox Sync | `20 3 * * *` | 30 days |
+
+Recreate the selected profile after changing a registry policy. Manually running
+a database not selected by the profile fails rather than using a fallback policy.
 
 ### Profile Notes
 
-- `docker-compose.yml` schedules all five databases using the shared `.env` cron vars.
-- `docker-compose.local.yml` schedules `romm`, `paperless`, and `invidious`.
+- `./start-backup.sh default local` or `./start-backup.sh default prod` schedules
+  all six registered databases using the chosen destination file.
+- `./start-backup.sh local` schedules `romm`, `paperless`, `immich`, and `invidious`.
+- Firefox Sync is registered in `default` only; it is not scheduled in `local`
+  or `prod`.
 - Paperless runs in `knowledgeServices/paperless/` on `knowledge_network`. Both the
   default and Local backup profiles join that network to reach `paperless-db`;
   keep `media_network` for Invidious.
-- `docker-compose.remote.yml` schedules `firefly` and `firefoxsync` using their
-  respective `FIREFLY_CRON_SCHEDULE` and `FIREFOXSYNC_CRON_SCHEDULE` variables.
+- `./start-backup.sh prod` schedules `firefly`.
 
-Automatic cleanup deletes local and remote backups older than 7 days.
+Automatic cleanup uses each database's configured retention for local and
+Dropbox backups.
+
+Local files in `/backups` are stored in the container's writable layer, not a
+host directory or volume. They survive a container restart but are lost when
+the container is recreated, including by `start-backup.sh`. Copy any needed
+local files out before recreating the container; Dropbox is the durable backup
+destination. A failed or interrupted dump can leave an unencrypted intermediate
+file in the container.
 
 ## 🔧 Common Commands
 
 ```bash
-# Start service
-docker compose -f "$BACKUP_COMPOSE_FILE" up -d
+# Start or recreate the selected profile
+./start-backup.sh local
 
 # Stop service
-docker compose -f "$BACKUP_COMPOSE_FILE" down
+docker stop db-backup
 
-# Restart service
-docker compose -f "$BACKUP_COMPOSE_FILE" restart
+# Restart the existing container with its stored configuration
+docker start db-backup
 
 # View logs
 docker logs -f db-backup
@@ -209,9 +234,6 @@ curl -X POST "YOUR_WEBHOOK_URL" \
 
 ### Dropbox upload fails
 ```bash
-# Check rclone config
-docker exec db-backup rclone config show dropbox
-
 # Test Dropbox access
 docker exec db-backup rclone ls dropbox:/
 ```
@@ -244,37 +266,40 @@ docker exec -i firefly-db psql -U firefly -d firefly < backup.sql
 
 ### Check Local Backups
 ```bash
-# List recent backups
-ls -lt ./backups/invidious/ | head -5
-ls -lt ./backups/firefly/ | head -5
+# List recent backups in the container
+docker exec db-backup ls -lt /backups/invidious/ | head -5
+docker exec db-backup ls -lt /backups/firefly/ | head -5
 
 # Check disk usage
-du -sh ./backups/invidious/
-du -sh ./backups/firefly/
+docker exec db-backup du -sh /backups/invidious/
+docker exec db-backup du -sh /backups/firefly/
 ```
 
 ### Check Dropbox Backups
 ```bash
-docker exec db-backup rclone ls dropbox:/invidious_backups
-docker exec db-backup rclone ls dropbox:/firefly_backups
+# Use the destination selected for the running profile
+docker exec db-backup sh -c 'rclone lsf "dropbox:${INVIDIOUS_DROPBOX_BACKUP_PATH}/"'
+docker exec db-backup sh -c 'rclone lsf "dropbox:${FIREFLY_DROPBOX_BACKUP_PATH}/"'
 ```
+
+The rclone remote is configured when a database backup runs. Inspect only the
+destinations for databases selected by the running profile.
 
 ### Discord Notifications
 Backups send automatic notifications:
 - ✅ **Success**: Includes timestamp, file size, Dropbox path
 - ❌ **Failure**: Includes error details for troubleshooting
-- ⚠️ **Partial Success**: Backup stored locally but Dropbox upload failed
+- ❌ **Upload failure**: Encrypted backup remains in the container until it is
+  removed or the container is recreated; the saved file is not retried later.
 
 ## 🔐 Security Best Practices
 
 ```bash
 # Add sensitive files to .gitignore
 echo ".env" >> .gitignore
-echo "backups/" >> .gitignore
 echo "secrets/" >> .gitignore
 
-# Secure backup directories
-chmod 700 ./backups/
+# Secure environment credentials
 chmod 600 .env
 ```
 
@@ -288,30 +313,18 @@ chmod 600 .env
 
 ### 1. Add environment variables to `.env`:
 ```bash
-NEWDB_DB_HOST=hostname
-NEWDB_DB_NAME=database
 NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
-NEWDB_BACKUP_NAME=newdb
-NEWDB_DROPBOX_BACKUP_PATH=/newdb_backups
-NEWDB_CRON_SCHEDULE=0 4 * * *  # 4:00 AM
 ```
 
-### 2. Create backup directory:
+### 2. Register the database:
+Add its volume, profiles, network, retention and schedule to
+`backup-databases.conf`, add its destination to both `path.local` and `path.prod`,
+and add its configuration case to `db-backup-script.sh`.
+
+### 3. Recreate the selected profile:
 ```bash
-mkdir -p ./backups/newdb
-```
-
-### 3. Update `docker-compose.yml` command section:
-Add the following line to create a new cron job:
-```yaml
-# Use > for the first cron entry in the command block so restarts rewrite the crontab cleanly.
-echo '$${NEWDB_CRON_SCHEDULE} /usr/local/bin/backup-script.sh newdb' > /etc/crontabs/root
-```
-
-### 4. Restart service:
-```bash
-docker compose -f "$BACKUP_COMPOSE_FILE" restart
+./start-backup.sh local
 ```
 
 ## 📁 File Structure
@@ -320,14 +333,7 @@ docker compose -f "$BACKUP_COMPOSE_FILE" restart
 backupServices/postgres/
 ├── docker-compose.yml        # Service definition
 ├── .env                      # Configuration & credentials
-├── db-backup-script.sh      # Backup orchestration
-├── setup-backup.sh          # Interactive setup helper
-└── backups/                 # Local backup storage
-  ├── invidious/           # Invidious backups (*.sql.zst.gpg)
-  ├── firefly/             # Firefly backups (*.sql.zst.gpg)
-  ├── paperless/           # Paperless backups (*.sql.zst.gpg)
-  ├── immich/              # Immich backups (*.sql.zst.gpg)
-  └── firefoxsync/         # Firefox Sync backups (*.sql.zst.gpg)
+└── db-backup-script.sh       # Backup orchestration
 ```
 
 ## 📝 Configuration Files
@@ -336,5 +342,7 @@ backupServices/postgres/
 |------|---------|
 | `.env` | Environment variables & credentials |
 | `docker-compose.yml` | Docker service definition |
+| `backup-databases.conf` | Database profile registry |
+| `path.local`, `path.prod` | Environment-specific Dropbox destinations |
+| `start-backup.sh` | Generates and deploys a host-specific Compose override |
 | `db-backup-script.sh` | Backup logic & encryption |
-| `setup-backup.sh` | Interactive setup helper |

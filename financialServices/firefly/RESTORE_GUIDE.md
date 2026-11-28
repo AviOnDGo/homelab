@@ -6,6 +6,10 @@
 - Access to `finance_network`, a configured `dropbox` rclone remote, and a
   Firefly database backup in `/Apps/firefly`. Set `DROPBOX_REMOTE` or
   `DROPBOX_PATH` to use another remote or path.
+- Verify the backup destination in
+  [`path.local`](../../backupServices/postgres/path.local) or
+  [`path.prod`](../../backupServices/postgres/path.prod) and set `DROPBOX_PATH`
+  if it differs from the restore default.
 - The original Firefly `APP_KEY`, database credentials, and a 32-character
   alphanumeric `STATIC_CRON_TOKEN` available to Compose. See
   [SERVICE_DOCUMENTATION.md](SERVICE_DOCUMENTATION.md).

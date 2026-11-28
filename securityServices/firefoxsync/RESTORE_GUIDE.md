@@ -10,27 +10,32 @@ Firefox Sync uses PostgreSQL state stored in the `firefoxsync_postgresdata` volu
 
 ```bash
 cd securityServices/firefoxsync
-./restore.sh
+DROPBOX_PATH=/App_acc/firefoxsync ./restore.sh
 ```
 
 What the script does:
 
 - Validates required tools (`docker`, `rclone`, `gpg`, `zstd`)
 - Prompts for GPG passphrase
-- Selects latest `*.sql.zst.gpg` from `dropbox:/Apps/firefoxsync` (or `DROPBOX_PATH` override)
+- Selects the latest `*.sql.zst.gpg` from the specified `DROPBOX_PATH`
 - Prompts before deleting `firefoxsync_postgresdata`
-- Restores into database `syncserver` on `firefoxsync-db`
+- Restores into database `firefoxsync` on `firefoxsync-db`
 - Verifies PostgreSQL readiness, then starts full stack
 
 Safety behavior:
 
 - If restore fails after shutdown, containers are left down intentionally.
 
+The script defaults to `/Apps/firefoxsync` if `DROPBOX_PATH` is unset. Check
+the selected database backup destination in
+[`path.local`](../../backupServices/postgres/path.local) or
+[`path.prod`](../../backupServices/postgres/path.prod) before restoring.
+
 ### 2. Verify recovery
 
 ```bash
 docker compose -f securityServices/firefoxsync/docker-compose.yml ps
-docker exec firefoxsync-db pg_isready -U sync -d syncserver
+docker exec firefoxsync-db pg_isready -U sync -d firefoxsync
 curl -f https://sync.yourdomain.com/__heartbeat__
 ```
 
@@ -47,8 +52,8 @@ docker compose -f securityServices/firefoxsync/docker-compose.yml down
 ### 2. Download and decrypt latest backup
 
 ```bash
-rclone lsf dropbox:/Apps/firefoxsync --files-only | grep -E '\.sql\.zst\.gpg$' | sort | tail -n 1
-rclone copy "dropbox:/Apps/firefoxsync/<filename>.sql.zst.gpg" .
+rclone lsf dropbox:/App_acc/firefoxsync --files-only | grep -E '\.sql\.zst\.gpg$' | sort | tail -n 1
+rclone copy "dropbox:/App_acc/firefoxsync/<filename>.sql.zst.gpg" .
 gpg --batch --yes --passphrase "$PASSPHRASE" -d <filename>.sql.zst.gpg | zstd -d > firefoxsync.sql
 ```
 
@@ -59,14 +64,14 @@ docker volume rm firefoxsync_postgresdata
 docker volume create firefoxsync_postgresdata
 docker compose -f securityServices/firefoxsync/docker-compose.yml create
 docker start firefoxsync-db
-docker exec -i firefoxsync-db psql -U sync -d syncserver < firefoxsync.sql
+docker exec -i firefoxsync-db psql -U sync -d firefoxsync < firefoxsync.sql
 ```
 
 ### 4. Start stack and verify
 
 ```bash
 docker compose -f securityServices/firefoxsync/docker-compose.yml up -d
-docker exec firefoxsync-db pg_isready -U sync -d syncserver
+docker exec firefoxsync-db pg_isready -U sync -d firefoxsync
 ```
 
 ## Notes

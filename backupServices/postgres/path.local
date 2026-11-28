@@ -1,0 +1,15 @@
+# PostgreSQL backup destinations for the local environment.
+# Selected by the local profile or explicitly by the default profile.
+# This file is tracked; do not put credentials here.
+
+# Financial Services
+FIREFLY_DROPBOX_BACKUP_PATH=/App_acc/firefly
+# Gaming Services
+ROMM_DROPBOX_BACKUP_PATH=/App_acc/romm
+# Knowledge Services
+PAPERLESS_DROPBOX_BACKUP_PATH=/App_acc/paperless
+# Media Services
+IMMICH_DROPBOX_BACKUP_PATH=/App_acc/immich
+INVIDIOUS_DROPBOX_BACKUP_PATH=/App_acc/invidious
+# Security Services
+FIREFOXSYNC_DROPBOX_BACKUP_PATH=/App_acc/firefoxsync

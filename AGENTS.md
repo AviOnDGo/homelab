@@ -337,6 +337,12 @@ volumes:
 ### Volume Naming Convention
 Named external Docker volumes use the pattern **`<service_name>_filedata`** (e.g., `freshrss_filedata`, `vaultwarden_filedata`). Services with multiple distinct volumes append a purpose suffix instead: `<service>_<purpose>` (e.g., `immich_library`, `immich_profile`). Never use generic names like `data` or `config` without a service prefix.
 
+### Database Naming Convention
+Use the logical service identifier (normally the service directory name) for the
+database name and `<service>-db` for its database service and connection hostname.
+For example, Firefox Sync uses database `firefoxsync` and host `firefoxsync-db`.
+Keep backup configuration and restore procedures aligned with these names.
+
 ### Environment & Secrets
 - `PUID: 1000`, `PGID: 1000` standard for linuxserver.io images
 - `TZ: UTC` is the generic timezone default — inline it directly in `docker-compose.yml` under `environment:`, do NOT put it in `.env`
@@ -360,8 +366,9 @@ command: >
 This pattern runs scheduled tasks within the container without external cron daemons.
 
 ### Backup Compose Ordering (Mandatory)
-For `backupServices/postgres/`, maintain the layout in
-`docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml`.
+For `backupServices/postgres/`, use `backup-databases.conf` and `start-backup.sh`
+to generate host-specific mounts, network declarations, and cron jobs from the
+neutral `docker-compose.yml`.
 For `backupServices/filedata/`, keep one canonical `docker-compose.yml` and use
 `backup-volumes.conf` plus `start-backup.sh` to generate host-specific mounts,
 volume declarations, and cron jobs:
@@ -386,6 +393,14 @@ volume declarations, and cron jobs:
   Update `path.local` and `path.prod` with destination settings, the credentials-only
   `.env.example` if needed, backup scripts, specs, and operator documentation together.
   Do not enable a service in a profile where it is not deployed.
+- Register database backups in `backupServices/postgres/backup-databases.conf` with
+  their applicable profiles, network, schedule, and positive retention days.
+  Every entry must include the `default` profile.
+  Generated profiles use those policy values; the backup script requires a
+  generated profile. Configure destinations in `backupServices/postgres/path.local`
+  and `path.prod`; `local` and `prod` select their matching file, and `default`
+  requires an explicit destination argument. Path files override older environment
+  destination values.
 - Filedata backup modes, retention, and schedules come from `backup-volumes.conf` and are passed
   to the container by the generated Compose override. Specify `sync-crypt` for every volume
   that requires it, including Immich and Paperless; do not configure these policies in the
@@ -490,7 +505,7 @@ Authoring rules:
 - Dropbox primary cloud target; Invidious/Firefly use `/Apps/invidious`, `/Apps/firefly` paths
 - Rclone remotes configurable via environment (Google Drive/OneDrive as fallbacks)
 - Filedata retention days per service are in `backupServices/filedata/backup-volumes.conf`;
-  database retention is configured through environment variables.
+  generated database backup retention is in `backupServices/postgres/backup-databases.conf`.
 
 ---
 

@@ -47,3 +47,12 @@ Firefox Sync SHALL provide `restore.sh`, and the canonical PostgreSQL restore wo
 - **WHEN** they consult security service specifications
 - **THEN** `securityServices/firefoxsync/restore.sh` SHALL exist
 - **AND** the authoritative restore flow SHALL be documented in the security restore scripts spec
+
+### REQ-006: Firefox Sync database uses the service identifier
+Firefox Sync SHALL use the `firefoxsync` database on `firefoxsync-db`.
+
+#### Scenario: Application and backup target the same database
+- **GIVEN** Firefox Sync and its PostgreSQL backup are configured
+- **WHEN** their database connections are reviewed
+- **THEN** both SHALL target the `firefoxsync` database on `firefoxsync-db`
+- **AND** restore procedures SHALL restore into `firefoxsync`

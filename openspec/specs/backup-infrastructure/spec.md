@@ -28,19 +28,21 @@ using its registered cron schedule.
 - **THEN** vaultwarden backup schedule is controlled by `VAULTWARDEN_CRON_SCHEDULE` independently of the other service schedule variables
 
 ### REQ-012: Postgres database backups run on staggered cron schedules
-The postgres backup service SHALL schedule database backups using per-service cron schedule environment variables, with each configured service having exactly one `*_CRON_SCHEDULE` variable shared across compose profiles.
+PostgreSQL profiles SHALL pass each database's registry schedule via one
+per-service `*_CRON_SCHEDULE` variable.
 
-#### Scenario: Compose files reference per-service cron variables
-- **GIVEN** `backupServices/postgres/docker-compose.yml`, `docker-compose.remote.yml`, and `docker-compose.local.yml` are inspected
-- **WHEN** reviewing the cron `echo` entries in the `db-backup` command blocks
+#### Scenario: Generated jobs reference per-service cron variables
+- **GIVEN** `backupServices/postgres/start-backup.sh` and `backup-databases.conf` are inspected
+- **WHEN** reviewing the generated `db-backup` cron jobs
 - **THEN** each scheduled database SHALL reference a per-service variable named `{SERVICE}_CRON_SCHEDULE`
-- **AND** the first cron `echo` in each postgres command block SHALL rewrite `/etc/crontabs/root` with `>` so container starts remain idempotent
+- **AND** the first cron `echo` in the generated command SHALL rewrite `/etc/crontabs/root` with `>` so container starts remain idempotent
 - **AND** profile-specific variables such as `*_REMOTE_CRON_SCHEDULE` and `*_LOCAL_CRON_SCHEDULE` SHALL NOT be used
 
-#### Scenario: Environment examples define one cron variable per postgres service
-- **GIVEN** `backupServices/postgres/.env.acc.example` and `.env.prd.example` are inspected
-- **WHEN** checking cron-related variable names
-- **THEN** each postgres-backed service SHALL define exactly one cron variable: `INVIDIOUS_CRON_SCHEDULE`, `FIREFLY_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`, `IMMICH_CRON_SCHEDULE`, `FIREFOXSYNC_CRON_SCHEDULE`
+#### Scenario: Registry provides independent postgres schedules
+- **GIVEN** `backupServices/postgres/backup-databases.conf` is inspected
+- **WHEN** checking PostgreSQL database entries
+- **THEN** each entry SHALL include its own cron schedule
+- **AND** the generated schedule SHALL override any legacy environment value
 
 ### REQ-013: Service-Specific Backup Schedules
 The backup system SHALL use per-service configurable cron schedules that reflect each service's data change frequency and acceptable backup intervals.
@@ -75,7 +77,7 @@ The backup mechanism is determined by the type of persistent data:
 
 | Data type | Backup service | Configuration location |
 |---|---|---|
-| PostgreSQL database | `backupServices/postgres/` (`db-backup` service) | Add cron entry + case block to `db-backup-script.sh`; mount the postgres volume |
+| PostgreSQL database | `backupServices/postgres/` (`db-backup` service) | Register the database profile and add a case block to `db-backup-script.sh` |
 | Docker volume / filesystem data | `backupServices/filedata/` (`filedata-backup` service) | Register the volume and host profiles in `backup-volumes.conf`; generated mounts and jobs are merged with `docker-compose.yml` by `start-backup.sh` |
 
 A service with both PostgreSQL and filedata persistence SHALL use both
@@ -90,7 +92,8 @@ mechanisms.
 #### Scenario: PostgreSQL-backed service backup integration
 - **GIVEN** the relevant backup configuration and deployment state are available for inspection
 - **WHEN** a service uses a PostgreSQL database
-- **THEN** the service's postgres volume SHALL be mounted into `db-backup` in `backupServices/postgres/docker-compose.yml`
+- **THEN** the service's postgres volume SHALL be registered in `backupServices/postgres/backup-databases.conf`
+- **AND** the selected profile SHALL mount that volume into `db-backup`
 - **AND** a cron entry SHALL be present in the `db-backup` command for that service
 - **AND** a case block SHALL exist in `backupServices/postgres/db-backup-script.sh` for that service's database
 
@@ -246,21 +249,22 @@ defined in `repository-conventions`.
 - **THEN** both files SHALL declare variables for: pihole, npm, vaultwarden,
   openwebui, freshrss, immich (library, profile, upload)
 
-#### Scenario: postgres backup service env examples
+#### Scenario: postgres backup service configuration files
 - **GIVEN** `backupServices/postgres/` is inspected
 - **WHEN** listing tracked files
-- **THEN** `.env.acc.example` SHALL be present with `/App_acc/` Dropbox paths
-- **AND** `.env.prd.example` SHALL be present with `/Apps/` Dropbox paths
+- **THEN** `.env.example` SHALL contain credentials without destination paths
+- **AND** `path.local` SHALL contain `/App_acc/` Dropbox paths
+- **AND** `path.prod` SHALL contain `/Apps/` Dropbox paths
 - **AND** `.env.backup` SHALL NOT be present (removed)
 
-#### Scenario: postgres env examples cover all services
-- **GIVEN** `backupServices/postgres/.env.acc.example` and `.env.prd.example` are inspected
+#### Scenario: postgres env example covers all services
+- **GIVEN** `backupServices/postgres/.env.example` is inspected
 - **WHEN** checking the set of variable names
-- **THEN** both files SHALL declare database credentials and backup config for:
-  invidious, firefly, paperless, immich, firefoxsync
-- **AND** both files SHALL declare one cron schedule variable per service (`{SERVICE}_CRON_SCHEDULE`)
-- **AND** both files SHALL declare shared credentials: `DROPBOX_AUTH_TOKEN`,
-  `DROPBOX_REFRESH_TOKEN`, `GPG_PASSPHRASE`, `DISCORD_WEBHOOK_URL`, `TZ`
+- **THEN** it SHALL declare database credentials for:
+  invidious, firefly, paperless, immich, firefoxsync, romm
+- **AND** schedules and retention SHALL be configured in `backup-databases.conf`
+- **AND** it SHALL declare shared credentials: `DROPBOX_AUTH_TOKEN`,
+  `DROPBOX_REFRESH_TOKEN`, `GPG_PASSPHRASE`, `DISCORD_WEBHOOK_URL`
 
 ### REQ-022: Firefox Volume Registered in Filedata Backup
 The `firefox_filedata` Docker volume SHALL be selected in the default filedata

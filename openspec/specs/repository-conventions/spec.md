@@ -12,8 +12,8 @@ operator-managed runtime configuration outside version control.
 #### Scenario: opsx change targets environment configuration
 - **GIVEN** an opsx change or task involves environment variable configuration
 - **WHEN** the change is implemented
-- **THEN** tasks for filedata credentials SHALL only create or modify `.env.example`
-- **AND** filedata destination settings SHALL be maintained in `path.local` and `path.prod`
+- **THEN** tasks for filedata and PostgreSQL backup credentials SHALL only create or modify `.env.example`
+- **AND** their destination settings SHALL be maintained in `path.local` and `path.prod`
 - **AND** tasks for other backup services SHALL only create or modify `.env.acc.example` and `.env.prd.example`
 - **AND** tasks for all other services SHALL only create or modify `.env.example`
 - **AND** tasks SHALL NOT create, overwrite, or patch `.env` files
@@ -23,9 +23,8 @@ operator-managed runtime configuration outside version control.
 - **GIVEN** an opsx change adds a backup service with configurable environment variables
 - **WHEN** creating environment variable documentation
 - **THEN** the change SHALL add new variables to the example files required for that backup service by REQ-002
-- **AND** the operator is responsible for running `cp .env.acc.example .env` or
-  `cp .env.prd.example .env` for PostgreSQL, or `cp .env.example .env` for
-  filedata backups, to apply credentials
+- **AND** the operator is responsible for applying credentials from the appropriate
+  example file
 
 #### Scenario: New non-backup service added via an opsx change
 - **GIVEN** an opsx change adds a non-backup service with configurable environment variables
@@ -34,8 +33,8 @@ operator-managed runtime configuration outside version control.
 - **AND** the operator is responsible for running `cp .env.example .env` to apply configuration
 
 ### REQ-002: Environment example file naming convention
-Filedata backup SHALL provide one credentials-only `.env.example` and separate
-`path.local` and `path.prod` destination files.
+Filedata and PostgreSQL backup SHALL each provide one credentials-only
+`.env.example` and separate `path.local` and `path.prod` destination files.
 Other backup services (under `backupServices/`) that require operator-supplied
 environment variables SHALL provide two tracked example files
 (`.env.acc.example` and `.env.prd.example`). All other services with
@@ -52,7 +51,7 @@ file. Every tracked template file name SHALL start with a dot and end in
 - **AND** the directory SHALL NOT contain `.env.backup`
 
 #### Scenario: Other backup service has two env example files
-- **GIVEN** a backup service other than filedata with configurable environment variables is inspected
+- **GIVEN** a backup service other than filedata or PostgreSQL with configurable environment variables is inspected
 - **WHEN** listing tracked files
 - **THEN** the directory SHALL contain `.env.acc.example` and `.env.prd.example`
 - **AND** the directory SHALL NOT contain a plain `.env.example` or `.env.backup`
@@ -70,12 +69,12 @@ file. Every tracked template file name SHALL start with a dot and end in
 - **THEN** all environment-specific values SHALL be pre-populated
 - **AND** the operator only needs to fill in secret credentials to complete setup
 
-#### Scenario: Both PostgreSQL backup examples have identical variable sets
-- **GIVEN** the two environment examples for the PostgreSQL backup service are compared
-- **WHEN** checking which variable names are defined
-- **THEN** both files SHALL declare exactly the same set of variable names
-- **AND** the only permitted differences are environment-specific values (e.g., Dropbox path prefix)
-  and header comments identifying the environment
+#### Scenario: PostgreSQL backup separates credentials and destinations
+- **GIVEN** `backupServices/postgres/` is inspected
+- **WHEN** listing tracked files
+- **THEN** the directory SHALL contain a credentials-only `.env.example`
+- **AND** the directory SHALL contain `path.local` and `path.prod` for destinations
+- **AND** the directory SHALL NOT contain `.env.acc.example` or `.env.prd.example`
 
 ### REQ-003: UTC timezone convention
 The repository SHALL use UTC as its generic timezone default. Any explicit `TZ`
@@ -275,7 +274,9 @@ container naming.
 
 ### REQ-015: Database companion services use the `<service>-db` naming pattern
 When a service requires a dedicated PostgreSQL (or other relational database) container,
-the database service SHALL be named `<primary-service>-db` using a hyphen separator.
+the database service SHALL be named `<service>-db` using the logical service identifier
+(normally its directory name) and a hyphen separator. Database connection hostnames
+SHALL use that database service name.
 
 #### Scenario: PostgreSQL companion service is named correctly
 - **GIVEN** a service named `firefly` requires a PostgreSQL database
@@ -366,7 +367,7 @@ When a service deploys a companion PostgreSQL container, the PostgreSQL data vol
 - **AND** `docker compose up` SHALL create the volume automatically if it does not exist
 
 #### Scenario: Backup service is permitted to reference postgres volume as external
-- **GIVEN** `backupServices/postgres/docker-compose.yml` mounts a service's postgres data volume
+- **GIVEN** a generated PostgreSQL backup profile mounts a service's postgres data volume
 - **WHEN** the backup compose volumes block is inspected
 - **THEN** the volume SHALL be permitted to reference the same volume as `external: true` in the backup compose file
 - **AND** this is permitted because the backup service does not own the volume lifecycle
@@ -474,3 +475,15 @@ print credential values.
 - **WHEN** the local secret gate runs
 - **THEN** those values SHALL NOT be treated as literal credentials
 - **AND** a literal credential in the same example file SHALL still fail the gate
+
+### REQ-030: Application database names match their service identifiers
+A service's dedicated application database SHALL be named after its logical service
+identifier, normally the service directory name. Backup and restore configuration
+SHALL use the same name.
+
+#### Scenario: Firefox Sync database naming
+- **GIVEN** Firefox Sync uses the logical service identifier `firefoxsync`
+- **WHEN** its database and connection settings are configured
+- **THEN** the database SHALL be named `firefoxsync`
+- **AND** its database hostname SHALL be `firefoxsync-db`
+- **AND** backup and restore configuration SHALL target that database

@@ -24,6 +24,10 @@ Default sources are `mega-crypt:/App_acc/immich-library/current/`,
 `mega-crypt:/App_acc/immich-upload/current/`, and
 `dropbox:/App_acc/immich/immich_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg`.
 For production set `IMMICH_REMOTE_ROOT=/Apps` and `DROPBOX_PATH=/Apps/immich`.
+Check the database destination in
+[`path.local`](../../backupServices/postgres/path.local) or
+[`path.prod`](../../backupServices/postgres/path.prod) and set `DROPBOX_PATH`
+if it differs from the restore default.
 `MEGA_CRYPT_REMOTE` and `DROPBOX_REMOTE` can select other existing container
 remotes; the Mega backend must still be named `mega`.
 

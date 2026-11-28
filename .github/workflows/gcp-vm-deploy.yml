@@ -434,6 +434,29 @@ jobs:
       GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
       DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
 
+  restore-db-backup:
+    name: Restore Database Backup
+    needs: [apply, restore-npm, restore-services]
+    if: ${{ !cancelled() && needs.apply.result == 'success' && needs.restore-npm.result == 'success' && (needs.restore-services.result == 'success' || needs.restore-services.result == 'failure') }}
+    uses: ./.github/workflows/gcp-db-backup-restore.yml
+    secrets:
+      DROPBOX_AUTH_TOKEN: ${{ secrets.DROPBOX_AUTH_TOKEN }}
+      DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      FIREFLY_DB_USERNAME: ${{ secrets.FIREFLY_DB_USERNAME }}
+      FIREFLY_DB_PASSWORD: ${{ secrets.FIREFLY_DB_PASSWORD }}
+      ROMM_DB_USER: ${{ secrets.ROMM_DB_USER }}
+      ROMM_DB_PASSWORD: ${{ secrets.ROMM_DB_PASSWORD }}
+      PAPERLESS_DB_USER: ${{ secrets.PAPERLESS_DB_USER }}
+      PAPERLESS_DB_PASSWORD: ${{ secrets.PAPERLESS_DB_PASSWORD }}
+      IMMICH_DB_USER: ${{ secrets.IMMICH_DB_USER }}
+      IMMICH_DB_PASSWORD: ${{ secrets.IMMICH_DB_PASSWORD }}
+      INVIDIOUS_DB_USER: ${{ secrets.INVIDIOUS_DB_USER }}
+      INVIDIOUS_DB_PASSWORD: ${{ secrets.INVIDIOUS_DB_PASSWORD }}
+      FIREFOXSYNC_DB_USER: ${{ secrets.FIREFOXSYNC_DB_USER }}
+      FIREFOXSYNC_DB_PASSWORD: ${{ secrets.FIREFOXSYNC_DB_PASSWORD }}
+
   teardown:
     name: Terraform Teardown
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy' }}

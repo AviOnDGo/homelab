@@ -57,9 +57,9 @@ private configuration even when a secret scanner does not flag them.
 For non-backup services, only `.env.example` is allowed as a tracked env template.
 Tracked `.env.backup` files are not allowed.
 
-Filedata backups use one credentials-only `.env.example` and separate tracked
-destination files, `path.local` and `path.prod`. Other backup services retain
-the `.env.acc.example` and `.env.prd.example` pair.
+Filedata and PostgreSQL backups each use one credentials-only `.env.example` and
+separate tracked destination files, `path.local` and `path.prod`. Other backup
+services retain the `.env.acc.example` and `.env.prd.example` pair.
 
 Secret-bearing keys in tracked templates must use placeholders or variable references
 instead of live credential literals.
@@ -72,8 +72,8 @@ restore content while keeping approved naming:
 1. Restore prior template content from git history:
 	`git show <commit>:<old-path>`
 2. Apply restored content into the approved file name:
-	non-backup and filedata services use `.env.example`; filedata destinations
-	belong in `path.local` and `path.prod`; other backup services use
+	non-backup, filedata, and PostgreSQL services use `.env.example`; backup
+	destinations belong in `path.local` and `path.prod`; other backup services use
 	`.env.acc.example` and `.env.prd.example`.
 3. Re-run local secret scan hooks and replace any literal credentials with
 	placeholders before committing.

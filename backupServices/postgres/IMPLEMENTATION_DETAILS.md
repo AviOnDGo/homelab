@@ -4,8 +4,8 @@
 
 A PostgreSQL backup solution that backs up multiple databases (invidious, firefly,
 paperless, immich, firefoxsync) using GPG encryption, Dropbox synchronization,
-and per-service retention policies. Cron schedules are configured via per-service
-environment variables in `.env`.
+and per-service retention policies. Profiles use schedules and retention from
+`backup-databases.conf`. The old Compose files are retained but no longer supported.
 
 ## Architecture
 
@@ -23,12 +23,12 @@ environment variables in `.env`.
 │  └─ ${FIREFOXSYNC_CRON_SCHEDULE}: firefoxsync              │
 │                                                              │
 │  Backup Process:                                             │
-│  1. pg_dump via network → service DB host from .env         │
+│  1. pg_dump via network → service DB host                  │
 │  2. zstd -6 -T1 compression → .sql.zst                     │
 │  3. GPG symmetric encryption (AES256) → .sql.zst.gpg       │
-│  4. Store locally in ./backups/{service}/                   │
+│  4. Store in container /backups/{service}/                 │
 │  5. Upload to Dropbox via rclone                           │
-│  6. Delete backups >7 days old locally and remotely         │
+│  6. Delete backups past their per-service retention         │
 │  7. Send Discord notification                               │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -37,7 +37,7 @@ environment variables in `.env`.
   (connects to databases)              (encrypted backup storage)
     ├─ invidious-db                    ├─ /App_acc/invidious or /Apps/invidious
     ├─ firefly_postgres                ├─ /App_acc/firefly or /Apps/firefly
-    └─ ...                             └─ per-service Dropbox paths from .env
+    └─ ...                             └─ per-service paths from path.local or path.prod
 ```
 
 ## Core Components
@@ -45,7 +45,7 @@ environment variables in `.env`.
 ### 1. docker-compose.yml
 Defines the `db-backup` service with the following features:
 - Single reusable service for backing up multiple databases
-- Mounts backup directories for local storage
+- Stores local backups in the container's writable layer, without a `/backups` mount
 - Uses named volume `gpg-secrets` for secure passphrase storage
 - Joins media, finance, knowledge, and security networks for database connectivity
 - Runs cron jobs from per-service `*_CRON_SCHEDULE` variables
@@ -76,28 +76,25 @@ Environment configuration file containing:
 - Dropbox authentication token
 - Discord webhook URI
 - GPG passphrase
-- Per-service retention days
-- Per-service cron schedules (`{SERVICE}_CRON_SCHEDULE`)
-- Timezone configuration
 
 **Environment Variables Format:**
 ```bash
 # Database Configuration
-{SERVICE}_DB_HOST=hostname
-{SERVICE}_DB_NAME=database
 {SERVICE}_DB_USER=username
 {SERVICE}_DB_PASSWORD=your_database_password
-{SERVICE}_BACKUP_NAME=service_name
-{SERVICE}_DROPBOX_BACKUP_PATH=/service_backups
-{SERVICE}_CRON_SCHEDULE=0 2 * * *
-{SERVICE}_BACKUP_RETENTION_DAYS=30
 
 # Shared Configuration
 DROPBOX_AUTH_TOKEN=your_dropbox_auth_token
 DISCORD_WEBHOOK_URL=webhook_url
 GPG_PASSPHRASE=passphrase
-TZ=UTC
 ```
+
+Dropbox destinations are configured in `path.local` and `path.prod`. Startup
+loads the selected file after the environment file, so its values take precedence.
+`default` requires an explicit `local` or `prod` destination argument.
+Hosts default to `<service>-db`, while database names and backup names default
+to `<service>`. Existing `{SERVICE}_DB_HOST`, `{SERVICE}_DB_NAME`, and
+`{SERVICE}_BACKUP_NAME` values remain supported as overrides.
 
 ### 3. db-backup-script.sh
 Main backup script with the following functionality:
@@ -117,15 +114,6 @@ Main backup script with the following functionality:
 - Comprehensive error handling and logging
 - Size reporting in notifications
 - Graceful failure handling with partial success alerts
-
-### 4. setup-backup.sh
-Interactive setup script that automates:
-- Prompts for Dropbox token, Discord webhook, GPG passphrase
-- Creates backup directories
-- Sets up secrets directory
-- Verifies media_network existence
-- Makes scripts executable
-- Validates configuration
 
 ## Configuration Flow
 
@@ -188,16 +176,16 @@ Host:         invidious-db
 Database:     invidious
 User:         kemal
 Schedule Var: INVIDIOUS_CRON_SCHEDULE
-Retention:    INVIDIOUS_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_INVIDIOUS_RETENTION_DAYS
 ```
 
 ### Firefly
 ```
-Host:         firefly_postgres
+Host:         firefly-db
 Database:     firefly
 User:         firefly
 Schedule Var: FIREFLY_CRON_SCHEDULE
-Retention:    FIREFLY_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_FIREFLY_RETENTION_DAYS
 ```
 
 ### Paperless
@@ -206,7 +194,7 @@ Host:         paperless-db
 Database:     paperless
 User:         paperless
 Schedule Var: PAPERLESS_CRON_SCHEDULE
-Retention:    PAPERLESS_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_PAPERLESS_RETENTION_DAYS
 ```
 
 ### Immich
@@ -215,16 +203,16 @@ Host:         immich-db
 Database:     immich
 User:         postgres
 Schedule Var: IMMICH_CRON_SCHEDULE
-Retention:    IMMICH_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_IMMICH_RETENTION_DAYS
 ```
 
 ### Firefox Sync
 ```
 Host:         firefoxsync-db
-Database:     syncserver
+Database:     firefoxsync
 User:         sync
 Schedule Var: FIREFOXSYNC_CRON_SCHEDULE
-Retention:    FIREFOXSYNC_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_FIREFOXSYNC_RETENTION_DAYS
 ```
 
 ## Backup Workflow Details
@@ -265,6 +253,11 @@ rclone delete --min-age 7d dropbox:/service_backups/
 - Runs after each backup to maintain retention policy
 - Prevents unlimited storage growth
 
+Local files survive a container restart but not recreation. `start-backup.sh`
+recreates the container, so copy any needed local files out first. An
+interrupted or failed dump can leave an unencrypted intermediate file in the
+container. Dropbox is the durable backup destination.
+
 ### Phase 5: Notification
 ```bash
 curl -X POST $DISCORD_WEBHOOK_URI \
@@ -292,8 +285,7 @@ curl -X POST $DISCORD_WEBHOOK_URI \
 
 ### Access Control
 - **File Permissions**: Recommended `chmod 600 .env`
-- **Directory Permissions**: Recommended `chmod 700 ./backups/`
-- **Gitignore**: Should exclude `.env`, `backups/`, `secrets/`
+- **Gitignore**: Should exclude `.env` and `secrets/`
 - **Dropbox Tokens**: Use app-restricted tokens when possible
 
 ## Monitoring & Maintenance
@@ -301,17 +293,18 @@ curl -X POST $DISCORD_WEBHOOK_URI \
 ### Discord Notifications
 - **Success**: `✅ Backup successful: service_name - size - timestamp`
 - **Failure**: `❌ Backup failed: service_name - error details`
-- **Partial**: `⚠️ Backup stored locally but upload failed - will retry`
+- **Upload failure**: The encrypted backup remains in the container until it is
+  removed or the container is recreated; the saved file is not retried later.
 
 ### Local Monitoring
 ```bash
 # Check recent backups
-ls -lt ./backups/invidious/ | head -5
-ls -lt ./backups/firefly/ | head -5
+docker exec db-backup ls -lt /backups/invidious/ | head -5
+docker exec db-backup ls -lt /backups/firefly/ | head -5
 
 # Disk usage
-du -sh ./backups/invidious/
-du -sh ./backups/firefly/
+docker exec db-backup du -sh /backups/invidious/
+docker exec db-backup du -sh /backups/firefly/
 
 # Container logs
 docker logs -f db-backup
@@ -319,13 +312,16 @@ docker logs -f db-backup
 
 ### Remote Monitoring
 ```bash
-# List Dropbox backups
-docker exec db-backup rclone ls dropbox:/invidious_backups
-docker exec db-backup rclone ls dropbox:/firefly_backups
+# List backups in the destinations selected by the running profile
+docker exec db-backup sh -c 'rclone lsf "dropbox:${INVIDIOUS_DROPBOX_BACKUP_PATH}/"'
+docker exec db-backup sh -c 'rclone lsf "dropbox:${FIREFLY_DROPBOX_BACKUP_PATH}/"'
 
 # Check Dropbox quota
 docker exec db-backup rclone about dropbox:
 ```
+
+The rclone remote is configured when a database backup runs. Inspect only the
+destinations for databases selected by the running profile.
 
 ## Backup & Restore Procedures
 
@@ -336,11 +332,8 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefly
 ```
 
 ### Download from Dropbox
-```bash
-docker exec db-backup rclone copy \
-  dropbox:/invidious_backups/backup.sql.zst.gpg \
-  /backups/invidious/
-```
+Use the selected destination from `path.local` or `path.prod` and follow the
+relevant service's restore guide to download and restore the chosen archive.
 
 ### Decrypt Backup
 ```bash
@@ -367,54 +360,35 @@ docker exec -i firefly_postgres psql -U firefly -d firefly < backup.sql
 
 ### Adding a New Database
 
-1. **Add variables to both tracked environment examples and configure `.env` locally:**
+1. **Add credentials to the tracked environment example and configure `.env` locally:**
 ```bash
-NEWDB_DB_HOST=hostname
-NEWDB_DB_NAME=database
 NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
-NEWDB_BACKUP_NAME=newdb
-NEWDB_DROPBOX_BACKUP_PATH=/newdb_backups
-NEWDB_CRON_SCHEDULE=0 4 * * *  # 4:00 AM
-NEWDB_BACKUP_RETENTION_DAYS=30
 ```
 
-2. **Create backup directory:**
+2. **Register the database in `backup-databases.conf`:**
+Add its source volume, applicable profiles, network, retention, and schedule in
+category and service-name order. Add its Dropbox destination to both path files.
+The startup script generates the Compose mounts, network declarations, cron job,
+and policy environment. Retention must be at least one day.
+
+3. **Register the database in `db-backup-script.sh`:**
+Add a `newdb` case that resolves its connection, plus its generated-policy
+retention and destination mappings before environment loading. Update backup
+specs and operator documentation in the same change.
+
+4. **Recreate the affected profile:**
 ```bash
-mkdir -p ./backups/newdb
+./start-backup.sh local
 ```
 
-3. **Update every applicable Compose profile:**
-Insert `newdb_postgresdata:/var/lib/postgresql/newdb:ro`, its top-level external
-volume declaration, and its cron job in category and service-name order. Add
-required database networks in network-name order. Keep shared secrets and script
-mounts last, and do not enable unrelated commented entries. Use matching category
-comments in the volume sections and generated crontab, following
-`QUICKSTART_GUIDE.md` and the repository's backup ordering instructions.
-
-Only the initial `# Crontab for database backups` header uses `>`; append the
-new job under its category with `>>`:
-```bash
-echo '${NEWDB_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh newdb' >> /etc/crontabs/root &&
-```
-
-4. **Register the database in `db-backup-script.sh`:**
-Add a `newdb` case that resolves its connection, destination, and retention
-configuration. Update backup specs and operator documentation in the same change.
-
-5. **Recreate the affected profile:**
-```bash
-docker compose -f docker-compose.yml up -d --force-recreate db-backup
-```
-
-Select `docker-compose.local.yml` or `docker-compose.remote.yml` instead for those
-deployments. Verify the new job with `docker exec db-backup cat /etc/crontabs/root`.
+Select `default local`, `default prod`, or `prod` for those deployments. Verify the new job with
+`docker exec db-backup cat /etc/crontabs/root`.
 
 ### Customizing Retention Policy
-Change the service-specific retention value in `.env`:
-```bash
-NEWDB_BACKUP_RETENTION_DAYS=14
-```
+Change the retention column in `backup-databases.conf` and recreate the selected
+profile. Compare existing policies first because retention cleanup deletes local
+and Dropbox backups.
 
 ### Adding Email Notifications
 Extend `db-backup-script.sh` to send emails using `sendmail` or SMTP:
@@ -443,15 +417,12 @@ docker compose -f docker-compose.yml config
 # Test database connectivity
 docker exec db-backup pg_isready -h invidious-db -U kemal
 
-# Verify credentials
-docker exec db-backup env | grep DB_
+# Compare the configured credentials with the database configuration without
+# displaying them in terminal output.
 ```
 
 **Issue**: Dropbox upload fails
 ```bash
-# Check rclone config
-docker exec db-backup rclone config show dropbox
-
 # Test connectivity
 docker exec db-backup rclone ls dropbox:/
 
@@ -461,23 +432,27 @@ docker exec db-backup rclone ls dropbox:/
 
 **Issue**: GPG encryption fails
 ```bash
-# Verify passphrase file
-docker exec db-backup cat /run/secrets/gpg-passphrase
+# Check whether the mounted passphrase file is nonempty without printing it
+docker exec db-backup test -s /run/secrets/gpg-passphrase
 
 # Test GPG manually
 docker exec db-backup gpg --version
 ```
+
+If the passphrase is supplied by the environment instead of the secret file,
+check its configuration without printing it. An existing empty secret file takes
+precedence over the environment and causes the backup to fail.
 
 ## Deployment Checklist
 
 - [ ] Obtain Dropbox Auth Token
 - [ ] Create Discord webhook
 - [ ] Choose secure GPG passphrase
-- [ ] Run `bash setup-backup.sh`
-- [ ] Verify `.env` has no placeholder values
-- [ ] Ensure `media_network` exists
-- [ ] Create backup directories
-- [ ] Start service: `docker compose up -d`
+- [ ] Configure credentials from `.env.example` without overwriting an existing `.env`
+- [ ] Verify credentials have no placeholder values
+- [ ] Ensure the selected profile's source volumes and networks exist
+- [ ] Review the selected destination file and registry policies
+- [ ] Start service: `./start-backup.sh local` (or the appropriate profile)
 - [ ] Test manual backup
 - [ ] Verify cron jobs scheduled
 - [ ] Check Discord notifications received

@@ -64,8 +64,9 @@ After encryption or sync preparation, each backup run SHALL upload or synchroniz
 ### REQ-004: Retention is enforced per service
 Each filedata service SHALL have a retention value in the registry, passed to the
 backup container through its dedicated `{SERVICE}_RETENTION_DAYS` environment
-variable. Database retention SHALL remain environment-configured. Old local backup files SHALL be
-deleted after this many days using `find ... -mtime +{days} -delete`.
+variable. PostgreSQL profiles SHALL use positive retention values from
+`backup-databases.conf`. Old local backup files SHALL be deleted after this many
+days using `find ... -mtime +{days} -delete`.
 
 #### Scenario: Old local backups are pruned
 - **GIVEN** backup files older than `{SERVICE}_RETENTION_DAYS` exist in the local backup directory
@@ -93,7 +94,7 @@ hostname.
 Neither `filedata-backup` nor `db-backup` SHALL use a single `CRON_SCHEDULE` variable
 shared across all services. Each filedata schedule SHALL be configured in its
 registry entry and passed as a dedicated `{SERVICE}_CRON_SCHEDULE` environment
-variable; database schedules SHALL remain environment-configured.
+variable. Database schedules SHALL come from `backup-databases.conf`.
 
 #### Scenario: Per-service schedule variables are declared
 - **GIVEN** a `docker-compose.yml` command block for a backup service is inspected
@@ -103,9 +104,8 @@ variable; database schedules SHALL remain environment-configured.
 - **AND** a single `CRON_SCHEDULE` shared across services SHALL NOT exist
 
 ### REQ-007: Backup schedule timing
-Filedata backup cron entries SHALL use their registered schedules without a global
-earliest start time or uniqueness requirement. Postgres backup cron entries SHALL
-start no earlier than 03:00 and be staggered at minimum 5 minutes apart.
+Filedata and generated PostgreSQL backup cron entries SHALL use their registered
+schedules without a global earliest start time or uniqueness requirement.
 
 #### Scenario: Filedata schedules follow the registry
 - **GIVEN** `backup-volumes.conf` contains the registered filedata schedules
@@ -113,11 +113,11 @@ start no earlier than 03:00 and be staggered at minimum 5 minutes apart.
 - **THEN** Syncthing SHALL be scheduled at 01:15 and Jellyfin at 01:20
 - **AND** Radicale and Immich library SHALL both be scheduled at 03:00
 
-#### Scenario: Default postgres schedules are staggered from 03:00
-- **GIVEN** the postgres backup service is deployed with default schedule values
-- **WHEN** all per-database cron schedules are read
-- **THEN** no two databases SHALL share the same cron time
-- **AND** the earliest entry SHALL be at 03:00 or later
+#### Scenario: Generated postgres schedules follow the registry
+- **GIVEN** `backup-databases.conf` contains the registered PostgreSQL schedules
+- **WHEN** the default PostgreSQL profile is generated
+- **THEN** Immich SHALL be scheduled at 02:00
+- **AND** Firefly SHALL be scheduled at 03:05
 
 ### REQ-008: filedata-backup mounts source volumes read-only at /backup-sources/<service>
 Each volume registered with `filedata-backup` SHALL be mounted read-only in the
@@ -131,8 +131,8 @@ Each volume registered with `filedata-backup` SHALL be mounted read-only in the
 
 ### REQ-009: db-backup uses pg_dump per database with a case block in the backup script
 The `db-backup-script.sh` SHALL contain a `case` block with one entry per registered
-database. Each entry shall set the host, user, password, database name, Dropbox path,
-local backup directory, and retention days for that database.
+database. It SHALL resolve the database connection, local backup directory,
+generated Dropbox destination, and generated retention policy for that database.
 
 #### Scenario: Unknown database argument is rejected
 - **GIVEN** `db-backup-script.sh` is invoked with an unrecognized database name
@@ -140,9 +140,10 @@ local backup directory, and retention days for that database.
 - **THEN** the script SHALL exit with a non-zero code and log "Unknown database"
 
 #### Scenario: Known database produces a named backup file
-- **GIVEN** `db-backup-script.sh` is invoked with a registered database name
+- **GIVEN** `db-backup-script.sh` is invoked with a registered database name and
+  its default backup name
 - **WHEN** the backup completes
- - **THEN** a file matching `<database>_YYYYMMDD_HHMMSS.sql.zst.gpg` SHALL exist in
+- **THEN** a file matching `<database>_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` SHALL exist in
   `/backups/<database>/`
 
 ### REQ-010: db-backup joins every network needed to reach its registered databases
@@ -172,11 +173,11 @@ The `paperless_postgresdata` volume SHALL be mounted read-only in `db-backup`. A
 `knowledge_network` to reach the `paperless-db` container by hostname.
 
 #### Scenario: Paperless backup produces a correctly named file
-- **GIVEN** the paperless cron entry fires
+- **GIVEN** the paperless cron entry fires with the default backup name
 - **WHEN** `db-backup-script.sh paperless` runs
-  - **THEN** a file matching `paperless_YYYYMMDD_HHMMSS.sql.zst.gpg` SHALL exist in
+- **THEN** a file matching `paperless_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` SHALL exist in
   `/backups/paperless/`
-- **AND** a Discord notification SHALL be sent only if the backup fails only if the backup fails
+- **AND** a Discord notification SHALL be sent only if the backup fails
 
 #### Scenario: Local backup retains authenticated database access after migration
 - **GIVEN** Paperless has moved to `knowledge_network`
@@ -206,14 +207,14 @@ The three Immich photo volumes (`immich_library`, `immich_profile`, `immich_uplo
 
 ### REQ-014: Immich PostgreSQL database is registered with db-backup
 The `immich_postgresdata` volume SHALL be mounted read-only in `db-backup`. An
-`immich` case block SHALL exist in `db-backup-script.sh`. The backup file SHALL use
- the naming convention `backup_immich_{timestamp}.sql.zst.gpg`. `db-backup` SHALL join
+`immich` case block SHALL exist in `db-backup-script.sh`. The default backup file
+name SHALL use the convention `immich_{timestamp}.sql.zst.gpg`. `db-backup` SHALL join
 `media_network` to reach the `immich-db` container.
 
 #### Scenario: Immich database backup produces correctly named file
-- **GIVEN** the `immich` cron entry fires in `db-backup`
+- **GIVEN** the `immich` cron entry fires in `db-backup` with the default backup name
 - **WHEN** `db-backup-script.sh immich` runs
- - **THEN** a file matching `backup_immich_YYYYMMDD_HHMMSS.sql.zst.gpg` SHALL exist
+- **THEN** a file matching `immich_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` SHALL exist
 - **AND** a Discord notification SHALL be sent only if the backup fails
 
 ### REQ-015: Both backup services have SERVICE_DOCUMENTATION.md and RESTORE_GUIDE.md
@@ -231,9 +232,9 @@ these two standard files and removed.
 ### REQ-016: Backup services provide credential and destination configuration
 `backupServices/filedata/` SHALL provide a credentials-only `.env.example` and
 destination files `path.local` and `path.prod`; `backupServices/postgres/` SHALL
-provide `.env.acc.example` and `.env.prd.example`. The filedata path files and
-the PostgreSQL examples SHALL each declare matching variable names per pair.
-Filedata destinations SHALL be permitted to differ by environment and mode.
+provide a credentials-only `.env.example` and destination files `path.local` and
+`path.prod`. Each service's path files SHALL declare matching destination variable
+names. Destinations SHALL be permitted to differ by environment.
 
 #### Scenario: Filedata path files cover all registered services
 - **GIVEN** `path.local` and `path.prod` are compared
@@ -241,11 +242,16 @@ Filedata destinations SHALL be permitted to differ by environment and mode.
 - **THEN** both files SHALL declare identical destination variable names
 - **AND** `.env.example` SHALL contain credentials rather than destination paths
 
-#### Scenario: PostgreSQL examples cover all registered services
-- **GIVEN** `.env.acc.example` and `.env.prd.example` are compared for PostgreSQL backups
+#### Scenario: PostgreSQL example covers registered services
+- **GIVEN** the PostgreSQL `.env.example` is inspected
 - **WHEN** checking variable names
-- **THEN** both files SHALL declare identical variable names
-- **AND** value differences SHALL be limited to environment-specific paths, schedules, or provider targets
+- **THEN** it SHALL declare database credentials for registered services
+- **AND** it SHALL NOT declare Dropbox destination paths
+
+#### Scenario: PostgreSQL path files cover registered databases
+- **GIVEN** PostgreSQL `path.local` and `path.prod` are compared
+- **WHEN** checking variable names
+- **THEN** both files SHALL declare identical destination variables for registered databases
 
 ### REQ-017: Backup health is verified on a three-tier schedule
 Operators SHALL follow a three-tier verification schedule: daily (check container logs
@@ -264,18 +270,18 @@ to verify files exist), monthly (full test-restore to a non-production environme
 - **THEN** database row counts SHALL match known baselines
 - **AND** Vaultwarden vault SHALL unlock successfully from the restored data
 
-### REQ-018: Remote backup services SHALL be deployed from dedicated scoped compose files
-When deploying backup services to a remote host, the operator SHALL use
-`backupServices/postgres/docker-compose.remote.yml` for PostgreSQL and
+### REQ-018: Prod backup services use host-scoped startup
+When deploying backup services to a prod host, the operator SHALL use
+`backupServices/postgres/start-backup.sh prod` for PostgreSQL and
 `backupServices/filedata/start-backup.sh prod` for filedata.
 
-#### Scenario: Remote postgres backup deployed with correct scope
-- **GIVEN** a remote host is configured for the remote PostgreSQL backup profile
+#### Scenario: Prod postgres backup deployed with correct scope
+- **GIVEN** a host is configured for the prod PostgreSQL backup profile
 - **WHEN** the operator starts the postgres backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.remote.yml up -d`
-- **AND** only `firefly_postgresdata` and `firefoxsync_postgresdata` volumes SHALL be mounted
-- **AND** only `finance_network` and `security_network` SHALL be joined
-- **AND** `firefly` and `firefoxsync` SHALL each have a scheduled backup job
+- **THEN** the command SHALL be `./start-backup.sh prod`
+- **AND** only `firefly_postgresdata` SHALL be mounted as a database source
+- **AND** only `finance_network` SHALL be joined
+- **AND** `firefly` SHALL have a scheduled backup job
 
 #### Scenario: Prod filedata backup deployed with correct scope
 - **GIVEN** a remote host is configured for the prod filedata backup profile
@@ -306,11 +312,11 @@ without requiring a separate profile Compose file.
 - **THEN** the command SHALL produce a valid Compose model
 
 ### REQ-021: Scoped backup profile changes SHALL remain deployment-scoped
-Changes to a remote PostgreSQL profile or a filedata host selection SHALL affect
+Changes to a PostgreSQL profile or a filedata host selection SHALL affect
 only services deployed to that profile and SHALL NOT enable unrelated jobs.
 
 #### Scenario: Scoped profile addition preserves default and Local scope
-- **GIVEN** a backup job is added to the remote PostgreSQL profile or filedata registry
+- **GIVEN** a backup job is added to a PostgreSQL profile or filedata registry
 - **WHEN** the relevant backup configuration is inspected
 - **THEN** the changed profile SHALL contain only that profile's deployed jobs
 - **AND** other host profiles SHALL retain their configured service sets
@@ -353,16 +359,17 @@ The `filedata-backup` pipeline SHALL back up only the canonical retained Paperle
 - **THEN** files under `documents/thumbnails/` SHALL NOT be included
 - **AND** runtime lock artifacts such as `media.lock` SHALL NOT be included
 
-### REQ-024: Local backup services SHALL be deployed from dedicated local-scoped compose files
+### REQ-024: Local backup services use host-scoped startup
 When deploying backup services to the Local environment, the operator SHALL use
-`docker-compose.local.yml` for PostgreSQL and `start-backup.sh local` for filedata.
+`start-backup.sh local` in each backup service directory.
 
 #### Scenario: Local postgres backup deployed with correct scope
 - **GIVEN** the Local environment is configured
 - **WHEN** the operator starts the postgres backup service
-- **THEN** the command SHALL be `docker compose -f docker-compose.local.yml up -d`
+- **THEN** the command SHALL be `./start-backup.sh local`
 - **AND** the database source volumes SHALL be `romm_postgresdata`,
-  `paperless_postgresdata`, and `invidious_postgresdata`, in that order
+  `paperless_postgresdata`, `immich_postgresdata`, and `invidious_postgresdata`,
+  in that order
 - **AND** only `games_network`, `knowledge_network`, and `media_network` SHALL be joined
 
 #### Scenario: Local filedata backup deployed with correct scope
@@ -440,8 +447,8 @@ and SHALL NOT be selected by Local or Prod.
 Backup services SHALL group source-volume mounts, top-level source-volume
 declarations, and cron jobs alphabetically by service category, then by service
 name. Multiple volumes of one service SHALL be sorted by purpose suffix. The
-filedata registry and its generated override SHALL preserve this ordering.
-PostgreSQL Compose profiles SHALL preserve the ordering in their source files.
+filedata and PostgreSQL registries and their generated overrides SHALL preserve
+this ordering.
 Network references and declarations SHALL be sorted by network name. Shared
 secrets mounts SHALL follow grouped source volumes.
 
@@ -627,3 +634,118 @@ replacing the existing container when no production source volumes are available
 - **GIVEN** no production source volumes exist
 - **WHEN** the filedata backup restore workflow checks source volumes
 - **THEN** it SHALL fail without replacing an existing backup container
+
+### REQ-040: PostgreSQL backup profiles use a generated Compose override
+The PostgreSQL backup service SHALL use a neutral base Compose file and generate
+a temporary override from `backup-databases.conf` for the selected host profile.
+The startup script SHALL remove the override on exit and SHALL pass each selected
+database's registry schedule and retention to the container. Generated policy
+SHALL override legacy environment settings.
+The startup script SHALL select `path.local` for `local`, `path.prod` for `prod`,
+and an explicitly selected path file for `default`. The selected path file SHALL
+override legacy environment destinations.
+Every database registry entry SHALL include the `default` profile. Firefox Sync
+SHALL be selected only by `default`.
+The backup script SHALL reject execution when the selected database has no
+generated retention value or Dropbox destination.
+Database host, name, and backup name SHALL default to `<service>-db`, `<service>`,
+and `<service>`, respectively. Existing environment overrides SHALL be honored.
+
+#### Scenario: Selected database resources are generated
+- **GIVEN** all source volumes and networks for a selected host profile exist
+- **WHEN** the PostgreSQL startup script deploys the profile
+- **THEN** the generated configuration SHALL include only its registered database
+  mounts, networks, and cron jobs
+- **AND** database source volumes SHALL be mounted read-only
+
+#### Scenario: A selected database resource is missing
+- **GIVEN** a selected source volume or network is missing
+- **WHEN** the PostgreSQL startup script checks its resources
+- **THEN** it SHALL report the missing resource
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Database entry omits the default profile
+- **GIVEN** any database registry entry omits `default`
+- **WHEN** the PostgreSQL startup script validates the registry
+- **THEN** it SHALL report an error
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Firefox Sync is not selected locally
+- **GIVEN** Firefox Sync resources are unavailable on the Local host
+- **WHEN** the PostgreSQL startup script generates the Local profile
+- **THEN** Firefox Sync's volume, network, and cron job SHALL NOT be included
+- **AND** their absence SHALL NOT prevent Local deployment
+
+#### Scenario: Invalid database retention is rejected
+- **GIVEN** a database registry entry specifies zero or a negative retention
+- **WHEN** the PostgreSQL startup script validates the registry
+- **THEN** it SHALL report an error
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Invalid database schedule is rejected
+- **GIVEN** a database registry entry has a schedule without five fields or
+  contains unsupported characters
+- **WHEN** the PostgreSQL startup script validates the registry
+- **THEN** it SHALL report the invalid schedule
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Generated retention controls cleanup
+- **GIVEN** a generated database profile has a positive retention policy
+- **AND** a legacy environment setting specifies a different retention
+- **WHEN** a scheduled or manual backup completes
+- **THEN** local and Dropbox cleanup SHALL use the generated policy
+
+#### Scenario: Database configuration uses naming defaults
+- **GIVEN** a selected database has no host, database-name, or backup-name overrides
+- **WHEN** its backup runs
+- **THEN** its host SHALL be `<service>-db`
+- **AND** its database and backup names SHALL be `<service>`
+
+#### Scenario: Existing database configuration overrides are preserved
+- **GIVEN** a selected database has host, database-name, or backup-name overrides
+- **WHEN** its backup runs
+- **THEN** the backup SHALL use the configured overrides
+
+#### Scenario: Generated retention is missing
+- **GIVEN** a database backup is invoked without retention for the selected database
+- **WHEN** the backup script starts
+- **THEN** it SHALL report an error and stop before creating a backup
+
+#### Scenario: Selected database destination is missing
+- **GIVEN** the selected path file has no destination for a selected database
+- **WHEN** the PostgreSQL startup script validates destinations
+- **THEN** it SHALL report an error
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Selected path file overrides older destinations
+- **GIVEN** the credentials environment file contains an older destination
+- **WHEN** the PostgreSQL backup profile is started
+- **THEN** uploads and remote cleanup SHALL use the destination in the selected path file
+
+### REQ-041: GCP database backup scheduler recovery
+The GCP database backup workflow SHALL deploy the production profile after a
+successful apply and NPM restore when the service restore group completes,
+whether the group succeeds or fails. It SHALL also support manual dispatch. It
+SHALL report and skip databases whose source volume or network is missing,
+and SHALL notify Discord when configured. It SHALL preserve an existing
+scheduler if no production database is available or preflight fails. Secrets
+SHALL be transferred over SSH standard input and SHALL NOT be stored in tracked
+files or exposed in command arguments.
+
+#### Scenario: Some database resources are missing
+- **GIVEN** at least one production database has its volume and network
+- **AND** another production database is missing a required resource
+- **WHEN** the database backup workflow runs
+- **THEN** the scheduler SHALL include only available databases
+- **AND** the workflow SHALL report the skipped database and alert Discord when configured
+
+#### Scenario: No production databases are available
+- **GIVEN** all production databases lack a source volume or network
+- **WHEN** the database backup workflow runs
+- **THEN** it SHALL fail without replacing an existing backup container
+
+#### Scenario: A missing-resource alert cannot be delivered
+- **GIVEN** at least one production database is available and another is skipped
+- **WHEN** sending the configured Discord alert fails
+- **THEN** the available database scheduler SHALL start
+- **AND** the workflow SHALL report failure
