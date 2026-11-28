@@ -396,6 +396,7 @@ volume declarations, and cron jobs:
   Do not enable a service in a profile where it is not deployed.
 - Register database backups in `backupServices/postgres/backup-databases.conf` with
   their applicable profiles, network, schedule, and positive retention days.
+  Every entry must include the `default` profile.
   Generated profiles use those policy values; the backup script requires a
   generated profile. Configure destinations in `backupServices/postgres/path.local`
   and `path.prod`; `local` and `prod` select their matching file, and `default`
