@@ -384,19 +384,11 @@ NEWDB_BACKUP_RETENTION_DAYS=30
 mkdir -p ./backups/newdb
 ```
 
-3. **Update every applicable Compose profile:**
-Insert `newdb_postgresdata:/var/lib/postgresql/newdb:ro`, its top-level external
-volume declaration, and its cron job in category and service-name order. Add
-required database networks in network-name order. Keep shared secrets and script
-mounts last, and do not enable unrelated commented entries. Use matching category
-comments in the volume sections and generated crontab, following
-`QUICKSTART_GUIDE.md` and the repository's backup ordering instructions.
-
-Only the initial `# Crontab for database backups` header uses `>`; append the
-new job under its category with `>>`:
-```bash
-echo '${NEWDB_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh newdb' >> /etc/crontabs/root &&
-```
+3. **Register the database in `backup-databases.conf`:**
+Add its source volume, applicable profiles, network, retention, and schedule in
+category and service-name order. The startup script generates the Compose mounts,
+network declarations, and cron job. Until the policy migration, the effective
+schedule and retention remain the values in `.env`.
 
 4. **Register the database in `db-backup-script.sh`:**
 Add a `newdb` case that resolves its connection, destination, and retention
@@ -404,11 +396,11 @@ configuration. Update backup specs and operator documentation in the same change
 
 5. **Recreate the affected profile:**
 ```bash
-docker compose -f docker-compose.yml up -d --force-recreate db-backup
+./start-backup.sh local
 ```
 
-Select `docker-compose.local.yml` or `docker-compose.remote.yml` instead for those
-deployments. Verify the new job with `docker exec db-backup cat /etc/crontabs/root`.
+Select `default` or `prod` for those deployments. Verify the new job with
+`docker exec db-backup cat /etc/crontabs/root`.
 
 ### Customizing Retention Policy
 Change the service-specific retention value in `.env`:

@@ -2,13 +2,19 @@
 
 ## Compose Profile Selection
 
-Choose the compose file that matches your deployment target:
+Select the deployment profile when starting the service:
 
-| Environment | Compose File | Current backup scope |
+| Environment | Command | Current backup scope |
 |-------------|--------------|----------------------|
-| Default homelab | `docker-compose.yml` | Main postgres backup set |
-| Remote | `docker-compose.remote.yml` | `firefly`, `firefoxsync` |
-| Local | `docker-compose.local.yml` | `romm`, `invidious`, `immich`, `paperless` |
+| Default homelab | `./start-backup.sh default` | `firefly`, `paperless`, `immich`, `invidious`, `firefoxsync` |
+| Prod | `./start-backup.sh prod` | `firefly` |
+| Local | `./start-backup.sh local` | `romm`, `paperless`, `immich`, `invidious`, `firefoxsync` |
+
+The script generates a temporary Compose override from `backup-databases.conf`
+and removes it after deployment. It fails before deployment if a selected source
+volume or network is missing. The base Compose file cannot start backups alone.
+The old Local and Remote Compose files remain available during migration and
+still use their previous scopes.
 
 All profiles use the same per-service cron variables from `.env`:
 `FIREFLY_CRON_SCHEDULE`, `ROMM_CRON_SCHEDULE`,
@@ -17,7 +23,7 @@ and `FIREFOXSYNC_CRON_SCHEDULE`, as applicable to the selected profile.
 
 ### Compose And Crontab Ordering
 
-All profiles order source mounts, top-level volumes, and cron jobs by service
+The generated profiles order source mounts, top-level volumes, and cron jobs by service
 category, then name: Financial, Gaming, Knowledge, Media, and Security Services,
 as applicable. Source-volume sections use `## <Category> Services` comments;
 generated crontabs use matching `# <Category> Services` comments. The crontab
@@ -29,17 +35,10 @@ retain their sorted positions. Shared secrets follow source
 volumes, and `gpg-secrets` follows top-level source-volume declarations. These
 ordering rules do not change configured cron execution times.
 
-When adding a database-backed service, insert its mounts, volume declarations,
-required networks, and cron job in their sorted positions in every profile that
-deploys it. Add its case to `db-backup-script.sh`, update environment examples,
-specs, and service documentation, and leave unrelated disabled entries unchanged.
-
-Set your compose file once per terminal session:
-
-```bash
-export BACKUP_COMPOSE_FILE=docker-compose.local.yml
-# Use docker-compose.yml or docker-compose.remote.yml in other environments
-```
+When adding a database-backed service, register it in `backup-databases.conf`,
+add its case to `db-backup-script.sh`, and update environment examples, specs,
+and service documentation. Registry schedule and retention values are staged:
+the generated jobs and backup script still use environment settings.
 
 ## 🚀 Setup (5 minutes)
 
@@ -62,11 +61,11 @@ fails before creating or uploading a dump.
 
 ### Step 2: Start the Service
 ```bash
-docker compose -f "$BACKUP_COMPOSE_FILE" up -d --build
+./start-backup.sh local
 ```
 
 The local `homelab/db-backup:local` image includes the backup script and all tools,
-including `zstd`, on a digest-pinned PostgreSQL 18.6 Alpine base. No scripts are
+including `zstd`, on a digest-pinned PostgreSQL Alpine base. No scripts are
 bind-mounted from the host and no packages are installed during startup. This
 allows Docker to restart it before an encrypted home directory is unlocked.
 The build context allowlist in `.dockerignore` excludes credentials and unrelated
@@ -76,7 +75,7 @@ container environment when restarting it.
 To migrate an existing container or apply script/dependency changes:
 
 ```bash
-docker compose -f "$BACKUP_COMPOSE_FILE" up -d --build --force-recreate db-backup
+./start-backup.sh local
 docker inspect --format '{{.State.Status}} {{.HostConfig.RestartPolicy.Name}}' db-backup
 docker inspect --format '{{range .Mounts}}{{println .Type .Destination}}{{end}}' db-backup
 docker exec db-backup pidof crond
@@ -127,15 +126,15 @@ docker exec db-backup /usr/local/bin/backup-script.sh paperless
 # Test Immich backup
 docker exec db-backup /usr/local/bin/backup-script.sh immich
 
+# Test Firefox Sync backup
+docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
+
 ```
 
-For the remote environment:
+For the prod environment:
 ```bash
 # Test Firefly backup
 docker exec db-backup /usr/local/bin/backup-script.sh firefly
-
-# Test Firefox Sync backup
-docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
 ```
 
 ## 📅 Backup Schedule
@@ -152,27 +151,28 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
 
 ### Profile Notes
 
-- `docker-compose.yml` schedules all five databases using the shared `.env` cron vars.
-- `docker-compose.local.yml` schedules `romm`, `paperless`, and `invidious`.
+- `./start-backup.sh default` schedules the five default databases using the
+  shared `.env` cron variables.
+- `./start-backup.sh local` schedules `romm`, `paperless`, `immich`, `invidious`,
+  and `firefoxsync`.
 - Paperless runs in `knowledgeServices/paperless/` on `knowledge_network`. Both the
   default and Local backup profiles join that network to reach `paperless-db`;
   keep `media_network` for Invidious.
-- `docker-compose.remote.yml` schedules `firefly` and `firefoxsync` using their
-  respective `FIREFLY_CRON_SCHEDULE` and `FIREFOXSYNC_CRON_SCHEDULE` variables.
+- `./start-backup.sh prod` schedules `firefly`.
 
 Automatic cleanup deletes local and remote backups older than 7 days.
 
 ## 🔧 Common Commands
 
 ```bash
-# Start service
-docker compose -f "$BACKUP_COMPOSE_FILE" up -d
+# Start or recreate the selected profile
+./start-backup.sh local
 
 # Stop service
-docker compose -f "$BACKUP_COMPOSE_FILE" down
+docker stop db-backup
 
-# Restart service
-docker compose -f "$BACKUP_COMPOSE_FILE" restart
+# Restart the existing container with its stored configuration
+docker start db-backup
 
 # View logs
 docker logs -f db-backup
@@ -302,16 +302,13 @@ NEWDB_CRON_SCHEDULE=0 4 * * *  # 4:00 AM
 mkdir -p ./backups/newdb
 ```
 
-### 3. Update `docker-compose.yml` command section:
-Add the following line to create a new cron job:
-```yaml
-# Use > for the first cron entry in the command block so restarts rewrite the crontab cleanly.
-echo '$${NEWDB_CRON_SCHEDULE} /usr/local/bin/backup-script.sh newdb' > /etc/crontabs/root
-```
+### 3. Register the database:
+Add its volume, profiles, network, retention and schedule to
+`backup-databases.conf`, and add its configuration case to `db-backup-script.sh`.
 
-### 4. Restart service:
+### 4. Recreate the selected profile:
 ```bash
-docker compose -f "$BACKUP_COMPOSE_FILE" restart
+./start-backup.sh local
 ```
 
 ## 📁 File Structure
@@ -336,5 +333,7 @@ backupServices/postgres/
 |------|---------|
 | `.env` | Environment variables & credentials |
 | `docker-compose.yml` | Docker service definition |
+| `backup-databases.conf` | Database profile registry |
+| `start-backup.sh` | Generates and deploys a host-specific Compose override |
 | `db-backup-script.sh` | Backup logic & encryption |
 | `setup-backup.sh` | Interactive setup helper |
