@@ -11,8 +11,17 @@ database from the latest Dropbox backup.
 - GPG passphrase for backup decryption
 - Check the database backup destination in
   [`path.local`](../../backupServices/postgres/path.local) or
-  [`path.prod`](../../backupServices/postgres/path.prod); set `DROPBOX_PATH`
-  to that value. The script defaults to `/Apps/invidious`.
+  [`path.prod`](../../backupServices/postgres/path.prod). The script defaults
+  to `/App_acc/invidious` if `DROPBOX_PATH` is unset.
+
+Set and verify the selected destination in your shell before either recovery
+path. For example, enter `/App_acc/invidious` for local or `/Apps/invidious`
+for prod:
+
+```bash
+read -r -p "Selected Dropbox destination: " DROPBOX_PATH
+: "${DROPBOX_PATH:?A Dropbox destination is required}" && export DROPBOX_PATH
+```
 
 ## Restore Steps (Script-First)
 
@@ -20,13 +29,13 @@ database from the latest Dropbox backup.
 
 ```bash
 cd mediaServices/invidious
-DROPBOX_PATH=/App_acc/invidious bash restore.sh
+: "${DROPBOX_PATH:?Set the selected Dropbox destination first}" && bash restore.sh
 ```
 
 The script performs:
 - Preflight checks (`docker`, `rclone`, `gpg`, `zstd`, Docker daemon)
 - `.env` presence validation before any remote backup lookup
-- Latest backup discovery from `dropbox:/Apps/invidious` (or `DROPBOX_PATH` override)
+- Latest backup discovery from the selected `DROPBOX_PATH`
 - Download, decrypt, decompress, and import workflow for `*.sql.zst.gpg`
 
 ### 2. Passphrase behavior
@@ -69,6 +78,8 @@ After successful restore:
 ## Manual Fallback Recovery
 
 Use this only when `restore.sh` cannot be used.
+Run the manual steps from `mediaServices/invidious/` after setting
+`DROPBOX_PATH` as described in Prerequisites.
 
 ### 1. Stop stack
 
@@ -79,8 +90,12 @@ docker compose down
 ### 2. Discover and download latest backup
 
 ```bash
-rclone lsf dropbox:/App_acc/invidious --files-only | grep -E '\.sql\.zst\.gpg$' | sort | tail -n 1
-rclone copy "dropbox:/App_acc/invidious/<filename>.sql.zst.gpg" .
+: "${DROPBOX_PATH:?Set the selected Dropbox destination first}" \
+  && rclone lsf "dropbox:${DROPBOX_PATH}" --files-only | grep -E '\.sql\.zst\.gpg$' | sort
+read -r -p "Backup filename to restore: " BACKUP_FILE
+: "${DROPBOX_PATH:?Set the selected Dropbox destination first}" \
+  && : "${BACKUP_FILE:?A backup filename is required}" \
+  && rclone copy "dropbox:${DROPBOX_PATH}/${BACKUP_FILE}" .
 ```
 
 ### 3. Recreate volume and start database container
@@ -95,7 +110,7 @@ docker start invidious-db
 ### 4. Restore database
 
 ```bash
-gpg --batch --yes --passphrase "$PASSPHRASE" -d <filename>.sql.zst.gpg \
+gpg --batch --yes --passphrase "$PASSPHRASE" -d "$BACKUP_FILE" \
   | zstd -d \
   | docker exec -i invidious-db psql -U kemal -d invidious
 ```
