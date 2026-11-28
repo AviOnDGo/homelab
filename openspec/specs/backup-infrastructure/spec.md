@@ -249,21 +249,22 @@ defined in `repository-conventions`.
 - **THEN** both files SHALL declare variables for: pihole, npm, vaultwarden,
   openwebui, freshrss, immich (library, profile, upload)
 
-#### Scenario: postgres backup service env examples
+#### Scenario: postgres backup service configuration files
 - **GIVEN** `backupServices/postgres/` is inspected
 - **WHEN** listing tracked files
-- **THEN** `.env.acc.example` SHALL be present with `/App_acc/` Dropbox paths
-- **AND** `.env.prd.example` SHALL be present with `/Apps/` Dropbox paths
+- **THEN** `.env.example` SHALL contain credentials without destination paths
+- **AND** `path.local` SHALL contain `/App_acc/` Dropbox paths
+- **AND** `path.prod` SHALL contain `/Apps/` Dropbox paths
 - **AND** `.env.backup` SHALL NOT be present (removed)
 
-#### Scenario: postgres env examples cover all services
-- **GIVEN** `backupServices/postgres/.env.acc.example` and `.env.prd.example` are inspected
+#### Scenario: postgres env example covers all services
+- **GIVEN** `backupServices/postgres/.env.example` is inspected
 - **WHEN** checking the set of variable names
-- **THEN** both files SHALL declare database credentials and backup config for:
-  invidious, firefly, paperless, immich, firefoxsync
-- **AND** both files SHALL declare one cron schedule variable per service (`{SERVICE}_CRON_SCHEDULE`)
-- **AND** both files SHALL declare shared credentials: `DROPBOX_AUTH_TOKEN`,
-  `DROPBOX_REFRESH_TOKEN`, `GPG_PASSPHRASE`, `DISCORD_WEBHOOK_URL`, `TZ`
+- **THEN** it SHALL declare database credentials for:
+  invidious, firefly, paperless, immich, firefoxsync, romm
+- **AND** schedules and retention SHALL be configured in `backup-databases.conf`
+- **AND** it SHALL declare shared credentials: `DROPBOX_AUTH_TOKEN`,
+  `DROPBOX_REFRESH_TOKEN`, `GPG_PASSPHRASE`, `DISCORD_WEBHOOK_URL`
 
 ### REQ-022: Firefox Volume Registered in Filedata Backup
 The `firefox_filedata` Docker volume SHALL be selected in the default filedata
