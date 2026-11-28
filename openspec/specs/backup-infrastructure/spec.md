@@ -28,7 +28,8 @@ using its registered cron schedule.
 - **THEN** vaultwarden backup schedule is controlled by `VAULTWARDEN_CRON_SCHEDULE` independently of the other service schedule variables
 
 ### REQ-012: Postgres database backups run on staggered cron schedules
-The postgres backup service SHALL schedule database backups using per-service cron schedule environment variables, with each configured service having exactly one `*_CRON_SCHEDULE` variable shared across compose profiles.
+PostgreSQL profiles SHALL pass each database's registry schedule via one
+per-service `*_CRON_SCHEDULE` variable.
 
 #### Scenario: Generated jobs reference per-service cron variables
 - **GIVEN** `backupServices/postgres/start-backup.sh` and `backup-databases.conf` are inspected
@@ -37,10 +38,11 @@ The postgres backup service SHALL schedule database backups using per-service cr
 - **AND** the first cron `echo` in the generated command SHALL rewrite `/etc/crontabs/root` with `>` so container starts remain idempotent
 - **AND** profile-specific variables such as `*_REMOTE_CRON_SCHEDULE` and `*_LOCAL_CRON_SCHEDULE` SHALL NOT be used
 
-#### Scenario: Environment examples define one cron variable per postgres service
-- **GIVEN** `backupServices/postgres/.env.acc.example` and `.env.prd.example` are inspected
-- **WHEN** checking cron-related variable names
-- **THEN** each postgres-backed service SHALL define exactly one cron variable: `INVIDIOUS_CRON_SCHEDULE`, `FIREFLY_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`, `IMMICH_CRON_SCHEDULE`, `FIREFOXSYNC_CRON_SCHEDULE`
+#### Scenario: Registry provides independent postgres schedules
+- **GIVEN** `backupServices/postgres/backup-databases.conf` is inspected
+- **WHEN** checking PostgreSQL database entries
+- **THEN** each entry SHALL include its own cron schedule
+- **AND** the generated schedule SHALL override any legacy environment value
 
 ### REQ-013: Service-Specific Backup Schedules
 The backup system SHALL use per-service configurable cron schedules that reflect each service's data change frequency and acceptable backup intervals.
