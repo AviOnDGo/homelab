@@ -366,8 +366,10 @@ command: >
 This pattern runs scheduled tasks within the container without external cron daemons.
 
 ### Backup Compose Ordering (Mandatory)
-For `backupServices/postgres/`, maintain the layout in
-`docker-compose.yml`, `docker-compose.local.yml`, and `docker-compose.remote.yml`.
+For `backupServices/postgres/`, use `backup-databases.conf` and `start-backup.sh`
+to generate host-specific mounts, network declarations, and cron jobs from the
+neutral `docker-compose.yml`. The legacy local and remote Compose files remain
+available during migration.
 For `backupServices/filedata/`, keep one canonical `docker-compose.yml` and use
 `backup-volumes.conf` plus `start-backup.sh` to generate host-specific mounts,
 volume declarations, and cron jobs:
@@ -392,6 +394,9 @@ volume declarations, and cron jobs:
   Update `path.local` and `path.prod` with destination settings, the credentials-only
   `.env.example` if needed, backup scripts, specs, and operator documentation together.
   Do not enable a service in a profile where it is not deployed.
+- Register database backups in `backupServices/postgres/backup-databases.conf` with
+  their applicable profiles and network. Until the schedule and retention migration,
+  database jobs continue to use their existing environment settings.
 - Filedata backup modes, retention, and schedules come from `backup-volumes.conf` and are passed
   to the container by the generated Compose override. Specify `sync-crypt` for every volume
   that requires it, including Immich and Paperless; do not configure these policies in the
