@@ -115,10 +115,6 @@ Main backup script with the following functionality:
 - Size reporting in notifications
 - Graceful failure handling with partial success alerts
 
-### 4. setup-backup.sh
-Legacy helper targeting obsolete configuration. Configure credentials using
-`.env.example` and start the selected profile with `start-backup.sh` instead.
-
 ## Configuration Flow
 
 ```
@@ -451,11 +447,11 @@ docker exec db-backup gpg --version
 - [ ] Obtain Dropbox Auth Token
 - [ ] Create Discord webhook
 - [ ] Choose secure GPG passphrase
-- [ ] Run `bash setup-backup.sh`
-- [ ] Verify `.env` has no placeholder values
-- [ ] Ensure `media_network` exists
-- [ ] Create backup directories
-- [ ] Start service: `docker compose up -d`
+- [ ] Configure credentials from `.env.example` without overwriting an existing `.env`
+- [ ] Verify credentials have no placeholder values
+- [ ] Ensure the selected profile's source volumes and networks exist
+- [ ] Review the selected destination file and registry policies
+- [ ] Start service: `./start-backup.sh local` (or the appropriate profile)
 - [ ] Test manual backup
 - [ ] Verify cron jobs scheduled
 - [ ] Check Discord notifications received

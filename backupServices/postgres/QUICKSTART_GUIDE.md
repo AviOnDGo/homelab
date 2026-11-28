@@ -61,7 +61,7 @@ registry-retention mapping for each added database.
 From `backupServices/postgres`, create `.env` from `.env.example` if it does not
 already exist. Configure the selected databases' usernames and passwords, Dropbox
 credentials, and GPG passphrase; the Discord webhook is optional. Do not overwrite
-an existing `.env`. The older `setup-backup.sh` targets obsolete configuration.
+an existing `.env`.
 
 Database hosts default to `<service>-db`; database names and backup names default
 to `<service>`. Existing `{SERVICE}_DB_HOST`, `{SERVICE}_DB_NAME`, and
@@ -333,7 +333,6 @@ backupServices/postgres/
 ├── docker-compose.yml        # Service definition
 ├── .env                      # Configuration & credentials
 ├── db-backup-script.sh      # Backup orchestration
-├── setup-backup.sh          # Interactive setup helper
 └── backups/                 # Local backup storage
   ├── invidious/           # Invidious backups (*.sql.zst.gpg)
   ├── firefly/             # Firefly backups (*.sql.zst.gpg)
@@ -352,4 +351,3 @@ backupServices/postgres/
 | `path.local`, `path.prod` | Environment-specific Dropbox destinations |
 | `start-backup.sh` | Generates and deploys a host-specific Compose override |
 | `db-backup-script.sh` | Backup logic & encryption |
-| `setup-backup.sh` | Interactive setup helper |
