@@ -6,7 +6,7 @@ Select the deployment profile when starting the service:
 
 | Environment | Command | Current backup scope |
 |-------------|--------------|----------------------|
-| Default homelab | `./start-backup.sh default` | `firefly`, `paperless`, `immich`, `invidious`, `firefoxsync` |
+| Default homelab | `./start-backup.sh default local` or `./start-backup.sh default prod` | `firefly`, `paperless`, `immich`, `invidious`, `firefoxsync` |
 | Prod | `./start-backup.sh prod` | `firefly` |
 | Local | `./start-backup.sh local` | `romm`, `paperless`, `immich`, `invidious`, `firefoxsync` |
 
@@ -18,16 +18,20 @@ longer supported. Start backups with `start-backup.sh`.
 
 Generated profiles use schedules and retention from `backup-databases.conf`.
 Retention must be a positive number of days. The backup script requires the
-generated policy and ignores older retention settings. `path.local` and
-`path.prod` are not yet used by the startup script.
+generated policy and ignores older retention settings. The `local` and `prod`
+profiles load `path.local` and `path.prod` respectively; `default` requires an
+explicit destination choice. The selected path file overrides older destination
+settings. Missing or invalid path entries stop deployment.
 Schedules use five BusyBox cron fields; weekday numbers range from 0 (Sunday)
 through 6 (Saturday). Startup checks the field count and allowed characters,
 but not field ranges or steps; verify schedules before deployment.
 
 Before migrating an existing deployment, compare its current schedules and
 retention values with the registry and adjust the registry if necessary. Retention
-controls deletion of local and Dropbox backups. In particular, the previous Invidious script default was
-7 days, while the registry specifies 30 days.
+controls deletion of local and Dropbox backups. Compare existing Dropbox paths
+with the selected path file before recreating the container: the selected paths
+control both uploads and remote cleanup. In particular, the previous Invidious
+script default was 7 days, while the registry specifies 30 days.
 
 ### Compose And Crontab Ordering
 
@@ -44,23 +48,22 @@ volumes, and `gpg-secrets` follows top-level source-volume declarations. These
 ordering rules do not change configured cron execution times.
 
 When adding a database-backed service, register it in `backup-databases.conf`,
-add its case to `db-backup-script.sh`, and update environment examples, specs,
+add its case to `db-backup-script.sh`, and update the environment example, specs,
 and service documentation. The backup script needs both a database case and a
 registry-retention mapping for each added database.
 
 ## 🚀 Setup (5 minutes)
 
-### Step 1: Run Setup Script
-```bash
-# Run from the repository root
-cd backupServices/postgres
-bash setup-backup.sh
-```
+### Step 1: Configure Credentials
 
-Provide when prompted:
-- **Dropbox Auth Token**: Get from [Dropbox App Console](https://www.dropbox.com/developers/apps)
-- **Discord Webhook URI**: Create in Discord Server Settings > Integrations > Webhooks
-- **GPG Passphrase**: Choose a strong passphrase (min 16 chars recommended)
+From `backupServices/postgres`, create `.env` from `.env.example` if it does not
+already exist. Configure the selected databases' usernames and passwords, Dropbox
+credentials, and GPG passphrase; the Discord webhook is optional. Do not overwrite
+an existing `.env`. The older `setup-backup.sh` targets obsolete configuration.
+
+Database hosts default to `<service>-db`; database names and backup names default
+to `<service>`. Existing `{SERVICE}_DB_HOST`, `{SERVICE}_DB_NAME`, and
+`{SERVICE}_BACKUP_NAME` settings remain supported as overrides.
 
 Every database backup requires a nonempty GPG passphrase. The
 `/run/secrets/gpg-passphrase` file takes precedence over `GPG_PASSPHRASE`,
@@ -163,8 +166,8 @@ a database not selected by the profile fails rather than using a fallback policy
 
 ### Profile Notes
 
-- `./start-backup.sh default` schedules the five default databases using their
-  registry schedules.
+- `./start-backup.sh default local` or `./start-backup.sh default prod` schedules
+  the five default databases using the chosen destination file.
 - `./start-backup.sh local` schedules `romm`, `paperless`, `immich`, `invidious`,
   and `firefoxsync`.
 - Paperless runs in `knowledgeServices/paperless/` on `knowledge_network`. Both the
@@ -301,12 +304,8 @@ chmod 600 .env
 
 ### 1. Add environment variables to `.env`:
 ```bash
-NEWDB_DB_HOST=hostname
-NEWDB_DB_NAME=database
 NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
-NEWDB_BACKUP_NAME=newdb
-NEWDB_DROPBOX_BACKUP_PATH=/newdb_backups
 ```
 
 ### 2. Create backup directory:
@@ -316,7 +315,8 @@ mkdir -p ./backups/newdb
 
 ### 3. Register the database:
 Add its volume, profiles, network, retention and schedule to
-`backup-databases.conf`, and add its configuration case to `db-backup-script.sh`.
+`backup-databases.conf`, add its destination to both `path.local` and `path.prod`,
+and add its configuration case to `db-backup-script.sh`.
 
 ### 4. Recreate the selected profile:
 ```bash
@@ -346,6 +346,7 @@ backupServices/postgres/
 | `.env` | Environment variables & credentials |
 | `docker-compose.yml` | Docker service definition |
 | `backup-databases.conf` | Database profile registry |
+| `path.local`, `path.prod` | Environment-specific Dropbox destinations |
 | `start-backup.sh` | Generates and deploys a host-specific Compose override |
 | `db-backup-script.sh` | Backup logic & encryption |
 | `setup-backup.sh` | Interactive setup helper |
