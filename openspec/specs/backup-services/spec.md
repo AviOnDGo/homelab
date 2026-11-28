@@ -64,8 +64,9 @@ After encryption or sync preparation, each backup run SHALL upload or synchroniz
 ### REQ-004: Retention is enforced per service
 Each filedata service SHALL have a retention value in the registry, passed to the
 backup container through its dedicated `{SERVICE}_RETENTION_DAYS` environment
-variable. Database retention SHALL remain environment-configured. Old local backup files SHALL be
-deleted after this many days using `find ... -mtime +{days} -delete`.
+variable. PostgreSQL profiles SHALL use positive retention values from
+`backup-databases.conf`. Old local backup files SHALL be deleted after this many
+days using `find ... -mtime +{days} -delete`.
 
 #### Scenario: Old local backups are pruned
 - **GIVEN** backup files older than `{SERVICE}_RETENTION_DAYS` exist in the local backup directory
@@ -93,7 +94,7 @@ hostname.
 Neither `filedata-backup` nor `db-backup` SHALL use a single `CRON_SCHEDULE` variable
 shared across all services. Each filedata schedule SHALL be configured in its
 registry entry and passed as a dedicated `{SERVICE}_CRON_SCHEDULE` environment
-variable; database schedules SHALL remain environment-configured.
+variable. Database schedules SHALL come from `backup-databases.conf`.
 
 #### Scenario: Per-service schedule variables are declared
 - **GIVEN** a `docker-compose.yml` command block for a backup service is inspected
@@ -103,9 +104,8 @@ variable; database schedules SHALL remain environment-configured.
 - **AND** a single `CRON_SCHEDULE` shared across services SHALL NOT exist
 
 ### REQ-007: Backup schedule timing
-Filedata backup cron entries SHALL use their registered schedules without a global
-earliest start time or uniqueness requirement. Postgres backup cron entries SHALL
-start no earlier than 03:00 and be staggered at minimum 5 minutes apart.
+Filedata and generated PostgreSQL backup cron entries SHALL use their registered
+schedules without a global earliest start time or uniqueness requirement.
 
 #### Scenario: Filedata schedules follow the registry
 - **GIVEN** `backup-volumes.conf` contains the registered filedata schedules
@@ -113,11 +113,11 @@ start no earlier than 03:00 and be staggered at minimum 5 minutes apart.
 - **THEN** Syncthing SHALL be scheduled at 01:15 and Jellyfin at 01:20
 - **AND** Radicale and Immich library SHALL both be scheduled at 03:00
 
-#### Scenario: Default postgres schedules are staggered from 03:00
-- **GIVEN** the postgres backup service is deployed with default schedule values
-- **WHEN** all per-database cron schedules are read
-- **THEN** no two databases SHALL share the same cron time
-- **AND** the earliest entry SHALL be at 03:00 or later
+#### Scenario: Generated postgres schedules follow the registry
+- **GIVEN** `backup-databases.conf` contains the registered PostgreSQL schedules
+- **WHEN** the default PostgreSQL profile is generated
+- **THEN** Immich SHALL be scheduled at 02:00
+- **AND** Firefly SHALL be scheduled at 03:05
 
 ### REQ-008: filedata-backup mounts source volumes read-only at /backup-sources/<service>
 Each volume registered with `filedata-backup` SHALL be mounted read-only in the
@@ -633,8 +633,11 @@ replacing the existing container when no production source volumes are available
 ### REQ-040: PostgreSQL backup profiles use a generated Compose override
 The PostgreSQL backup service SHALL use a neutral base Compose file and generate
 a temporary override from `backup-databases.conf` for the selected host profile.
-The startup script SHALL remove the override on exit and SHALL retain per-service
-environment settings for cron schedules and retention.
+The startup script SHALL remove the override on exit and SHALL pass each selected
+database's registry schedule and retention to the container. Generated policy
+SHALL override legacy environment settings.
+The backup script SHALL reject execution when the selected database has no
+generated retention value.
 
 #### Scenario: Selected database resources are generated
 - **GIVEN** all source volumes and networks for a selected host profile exist
@@ -648,3 +651,27 @@ environment settings for cron schedules and retention.
 - **WHEN** the PostgreSQL startup script checks its resources
 - **THEN** it SHALL report the missing resource
 - **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Invalid database retention is rejected
+- **GIVEN** a database registry entry specifies zero or a negative retention
+- **WHEN** the PostgreSQL startup script validates the registry
+- **THEN** it SHALL report an error
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Invalid database schedule is rejected
+- **GIVEN** a database registry entry has a schedule without five fields or
+  contains unsupported characters
+- **WHEN** the PostgreSQL startup script validates the registry
+- **THEN** it SHALL report the invalid schedule
+- **AND** it SHALL fail without replacing the existing backup container
+
+#### Scenario: Generated retention controls cleanup
+- **GIVEN** a generated database profile has a positive retention policy
+- **AND** a legacy environment setting specifies a different retention
+- **WHEN** a scheduled or manual backup completes
+- **THEN** local and Dropbox cleanup SHALL use the generated policy
+
+#### Scenario: Generated retention is missing
+- **GIVEN** a database backup is invoked without retention for the selected database
+- **WHEN** the backup script starts
+- **THEN** it SHALL report an error and stop before creating a backup
