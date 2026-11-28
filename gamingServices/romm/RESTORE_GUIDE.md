@@ -14,6 +14,9 @@ This guide restores RomM's `romm_filedata` volume from Filen and the
 - Filen filedata present at `filen-crypt:/Romm/current`
 - RomM PostgreSQL backups present at `dropbox:/App_acc/romm` (or custom
   `DROPBOX_PATH`), produced by the Local `db-backup` deployment
+- Verify the database destination in
+  [`path.local`](../../backupServices/postgres/path.local) and set `DROPBOX_PATH`
+  if it differs from the restore default.
 - The GPG passphrase used to encrypt the PostgreSQL backup
 
 ## Restore Steps
