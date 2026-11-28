@@ -19,6 +19,10 @@ dated snapshot.
   were issued for your own OAuth client.
 - If restoring from a PostgreSQL dump in production, set `DROPBOX_PATH=/Apps/paperless`; the
   default path is `/App_acc/paperless`.
+- Verify the database destination in
+  [`path.local`](../../backupServices/postgres/path.local) or
+  [`path.prod`](../../backupServices/postgres/path.prod), and set `DROPBOX_PATH`
+  if it differs from the restore default.
 
 For standalone recovery without the `filedata-backup` container, install host `rclone` and use
 `RCLONE_SOURCE=env`. The script reads credentials from `backupServices/filedata/.env` by default;

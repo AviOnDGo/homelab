@@ -94,8 +94,8 @@ All other paperless containers follow the standard Watchtower update policy.
 - **Service:** `backupServices/postgres/`
 - **Schedule:** Daily at 3:10 AM (`10 3 * * *`)
 - **Format:** GPG-encrypted SQL dump
-- **Destination:** Dropbox `/App_acc/paperless/`
-- **Retention:** 30 days (configurable via `PAPERLESS_BACKUP_RETENTION_DAYS`)
+- **Destination:** Dropbox `/App_acc/paperless/` for the local profile, configured in `backupServices/postgres/path.local`
+- **Retention:** 30 days (configurable in `backupServices/postgres/backup-databases.conf`)
 - **Covers:** users and login state, document metadata, tags, correspondents, history, workflows, archive filenames
 
 ### 2. Synchronized Document File Backup
@@ -128,14 +128,12 @@ password available for disaster recovery, but do not store them in this document
 ### Required `.env` entries in `backupServices/postgres/.env`
 
 ```bash
-PAPERLESS_DB_HOST=paperless-db
 PAPERLESS_DB_USER=paperless
 PAPERLESS_DB_PASSWORD=<password>
-PAPERLESS_DB_NAME=paperless
-PAPERLESS_BACKUP_NAME=paperless
-PAPERLESS_DROPBOX_BACKUP_PATH=/App_acc/paperless
-PAPERLESS_BACKUP_RETENTION_DAYS=30
 ```
+
+The backup defaults to host `paperless-db` and database and backup name
+`paperless`; existing overrides remain supported.
 
 ## Common Operations
 
