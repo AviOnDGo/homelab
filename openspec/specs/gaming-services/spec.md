@@ -74,9 +74,9 @@ The RomM application SHALL NOT map its web interface port to the host network in
 - **THEN** no active `ports:` entry SHALL map container port `8080` to a host port
 - **AND** any such mapping SHALL be commented out with a note that access is via NPM
 
-### REQ-013: RomM PostgreSQL backup integration (Local profile only)
-The `romm_postgresdata` volume SHALL be registered for the Local PostgreSQL backup
-profile only in `backupServices/postgres/backup-databases.conf`.
+### REQ-013: RomM PostgreSQL backup integration
+The `romm_postgresdata` volume SHALL be registered for the default and Local
+PostgreSQL backup profiles in `backupServices/postgres/backup-databases.conf`.
 
 #### Scenario: romm_postgresdata appears in the Local Postgres backup
 - **GIVEN** the Local PostgreSQL backup profile is generated
@@ -95,8 +95,9 @@ profile only in `backupServices/postgres/backup-databases.conf`.
 - **GIVEN** `backupServices/postgres/backup-databases.conf`, the environment examples, and `db-backup-script.sh` are inspected
 - **WHEN** reviewing the registered profiles and script cases
 - **THEN** the Local profile SHALL reference `romm_postgresdata` and `games_network`
-- **AND** the environment examples SHALL use `romm-db` as the database host
-- **AND** the default and Prod profiles SHALL NOT reference `romm_postgresdata`
+- **AND** the backup script SHALL default to `romm-db` as the database host
+- **AND** the default profile SHALL reference `romm_postgresdata`
+- **AND** the Prod profile SHALL NOT reference `romm_postgresdata`
 - **AND** `db-backup-script.sh` SHALL contain a `romm` case block
 
 ### REQ-014: RomM filedata synchronization to Filen
