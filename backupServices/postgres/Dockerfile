@@ -1,5 +1,6 @@
-FROM postgres:18.7-alpine@sha256:0115267ab5a509022df9319c77be365cef335adb71556c75f60f5360ee247e71
+FROM postgres:19.0-alpine@sha256:cac45fb483caee3668946088a1c0532db89d5285c28dbfeac889b4068296e06f
 
 RUN apk add --no-cache rclone curl bash findutils gnupg zstd
 
-COPY --chmod=755 db-backup-script.sh /usr/local/bin/backup-script.sh
+COPY db-backup-script.sh /usr/local/bin/backup-script.sh
+RUN chmod 755 /usr/local/bin/backup-script.sh

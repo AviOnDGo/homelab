@@ -9,7 +9,7 @@ are not an atomic snapshot and can represent different points in time.
 - Docker with Compose, `gpg`, and `zstd` on the host; the `media_network`
   network and `immich_model_cache` volume must exist.
 - The `homelab/db-backup:local` image, built from `backupServices/postgres/`,
-  supplies a PostgreSQL 18 client compatible with the backup's dump format.
+  supplies a PostgreSQL 19 client compatible with the backup's dump format.
 - A running `filedata-backup` container with working `dropbox`, `mega`, and
   `mega-crypt` remotes configured using the original backup credentials.
   The script uses container rclone, not the host configuration.
@@ -72,7 +72,7 @@ compression, and asks for confirmation before replacing any existing volumes.
 It then stops Immich and the running backup containers, refuses unrelated
 volume consumers, replaces filedata, clears the database volume in place,
 starts only `immich-db`, and restores the dump with SQL errors fatal using
-a temporary PostgreSQL 18 client container on `media_network`. It
+a temporary PostgreSQL 19 client container on `media_network`. It
 starts Immich and restarts only the backup containers it stopped. A failed
 restore leaves them stopped to protect the remote mirror; investigate and
 restart them manually after recovery is verified.
@@ -110,7 +110,7 @@ if the database dump and latest file mirror differ.
 - **Database restore fails:** inspect `docker logs immich-db`; use a compatible
   Immich/PostgreSQL version and the same database identity as the backup.
 - **`unrecognized configuration parameter "transaction_timeout"`:** the dump was
-  created by the PostgreSQL 18 backup client, but Immich runs PostgreSQL 14.
+  created by a newer PostgreSQL backup client, but Immich runs PostgreSQL 14.
   `restore.sh` and the manual fallback remove only this header setting before
   the first `CREATE`/`COPY`; update an older copy of the script if you see it.
 - **Backup container remains stopped:** the restore failed after stopping it;
@@ -184,7 +184,7 @@ docker run --rm -v immich_data:/data -v immich_library:/data/library \
 docker start immich-db
 # Wait for initialization; substitute your configured database user/name if different.
 until docker exec immich-db pg_isready -h 127.0.0.1 -U postgres -d immich; do sleep 1; done
-# Create a private pgpass file for the temporary PostgreSQL 18 client.
+# Create a private pgpass file for the temporary PostgreSQL client.
 umask 077
 read -r -s -p 'Immich database password: ' DB_PASSWORD; echo
 DB_PASSWORD="${DB_PASSWORD//\\/\\\\}"
