@@ -6,13 +6,15 @@ Select the deployment profile when starting the service:
 
 | Environment | Command | Current backup scope |
 |-------------|--------------|----------------------|
-| Default homelab | `./start-backup.sh default local` or `./start-backup.sh default prod` | `firefly`, `paperless`, `immich`, `invidious`, `firefoxsync` |
+| Default homelab | `./start-backup.sh default local` or `./start-backup.sh default prod` | `firefly`, `romm`, `paperless`, `immich`, `invidious`, `firefoxsync` |
 | Prod | `./start-backup.sh prod` | `firefly` |
-| Local | `./start-backup.sh local` | `romm`, `paperless`, `immich`, `invidious`, `firefoxsync` |
+| Local | `./start-backup.sh local` | `romm`, `paperless`, `immich`, `invidious` |
 
 The script generates a temporary Compose override from `backup-databases.conf`
 and removes it after deployment. It fails before deployment if a selected source
 volume or network is missing. The base Compose file cannot start backups alone.
+Every registered database is included in `default`, so all registered volumes
+and networks, including Firefox Sync's, are required when starting that profile.
 The old Local and Remote Compose files remain in the repository but are no
 longer supported. Start backups with `start-backup.sh`.
 
@@ -118,6 +120,9 @@ docker exec db-backup /usr/local/bin/backup-script.sh invidious
 # Test Firefly backup
 docker exec db-backup /usr/local/bin/backup-script.sh firefly
 
+# Test Firefox Sync backup
+docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
+
 # Check backed up files
 ls -lah ./backups/invidious/
 ls -lah ./backups/firefly/
@@ -136,9 +141,6 @@ docker exec db-backup /usr/local/bin/backup-script.sh paperless
 
 # Test Immich backup
 docker exec db-backup /usr/local/bin/backup-script.sh immich
-
-# Test Firefox Sync backup
-docker exec db-backup /usr/local/bin/backup-script.sh firefoxsync
 
 ```
 
@@ -167,9 +169,10 @@ a database not selected by the profile fails rather than using a fallback policy
 ### Profile Notes
 
 - `./start-backup.sh default local` or `./start-backup.sh default prod` schedules
-  the five default databases using the chosen destination file.
-- `./start-backup.sh local` schedules `romm`, `paperless`, `immich`, `invidious`,
-  and `firefoxsync`.
+  all six registered databases using the chosen destination file.
+- `./start-backup.sh local` schedules `romm`, `paperless`, `immich`, and `invidious`.
+- Firefox Sync is registered in `default` only; it is not scheduled in `local`
+  or `prod`.
 - Paperless runs in `knowledgeServices/paperless/` on `knowledge_network`. Both the
   default and Local backup profiles join that network to reach `paperless-db`;
   keep `media_network` for Invidious.
