@@ -13,13 +13,21 @@ Select the deployment profile when starting the service:
 The script generates a temporary Compose override from `backup-databases.conf`
 and removes it after deployment. It fails before deployment if a selected source
 volume or network is missing. The base Compose file cannot start backups alone.
-The old Local and Remote Compose files remain available during migration and
-still use their previous scopes.
+The old Local and Remote Compose files remain in the repository but are no
+longer supported. Start backups with `start-backup.sh`.
 
-All profiles use the same per-service cron variables from `.env`:
-`FIREFLY_CRON_SCHEDULE`, `ROMM_CRON_SCHEDULE`,
-`IMMICH_CRON_SCHEDULE`, `INVIDIOUS_CRON_SCHEDULE`, `PAPERLESS_CRON_SCHEDULE`,
-and `FIREFOXSYNC_CRON_SCHEDULE`, as applicable to the selected profile.
+Generated profiles use schedules and retention from `backup-databases.conf`.
+Retention must be a positive number of days. The backup script requires the
+generated policy and ignores older retention settings. `path.local` and
+`path.prod` are not yet used by the startup script.
+Schedules use five BusyBox cron fields; weekday numbers range from 0 (Sunday)
+through 6 (Saturday). Startup checks the field count and allowed characters,
+but not field ranges or steps; verify schedules before deployment.
+
+Before migrating an existing deployment, compare its current schedules and
+retention values with the registry and adjust the registry if necessary. Retention
+controls deletion of local and Dropbox backups. In particular, the previous Invidious script default was
+7 days, while the registry specifies 30 days.
 
 ### Compose And Crontab Ordering
 
@@ -37,8 +45,8 @@ ordering rules do not change configured cron execution times.
 
 When adding a database-backed service, register it in `backup-databases.conf`,
 add its case to `db-backup-script.sh`, and update environment examples, specs,
-and service documentation. Registry schedule and retention values are staged:
-the generated jobs and backup script still use environment settings.
+and service documentation. The backup script needs both a database case and a
+registry-retention mapping for each added database.
 
 ## 🚀 Setup (5 minutes)
 
@@ -139,20 +147,24 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefly
 
 ## 📅 Backup Schedule
 
-### Effective Schedule (from `.env`)
+### Effective Schedule (from `backup-databases.conf`)
 
-| Database    | Cron Variable               | Example Value  | Retention |
-|-------------|-----------------------------|----------------|-----------|
-| Invidious   | `INVIDIOUS_CRON_SCHEDULE`   | `0 3 */2 * *`  | 30 days   |
-| Firefly     | `FIREFLY_CRON_SCHEDULE`     | `5 3 * * *`    | 120 days  |
-| Paperless   | `PAPERLESS_CRON_SCHEDULE`   | `10 3 * * *`   | 30 days   |
-| Immich      | `IMMICH_CRON_SCHEDULE`      | `0 4 * * *`    | 30 days   |
-| FirefoxSync | `FIREFOXSYNC_CRON_SCHEDULE` | `20 3 * * *`   | 30 days   |
+| Database | Schedule | Retention |
+|----------|----------|-----------|
+| Firefly | `5 3 * * *` | 120 days |
+| RomM | `25 3 * * *` | 30 days |
+| Paperless | `10 3 * * *` | 30 days |
+| Immich | `0 2 * * *` | 30 days |
+| Invidious | `0 3 */2 * *` | 30 days |
+| Firefox Sync | `20 3 * * *` | 30 days |
+
+Recreate the selected profile after changing a registry policy. Manually running
+a database not selected by the profile fails rather than using a fallback policy.
 
 ### Profile Notes
 
-- `./start-backup.sh default` schedules the five default databases using the
-  shared `.env` cron variables.
+- `./start-backup.sh default` schedules the five default databases using their
+  registry schedules.
 - `./start-backup.sh local` schedules `romm`, `paperless`, `immich`, `invidious`,
   and `firefoxsync`.
 - Paperless runs in `knowledgeServices/paperless/` on `knowledge_network`. Both the
@@ -160,7 +172,8 @@ docker exec db-backup /usr/local/bin/backup-script.sh firefly
   keep `media_network` for Invidious.
 - `./start-backup.sh prod` schedules `firefly`.
 
-Automatic cleanup deletes local and remote backups older than 7 days.
+Automatic cleanup uses each database's configured retention for local and
+Dropbox backups.
 
 ## 🔧 Common Commands
 
@@ -294,7 +307,6 @@ NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
 NEWDB_BACKUP_NAME=newdb
 NEWDB_DROPBOX_BACKUP_PATH=/newdb_backups
-NEWDB_CRON_SCHEDULE=0 4 * * *  # 4:00 AM
 ```
 
 ### 2. Create backup directory:

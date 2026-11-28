@@ -4,8 +4,8 @@
 
 A PostgreSQL backup solution that backs up multiple databases (invidious, firefly,
 paperless, immich, firefoxsync) using GPG encryption, Dropbox synchronization,
-and per-service retention policies. Cron schedules are configured via per-service
-environment variables in `.env`.
+and per-service retention policies. Profiles use schedules and retention from
+`backup-databases.conf`. The old Compose files are retained but no longer supported.
 
 ## Architecture
 
@@ -28,7 +28,7 @@ environment variables in `.env`.
 │  3. GPG symmetric encryption (AES256) → .sql.zst.gpg       │
 │  4. Store locally in ./backups/{service}/                   │
 │  5. Upload to Dropbox via rclone                           │
-│  6. Delete backups >7 days old locally and remotely         │
+│  6. Delete backups past their per-service retention         │
 │  7. Send Discord notification                               │
 │                                                              │
 └─────────────────────────────────────────────────────────────┘
@@ -76,8 +76,6 @@ Environment configuration file containing:
 - Dropbox authentication token
 - Discord webhook URI
 - GPG passphrase
-- Per-service retention days
-- Per-service cron schedules (`{SERVICE}_CRON_SCHEDULE`)
 - Timezone configuration
 
 **Environment Variables Format:**
@@ -89,8 +87,6 @@ Environment configuration file containing:
 {SERVICE}_DB_PASSWORD=your_database_password
 {SERVICE}_BACKUP_NAME=service_name
 {SERVICE}_DROPBOX_BACKUP_PATH=/service_backups
-{SERVICE}_CRON_SCHEDULE=0 2 * * *
-{SERVICE}_BACKUP_RETENTION_DAYS=30
 
 # Shared Configuration
 DROPBOX_AUTH_TOKEN=your_dropbox_auth_token
@@ -188,16 +184,16 @@ Host:         invidious-db
 Database:     invidious
 User:         kemal
 Schedule Var: INVIDIOUS_CRON_SCHEDULE
-Retention:    INVIDIOUS_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_INVIDIOUS_RETENTION_DAYS
 ```
 
 ### Firefly
 ```
-Host:         firefly_postgres
+Host:         firefly-db
 Database:     firefly
 User:         firefly
 Schedule Var: FIREFLY_CRON_SCHEDULE
-Retention:    FIREFLY_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_FIREFLY_RETENTION_DAYS
 ```
 
 ### Paperless
@@ -206,7 +202,7 @@ Host:         paperless-db
 Database:     paperless
 User:         paperless
 Schedule Var: PAPERLESS_CRON_SCHEDULE
-Retention:    PAPERLESS_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_PAPERLESS_RETENTION_DAYS
 ```
 
 ### Immich
@@ -215,7 +211,7 @@ Host:         immich-db
 Database:     immich
 User:         postgres
 Schedule Var: IMMICH_CRON_SCHEDULE
-Retention:    IMMICH_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_IMMICH_RETENTION_DAYS
 ```
 
 ### Firefox Sync
@@ -224,7 +220,7 @@ Host:         firefoxsync-db
 Database:     firefoxsync
 User:         sync
 Schedule Var: FIREFOXSYNC_CRON_SCHEDULE
-Retention:    FIREFOXSYNC_BACKUP_RETENTION_DAYS
+Retention:    DB_BACKUP_FIREFOXSYNC_RETENTION_DAYS
 ```
 
 ## Backup Workflow Details
@@ -375,8 +371,6 @@ NEWDB_DB_USER=username
 NEWDB_DB_PASSWORD=your_database_password
 NEWDB_BACKUP_NAME=newdb
 NEWDB_DROPBOX_BACKUP_PATH=/newdb_backups
-NEWDB_CRON_SCHEDULE=0 4 * * *  # 4:00 AM
-NEWDB_BACKUP_RETENTION_DAYS=30
 ```
 
 2. **Create backup directory:**
@@ -387,12 +381,13 @@ mkdir -p ./backups/newdb
 3. **Register the database in `backup-databases.conf`:**
 Add its source volume, applicable profiles, network, retention, and schedule in
 category and service-name order. The startup script generates the Compose mounts,
-network declarations, and cron job. Until the policy migration, the effective
-schedule and retention remain the values in `.env`.
+network declarations, cron job, and policy environment. Retention must be at
+least one day.
 
 4. **Register the database in `db-backup-script.sh`:**
-Add a `newdb` case that resolves its connection, destination, and retention
-configuration. Update backup specs and operator documentation in the same change.
+Add a `newdb` case that resolves its connection and destination, plus its
+generated-policy retention mapping before environment loading. Update backup
+specs and operator documentation in the same change.
 
 5. **Recreate the affected profile:**
 ```bash
@@ -403,10 +398,9 @@ Select `default` or `prod` for those deployments. Verify the new job with
 `docker exec db-backup cat /etc/crontabs/root`.
 
 ### Customizing Retention Policy
-Change the service-specific retention value in `.env`:
-```bash
-NEWDB_BACKUP_RETENTION_DAYS=14
-```
+Change the retention column in `backup-databases.conf` and recreate the selected
+profile. Compare existing policies first because retention cleanup deletes local
+and Dropbox backups.
 
 ### Adding Email Notifications
 Extend `db-backup-script.sh` to send emails using `sendmail` or SMTP:
