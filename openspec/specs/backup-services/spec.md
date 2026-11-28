@@ -131,8 +131,8 @@ Each volume registered with `filedata-backup` SHALL be mounted read-only in the
 
 ### REQ-009: db-backup uses pg_dump per database with a case block in the backup script
 The `db-backup-script.sh` SHALL contain a `case` block with one entry per registered
-database. Each entry shall set the host, user, password, database name, Dropbox path,
-local backup directory, and retention days for that database.
+database. It SHALL resolve the database connection, local backup directory,
+generated Dropbox destination, and generated retention policy for that database.
 
 #### Scenario: Unknown database argument is rejected
 - **GIVEN** `db-backup-script.sh` is invoked with an unrecognized database name
@@ -140,9 +140,10 @@ local backup directory, and retention days for that database.
 - **THEN** the script SHALL exit with a non-zero code and log "Unknown database"
 
 #### Scenario: Known database produces a named backup file
-- **GIVEN** `db-backup-script.sh` is invoked with a registered database name
+- **GIVEN** `db-backup-script.sh` is invoked with a registered database name and
+  its default backup name
 - **WHEN** the backup completes
- - **THEN** a file matching `<database>_YYYYMMDD_HHMMSS.sql.zst.gpg` SHALL exist in
+- **THEN** a file matching `<database>_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` SHALL exist in
   `/backups/<database>/`
 
 ### REQ-010: db-backup joins every network needed to reach its registered databases
@@ -172,11 +173,11 @@ The `paperless_postgresdata` volume SHALL be mounted read-only in `db-backup`. A
 `knowledge_network` to reach the `paperless-db` container by hostname.
 
 #### Scenario: Paperless backup produces a correctly named file
-- **GIVEN** the paperless cron entry fires
+- **GIVEN** the paperless cron entry fires with the default backup name
 - **WHEN** `db-backup-script.sh paperless` runs
-  - **THEN** a file matching `paperless_YYYYMMDD_HHMMSS.sql.zst.gpg` SHALL exist in
+- **THEN** a file matching `paperless_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` SHALL exist in
   `/backups/paperless/`
-- **AND** a Discord notification SHALL be sent only if the backup fails only if the backup fails
+- **AND** a Discord notification SHALL be sent only if the backup fails
 
 #### Scenario: Local backup retains authenticated database access after migration
 - **GIVEN** Paperless has moved to `knowledge_network`
@@ -206,14 +207,14 @@ The three Immich photo volumes (`immich_library`, `immich_profile`, `immich_uplo
 
 ### REQ-014: Immich PostgreSQL database is registered with db-backup
 The `immich_postgresdata` volume SHALL be mounted read-only in `db-backup`. An
-`immich` case block SHALL exist in `db-backup-script.sh`. The backup file SHALL use
- the naming convention `backup_immich_{timestamp}.sql.zst.gpg`. `db-backup` SHALL join
+`immich` case block SHALL exist in `db-backup-script.sh`. The default backup file
+name SHALL use the convention `immich_{timestamp}.sql.zst.gpg`. `db-backup` SHALL join
 `media_network` to reach the `immich-db` container.
 
 #### Scenario: Immich database backup produces correctly named file
-- **GIVEN** the `immich` cron entry fires in `db-backup`
+- **GIVEN** the `immich` cron entry fires in `db-backup` with the default backup name
 - **WHEN** `db-backup-script.sh immich` runs
- - **THEN** a file matching `backup_immich_YYYYMMDD_HHMMSS.sql.zst.gpg` SHALL exist
+- **THEN** a file matching `immich_YYYY-MM-DD_HH-MM-SS.sql.zst.gpg` SHALL exist
 - **AND** a Discord notification SHALL be sent only if the backup fails
 
 ### REQ-015: Both backup services have SERVICE_DOCUMENTATION.md and RESTORE_GUIDE.md
