@@ -69,7 +69,7 @@ Execution behavior:
 - After apply and NPM restore succeed, the
   [service restore group](../.github/workflows/gcp-service-restores.yml) runs
   FreshRSS, Vaultwarden, Firefly, and Pi-hole. Add future service restore jobs
-  to this group so the filedata backup scheduler waits for them too.
+  to this group so both backup schedulers wait for them too.
 - After every grouped restore finishes, whether successful or failed, the
   filedata backup scheduler is rebuilt and started with the `prod` profile.
   It does not start if apply or NPM restore fails, or if the group or workflow
@@ -85,8 +85,15 @@ Execution behavior:
   retention cleanup. Review source data before a manual run, especially after
   a failed service restore: an existing volume can contain incomplete data.
   This workflow does not restore application data.
+- The database backup scheduler also starts after the grouped restores finish,
+  even if a service restore failed, provided apply and NPM succeeded. It uses
+  the `prod` registry profile and production Dropbox paths. Missing database
+  volumes or networks are reported and skipped; at least one database must be
+  available. A failed restore can leave an incomplete database that is backed
+  up and subject to remote retention cleanup. Check restore results before
+  relying on subsequent backups. This workflow does not restore databases.
 
-The seven GCP restore jobs share a GitHub Actions concurrency group, including
+The GCP restore jobs share a GitHub Actions concurrency group, including
 manual dispatches, so they run one at a time. Up to 100 jobs can wait; further
 jobs are canceled when the queue is full. Scheduling order is not guaranteed.
 Direct transport helper, service script, and manual fallback runs are not
@@ -330,6 +337,33 @@ scheduled backups in Dropbox. A healthy cron process does not prove that
 credentials work or that backups have succeeded. Re-run the workflow after
 adding or replacing a production volume to refresh the mounts.
 
+The database backup workflow uses the same Dropbox, GPG, and optional Discord
+secrets. The current `prod` profile selects Firefly and additionally requires
+`FIREFLY_DB_USERNAME` and `FIREFLY_DB_PASSWORD`, the same credentials as the
+Firefly restore. Additional production databases require their corresponding
+`<SERVICE>_DB_USER` and `<SERVICE>_DB_PASSWORD` secrets to be wired into the
+workflow. Missing volumes or networks are skipped with a warning and an alert
+when the webhook is configured. If no database is available, the existing
+scheduler is left untouched. If alert delivery fails, available databases are
+still scheduled but the workflow fails.
+
+The workflow sends secrets over SSH stdin and uses a private temporary Compose
+input, removed after execution. Docker retains credentials in the container
+configuration; restrict host and Docker access. The workflow uses the
+`db-backup-gcp` Compose project and refuses to replace the scheduler if its
+`gpg-secrets` volume contains a `gpg-passphrase` file. After preflight checks,
+it removes any existing `db-backup` container; this interrupts an active backup
+and discards container-local backup files. It does not modify existing host
+environment files. Allow the workflow ref in the WIF provider condition, then:
+
+```bash
+gh workflow run gcp-db-backup-restore.yml --ref main
+```
+
+Check `docker logs db-backup` and `docker exec db-backup crontab -l` on the VM.
+Verify the first uploaded backup and test a restore separately; scheduler health
+does not validate credentials or backup contents.
+
 ## OIDC Trust Configuration
 
 Configure Workload Identity Provider claim mapping:
@@ -357,11 +391,12 @@ assertion.ref == "refs/heads/main" &&
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-firefly-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-pihole-restore.yml@refs/heads/main" ||
  assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-watchtower-restore.yml@refs/heads/main" ||
- assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-filedata-backup-restore.yml@refs/heads/main")
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-filedata-backup-restore.yml@refs/heads/main" ||
+ assertion.job_workflow_ref == "OWNER/REPO/.github/workflows/gcp-db-backup-restore.yml@refs/heads/main")
 
 The reusable restore workflows also use this service account. Retain the single
-provider value and include all nine workflow refs in the explicit condition
-above. Update an existing provider before running the filedata backup workflow.
+provider value and include all workflow refs in the explicit condition
+above. Update an existing provider before running either backup workflow.
 Do not rely on repository scope alone.
 
 Binding condition baseline (single production service account):
