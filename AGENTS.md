@@ -397,7 +397,10 @@ volume declarations, and cron jobs:
 - Register database backups in `backupServices/postgres/backup-databases.conf` with
   their applicable profiles, network, schedule, and positive retention days.
   Generated profiles use those policy values; the backup script requires a
-  generated profile.
+  generated profile. Configure destinations in `backupServices/postgres/path.local`
+  and `path.prod`; `local` and `prod` select their matching file, and `default`
+  requires an explicit destination argument. Path files override older environment
+  destination values.
 - Filedata backup modes, retention, and schedules come from `backup-volumes.conf` and are passed
   to the container by the generated Compose override. Specify `sync-crypt` for every volume
   that requires it, including Immich and Paperless; do not configure these policies in the
