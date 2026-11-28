@@ -3,78 +3,11 @@ services:
     build: .
     image: homelab/db-backup:local
     container_name: db-backup
-    networks:
-      - finance_network
-      - knowledge_network
-      - media_network
-      - security_network
     env_file: .env
-    volumes:
-      # Mount postgresdata volumes (read-only)
-      ## Financial Services
-      - firefly_postgresdata:/var/lib/postgresql/firefly:ro
-      ## Knowledge Services
-      - paperless_postgresdata:/var/lib/postgresql/paperless:ro
-      ## Media Services
-      - immich_postgresdata:/var/lib/postgresql/immich:ro
-      - invidious_postgresdata:/var/lib/postgresql/invidious:ro
-      ## Security Services
-      - firefoxsync_postgresdata:/var/lib/postgresql/firefoxsync:ro
-      
-      # Mount secrets volume for GPG passphrase
-      - gpg-secrets:/run/secrets:ro
-      
-    
     command: >
-      sh -c "
-      echo '# Crontab for database backups' > /etc/crontabs/root &&
-      echo '# Financial Services' >> /etc/crontabs/root &&
-      echo '${FIREFLY_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh firefly' >> /etc/crontabs/root &&
-      echo '# Knowledge Services' >> /etc/crontabs/root &&
-      echo '${PAPERLESS_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh paperless' >> /etc/crontabs/root &&
-      echo '# Media Services' >> /etc/crontabs/root &&
-      echo '${IMMICH_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh immich' >> /etc/crontabs/root &&
-      echo '${INVIDIOUS_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh invidious' >> /etc/crontabs/root &&
-      echo '# Security Services' >> /etc/crontabs/root &&
-      echo '${FIREFOXSYNC_CRON_SCHEDULE} sh /usr/local/bin/backup-script.sh firefoxsync' >> /etc/crontabs/root &&
-      crond -f -L /dev/stdout
-      "
-    
+      sh -c "echo 'ERROR: Run ./start-backup.sh with a host profile' >&2; exit 1"
     restart: unless-stopped
 
-networks:
-  finance_network:
-    name: finance_network
-    external: true
-  knowledge_network:
-    name: knowledge_network
-    external: true
-  media_network:
-    name: media_network
-    external: true
-  security_network:
-    name: security_network
-    external: true
-
 volumes:
-  ## Financial Services
-  firefly_postgresdata:
-    name: firefly_postgresdata
-    external: true
-  ## Knowledge Services
-  paperless_postgresdata:
-    name: paperless_postgresdata
-    external: true
-  ## Media Services
-  immich_postgresdata:
-    name: immich_postgresdata
-    external: true
-  invidious_postgresdata:
-    name: invidious_postgresdata
-    external: true
-  ## Security Services
-  firefoxsync_postgresdata:
-    name: firefoxsync_postgresdata
-    external: true
   gpg-secrets:
     driver: local
