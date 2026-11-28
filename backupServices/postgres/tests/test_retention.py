@@ -18,6 +18,7 @@ class DatabaseRetentionTests(unittest.TestCase):
         self.backups = self.root / "backups" / "firefly"
         self.backups.mkdir(parents=True)
         self.log = self.root / "rclone.log"
+        self.dump_log = self.root / "pg-dump.log"
         self.system_env = self.root / "system-environment"
         self.script = self.root / "backup-script.sh"
         script = (ROOT / "db-backup-script.sh").read_text()
@@ -26,7 +27,11 @@ class DatabaseRetentionTests(unittest.TestCase):
         script = script.replace("/backups/", str(self.root / "backups") + "/")
         script = script.replace("/root/.config/rclone", str(self.root / "rclone-config"))
         self.script.write_text(script)
-        self.stub("pg_dump", 'printf "database dump\\n"\n')
+        self.stub(
+            "pg_dump",
+            'printf "%s\\n" "$*" >> "$PG_DUMP_LOG"\n'
+            'printf "database dump\\n"\n',
+        )
         self.stub(
             "zstd",
             'while [ "$#" -gt 0 ]; do\n'
@@ -47,6 +52,9 @@ class DatabaseRetentionTests(unittest.TestCase):
         self.stub(
             "rclone",
             'printf "%s\\n" "$*" >> "$RCLONE_LOG"\n'
+            'if [ "$1" = "ls" ] && [ "$#" -ne 2 ]; then\n'
+            '  printf "bad-ls-args\\n" >> "$RCLONE_LOG"; exit 1\n'
+            "fi\n"
             'if [ "$1" = "ls" ]; then\n'
             "  printf '1 firefly_2000-01-01_00-00-00.sql.zst.gpg\\n"
             "1 firefly_2999-01-01_00-00-00.sql.zst.gpg\\n'\n"
@@ -56,11 +64,9 @@ class DatabaseRetentionTests(unittest.TestCase):
             "PATH": f"{self.bin}:/usr/bin:/bin",
             "HOME": str(self.root),
             "RCLONE_LOG": str(self.log),
-            "FIREFLY_DB_HOST": "firefly-db",
+            "PG_DUMP_LOG": str(self.dump_log),
             "FIREFLY_DB_USER": "firefly",
             "FIREFLY_DB_PASSWORD": "test-password",
-            "FIREFLY_DB_NAME": "firefly",
-            "FIREFLY_BACKUP_NAME": "firefly",
             "FIREFLY_DROPBOX_BACKUP_PATH": "/test/firefly",
             "FIREFLY_BACKUP_RETENTION_DAYS": "90",
             "GPG_PASSPHRASE": "test-passphrase",
@@ -94,6 +100,7 @@ class DatabaseRetentionTests(unittest.TestCase):
         self.system_env.write_text(
             "FIREFLY_BACKUP_RETENTION_DAYS=90\n"
             "DB_BACKUP_FIREFLY_RETENTION_DAYS=90\n"
+            "FIREFLY_DROPBOX_BACKUP_PATH=/legacy/firefly\n"
         )
         result = self.run_backup(DB_BACKUP_FIREFLY_RETENTION_DAYS="1")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -102,6 +109,25 @@ class DatabaseRetentionTests(unittest.TestCase):
         log = self.log.read_text()
         self.assertIn("delete dropbox:/test/firefly/firefly_2000-01-01", log)
         self.assertNotIn("delete dropbox:/test/firefly/firefly_2999-01-01", log)
+        self.assertNotIn("/legacy/firefly", log)
+
+    def test_destination_with_spaces_is_used_for_cleanup(self):
+        result = self.run_backup(
+            DB_BACKUP_FIREFLY_RETENTION_DAYS="1",
+            FIREFLY_DROPBOX_BACKUP_PATH="/test/firefly backups",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        log = self.log.read_text()
+        self.assertIn("ls dropbox:/test/firefly backups", log)
+        self.assertNotIn("bad-ls-args", log)
+
+    def test_missing_destination_fails_before_backup(self):
+        result = self.run_backup(
+            DB_BACKUP_FIREFLY_RETENTION_DAYS="1", FIREFLY_DROPBOX_BACKUP_PATH=""
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("No Dropbox destination for firefly", result.stderr)
+        self.assertFalse(self.log.exists())
 
     def test_each_database_uses_its_generated_retention(self):
         for name in ("firefly", "romm", "paperless", "immich", "invidious", "firefoxsync"):
@@ -112,12 +138,32 @@ class DatabaseRetentionTests(unittest.TestCase):
                     **{
                         f"DB_BACKUP_{key}_RETENTION_DAYS": "1",
                         f"{key}_BACKUP_RETENTION_DAYS": "90",
-                        f"{key}_BACKUP_NAME": name,
+                        f"{key}_DB_USER": "backup-user",
+                        f"{key}_DB_PASSWORD": "test-password",
                         f"{key}_DROPBOX_BACKUP_PATH": f"/test/{name}",
                     },
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("Cleaning local backups older than 1 days", result.stdout)
+                self.assertIn(f"dropbox:/test/{name}", self.log.read_text())
+                self.assertIn(
+                    f"-h {name}-db -U backup-user -d {name}",
+                    self.dump_log.read_text(),
+                )
+                self.assertIn(f"/{name}_", result.stdout)
+
+    def test_existing_database_and_backup_name_overrides_are_honored(self):
+        result = self.run_backup(
+            DB_BACKUP_FIREFLY_RETENTION_DAYS="1",
+            FIREFLY_DB_HOST="custom-db",
+            FIREFLY_DB_NAME="custom_database",
+            FIREFLY_BACKUP_NAME="custom_backup",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "-h custom-db -U firefly -d custom_database", self.dump_log.read_text()
+        )
+        self.assertIn("/custom_backup_", result.stdout)
 
     def test_missing_registry_retention_fails_before_backup(self):
         result = self.run_backup()

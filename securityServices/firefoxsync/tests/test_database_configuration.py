@@ -4,7 +4,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
 SERVICE = ROOT / "securityServices" / "firefoxsync"
-BACKUP = ROOT / "backupServices" / "postgres"
 
 
 class FirefoxSyncDatabaseConfigurationTests(unittest.TestCase):
@@ -25,14 +24,6 @@ class FirefoxSyncDatabaseConfigurationTests(unittest.TestCase):
             )
         self.assertIn(f"pg_isready -U sync -d {database.group(1)}", compose)
         self.assertIn(f'DB_NAME="{database.group(1)}"', restore)
-
-    def test_backup_examples_target_application_database(self) -> None:
-        for filename in (".env.acc.example", ".env.prd.example"):
-            with self.subTest(filename=filename):
-                example = (BACKUP / filename).read_text(encoding="utf-8")
-                self.assertIn("FIREFOXSYNC_DB_HOST=firefoxsync-db\n", example)
-                self.assertIn("FIREFOXSYNC_DB_NAME=firefoxsync\n", example)
-
 
 if __name__ == "__main__":
     unittest.main()

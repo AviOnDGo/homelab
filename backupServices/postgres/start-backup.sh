@@ -1,14 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 1 || ! "$1" =~ ^(default|local|prod)$ ]]; then
-  echo "Usage: $0 {default|local|prod}" >&2
+if [[ $# -lt 1 || $# -gt 2 || ! "$1" =~ ^(default|local|prod)$ ]] ||
+   [[ "$1" == default && ( $# -ne 2 || ! "$2" =~ ^(local|prod)$ ) ]] ||
+   [[ "$1" != default && $# -ne 1 ]]; then
+  echo "Usage: $0 {local|prod} | default {local|prod}" >&2
   exit 1
 fi
 
 profile="$1"
+path_profile="${2:-$profile}"
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 config="${script_dir}/backup-databases.conf"
+path_file="${script_dir}/path.${path_profile}"
+if [[ ! -f "$path_file" ]]; then
+  echo "ERROR: Missing destination file ${path_file}." >&2
+  exit 1
+fi
+
+declare -A destinations=()
+while IFS= read -r line || [[ -n "$line" ]]; do
+  [[ -z "$line" || "$line" == \#* ]] && continue
+  if [[ ! "$line" =~ ^([A-Z][A-Z0-9_]*_DROPBOX_BACKUP_PATH)=(.*)$ ]]; then
+    echo "ERROR: Invalid destination entry in ${path_file}." >&2
+    exit 1
+  fi
+  key="${BASH_REMATCH[1]}"
+  value="${BASH_REMATCH[2]}"
+  if [[ -v "destinations[$key]" || "$value" == *'$'* || "$value" == *'#'* ||
+        "$value" == *'"'* || "$value" == *"'"* || "$value" == *\\* ||
+        "$value" == *$'\r'* || "$value" == *$'\t'* ||
+        "$value" == ' '* || "$value" == *' ' ]]; then
+    echo "ERROR: Duplicate or unsupported destination value for ${key} in ${path_file}." >&2
+    exit 1
+  fi
+  destinations["$key"]="$value"
+done < "$path_file"
 
 declare -a names=() volumes=() categories=() networks=() retentions=() schedules=()
 declare -A seen_names=() seen_volumes=() seen_keys=() selected_networks=()
@@ -57,6 +84,11 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     entry_profiles["$entry_profile"]=1
   done
   [[ -v "entry_profiles[$profile]" ]] || continue
+  destination_key="${key}_DROPBOX_BACKUP_PATH"
+  if [[ -z "${destinations[$destination_key]:-}" ]]; then
+    echo "ERROR: Missing ${destination_key} in ${path_file}." >&2
+    exit 1
+  fi
   names+=("$name")
   volumes+=("$volume")
   categories+=("$category")
@@ -101,7 +133,8 @@ override="$(mktemp "${TMPDIR:-/tmp}/postgres-compose.XXXXXXXX.yml")"
 trap 'rm -f -- "$override"' EXIT
 
 {
-  printf 'services:\n  db-backup:\n    networks:\n'
+  printf 'services:\n  db-backup:\n    env_file:\n      - path.%s\n    networks:\n' \
+    "$path_profile"
   for network in "${networks[@]}"; do
     printf '      - %s\n' "$network"
   done
@@ -168,7 +201,7 @@ EOF
   printf '  gpg-secrets:\n    driver: local\n'
 } > "$override"
 
-echo "Starting ${#names[@]} database backup job(s) for ${profile}."
+echo "Starting ${#names[@]} database backup job(s) for ${profile} with ${path_profile} destinations."
 docker compose --project-directory "$script_dir" \
   -f "${script_dir}/docker-compose.yml" -f "$override" \
   up --build --force-recreate --wait --wait-timeout 60 db-backup

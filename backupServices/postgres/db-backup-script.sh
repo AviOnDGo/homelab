@@ -11,14 +11,26 @@ set -eo pipefail
 DB_NAME=${1:-invidious}
 DB_NAME_LOWER=$(echo "$DB_NAME" | tr '[:upper:]' '[:lower:]')
 
-# Preserve generated policy before loading environment settings.
+# Preserve generated policy and destination before loading environment settings.
 case "$DB_NAME_LOWER" in
-  invidious) REGISTRY_RETENTION="${DB_BACKUP_INVIDIOUS_RETENTION_DAYS:-}" ;;
-  immich) REGISTRY_RETENTION="${DB_BACKUP_IMMICH_RETENTION_DAYS:-}" ;;
-  firefly) REGISTRY_RETENTION="${DB_BACKUP_FIREFLY_RETENTION_DAYS:-}" ;;
-  paperless) REGISTRY_RETENTION="${DB_BACKUP_PAPERLESS_RETENTION_DAYS:-}" ;;
-  firefoxsync) REGISTRY_RETENTION="${DB_BACKUP_FIREFOXSYNC_RETENTION_DAYS:-}" ;;
-  romm) REGISTRY_RETENTION="${DB_BACKUP_ROMM_RETENTION_DAYS:-}" ;;
+  invidious)
+    REGISTRY_RETENTION="${DB_BACKUP_INVIDIOUS_RETENTION_DAYS:-}"
+    SELECTED_DESTINATION="${INVIDIOUS_DROPBOX_BACKUP_PATH:-}" ;;
+  immich)
+    REGISTRY_RETENTION="${DB_BACKUP_IMMICH_RETENTION_DAYS:-}"
+    SELECTED_DESTINATION="${IMMICH_DROPBOX_BACKUP_PATH:-}" ;;
+  firefly)
+    REGISTRY_RETENTION="${DB_BACKUP_FIREFLY_RETENTION_DAYS:-}"
+    SELECTED_DESTINATION="${FIREFLY_DROPBOX_BACKUP_PATH:-}" ;;
+  paperless)
+    REGISTRY_RETENTION="${DB_BACKUP_PAPERLESS_RETENTION_DAYS:-}"
+    SELECTED_DESTINATION="${PAPERLESS_DROPBOX_BACKUP_PATH:-}" ;;
+  firefoxsync)
+    REGISTRY_RETENTION="${DB_BACKUP_FIREFOXSYNC_RETENTION_DAYS:-}"
+    SELECTED_DESTINATION="${FIREFOXSYNC_DROPBOX_BACKUP_PATH:-}" ;;
+  romm)
+    REGISTRY_RETENTION="${DB_BACKUP_ROMM_RETENTION_DAYS:-}"
+    SELECTED_DESTINATION="${ROMM_DROPBOX_BACKUP_PATH:-}" ;;
 esac
 
 # Source environment variables
@@ -27,57 +39,51 @@ esac
 # Determine configuration based on database name
 case "$DB_NAME_LOWER" in
   invidious)
-    DB_HOST="${INVIDIOUS_DB_HOST}"
+    DB_HOST="${INVIDIOUS_DB_HOST-${DB_NAME_LOWER}-db}"
     DB_USER="${INVIDIOUS_DB_USER}"
     DB_PASSWORD="${INVIDIOUS_DB_PASSWORD}"
-    DB_DATABASE="${INVIDIOUS_DB_NAME}"
-    BACKUP_NAME="${INVIDIOUS_BACKUP_NAME}"
-    DROPBOX_PATH="${INVIDIOUS_DROPBOX_BACKUP_PATH}"
+    DB_DATABASE="${INVIDIOUS_DB_NAME-$DB_NAME_LOWER}"
+    BACKUP_NAME="${INVIDIOUS_BACKUP_NAME-$DB_NAME_LOWER}"
     BACKUP_DIR="/backups/invidious"
     ;;
   immich)
-    DB_HOST="${IMMICH_DB_HOST}"
+    DB_HOST="${IMMICH_DB_HOST-${DB_NAME_LOWER}-db}"
     DB_USER="${IMMICH_DB_USER}"
     DB_PASSWORD="${IMMICH_DB_PASSWORD}"
-    DB_DATABASE="${IMMICH_DB_NAME}"
-    BACKUP_NAME="${IMMICH_BACKUP_NAME}"
-    DROPBOX_PATH="${IMMICH_DROPBOX_BACKUP_PATH}"
+    DB_DATABASE="${IMMICH_DB_NAME-$DB_NAME_LOWER}"
+    BACKUP_NAME="${IMMICH_BACKUP_NAME-$DB_NAME_LOWER}"
     BACKUP_DIR="/backups/immich"
     ;;
   firefly)
-    DB_HOST="${FIREFLY_DB_HOST}"
+    DB_HOST="${FIREFLY_DB_HOST-${DB_NAME_LOWER}-db}"
     DB_USER="${FIREFLY_DB_USER}"
     DB_PASSWORD="${FIREFLY_DB_PASSWORD}"
-    DB_DATABASE="${FIREFLY_DB_NAME}"
-    BACKUP_NAME="${FIREFLY_BACKUP_NAME}"
-    DROPBOX_PATH="${FIREFLY_DROPBOX_BACKUP_PATH}"
+    DB_DATABASE="${FIREFLY_DB_NAME-$DB_NAME_LOWER}"
+    BACKUP_NAME="${FIREFLY_BACKUP_NAME-$DB_NAME_LOWER}"
     BACKUP_DIR="/backups/firefly"
     ;;
   paperless)
-    DB_HOST="${PAPERLESS_DB_HOST}"
+    DB_HOST="${PAPERLESS_DB_HOST-${DB_NAME_LOWER}-db}"
     DB_USER="${PAPERLESS_DB_USER}"
     DB_PASSWORD="${PAPERLESS_DB_PASSWORD}"
-    DB_DATABASE="${PAPERLESS_DB_NAME}"
-    BACKUP_NAME="${PAPERLESS_BACKUP_NAME}"
-    DROPBOX_PATH="${PAPERLESS_DROPBOX_BACKUP_PATH}"
+    DB_DATABASE="${PAPERLESS_DB_NAME-$DB_NAME_LOWER}"
+    BACKUP_NAME="${PAPERLESS_BACKUP_NAME-$DB_NAME_LOWER}"
     BACKUP_DIR="/backups/paperless"
     ;;
   firefoxsync)
-    DB_HOST="${FIREFOXSYNC_DB_HOST}"
+    DB_HOST="${FIREFOXSYNC_DB_HOST-${DB_NAME_LOWER}-db}"
     DB_USER="${FIREFOXSYNC_DB_USER}"
     DB_PASSWORD="${FIREFOXSYNC_DB_PASSWORD}"
-    DB_DATABASE="${FIREFOXSYNC_DB_NAME}"
-    BACKUP_NAME="${FIREFOXSYNC_BACKUP_NAME}"
-    DROPBOX_PATH="${FIREFOXSYNC_DROPBOX_BACKUP_PATH}"
+    DB_DATABASE="${FIREFOXSYNC_DB_NAME-$DB_NAME_LOWER}"
+    BACKUP_NAME="${FIREFOXSYNC_BACKUP_NAME-$DB_NAME_LOWER}"
     BACKUP_DIR="/backups/firefoxsync"
     ;;
   romm)
-    DB_HOST="${ROMM_DB_HOST}"
+    DB_HOST="${ROMM_DB_HOST-${DB_NAME_LOWER}-db}"
     DB_USER="${ROMM_DB_USER}"
     DB_PASSWORD="${ROMM_DB_PASSWORD}"
-    DB_DATABASE="${ROMM_DB_NAME}"
-    BACKUP_NAME="${ROMM_BACKUP_NAME}"
-    DROPBOX_PATH="${ROMM_DROPBOX_BACKUP_PATH}"
+    DB_DATABASE="${ROMM_DB_NAME-$DB_NAME_LOWER}"
+    BACKUP_NAME="${ROMM_BACKUP_NAME-$DB_NAME_LOWER}"
     BACKUP_DIR="/backups/romm"
     ;;
   *)
@@ -89,6 +95,11 @@ esac
 BACKUP_RETENTION_DAYS="${REGISTRY_RETENTION:-}"
 if [ -z "$BACKUP_RETENTION_DAYS" ]; then
   echo "ERROR: No registry retention policy for ${DB_NAME_LOWER} in this profile" >&2
+  exit 1
+fi
+DROPBOX_PATH="${SELECTED_DESTINATION:-}"
+if [ -z "$DROPBOX_PATH" ]; then
+  echo "ERROR: No Dropbox destination for ${DB_NAME_LOWER} in this profile" >&2
   exit 1
 fi
 
@@ -168,8 +179,8 @@ EOF_RCLONE
   
   # Clean remote Dropbox backups
   echo "🧹 Cleaning Dropbox backups older than ${retention_days} days..."
-  if rclone ls dropbox:${DROPBOX_PATH} >/dev/null 2>&1; then
-    rclone ls dropbox:${DROPBOX_PATH} | awk '{print $2}' | while read file; do
+  if rclone ls "dropbox:${DROPBOX_PATH}" >/dev/null 2>&1; then
+    rclone ls "dropbox:${DROPBOX_PATH}" | awk '{print $2}' | while read file; do
       file_date=$(echo "$file" | sed -n 's/^[a-zA-Z0-9_]*_\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\).*/\1/p')
       if [ -n "$file_date" ]; then
         file_epoch=$(date -d "$file_date" +%s 2>/dev/null || echo 0)

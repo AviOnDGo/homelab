@@ -19,7 +19,13 @@ class StartBackupTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        for name in ("start-backup.sh", "backup-databases.conf", "docker-compose.yml"):
+        for name in (
+            "start-backup.sh",
+            "backup-databases.conf",
+            "docker-compose.yml",
+            "path.local",
+            "path.prod",
+        ):
             shutil.copy(ROOT / name, self.root / name)
         self.bin = self.root / "bin"
         self.bin.mkdir()
@@ -60,9 +66,9 @@ else:
             "MOCK_ARGS": str(self.root / "args"),
         }
 
-    def run_start(self, profile, **env):
+    def run_start(self, *args, **env):
         return subprocess.run(
-            ["bash", str(self.root / "start-backup.sh"), profile],
+            ["bash", str(self.root / "start-backup.sh"), *args],
             env={**self.env, **env},
             text=True,
             capture_output=True,
@@ -119,7 +125,8 @@ else:
         }
         for profile, (names, networks) in cases.items():
             with self.subTest(profile=profile):
-                result = self.run_start(profile)
+                args = (profile, "local") if profile == "default" else (profile,)
+                result = self.run_start(*args)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 config = self.merged_config()
                 service = config["services"]["db-backup"]
@@ -248,6 +255,66 @@ else:
         self.assertEqual(environment["DB_BACKUP_FIREFLY_RETENTION_DAYS"], "120")
         self.assertEqual(environment["FIREFLY_BACKUP_RETENTION_DAYS"], "90")
 
+    def test_selected_destination_overrides_legacy_environment(self):
+        base = self.root / "docker-compose.yml"
+        base.write_text(base.read_text().replace("env_file: .env", "env_file: settings.txt"))
+        (self.root / "settings.txt").write_text(
+            "FIREFLY_DROPBOX_BACKUP_PATH=/legacy/firefly\n"
+        )
+        for args, destination in (
+            (("local",), "/App_acc/firefly"),
+            (("prod",), "/Apps/firefly"),
+            (("default", "local"), "/App_acc/firefly"),
+            (("default", "prod"), "/Apps/firefly"),
+        ):
+            with self.subTest(args=args):
+                result = self.run_start(*args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                environment = self.merged_config(resolve_env=True)["services"]["db-backup"][
+                    "environment"
+                ]
+                self.assertEqual(environment["FIREFLY_DROPBOX_BACKUP_PATH"], destination)
+
+    def test_destination_files_cover_registered_databases(self):
+        names = {
+            line.split("|", 1)[0].upper().replace("-", "_") + "_DROPBOX_BACKUP_PATH"
+            for line in (self.root / "backup-databases.conf").read_text().splitlines()
+            if line and not line.startswith("#")
+        }
+        for path in ("path.local", "path.prod"):
+            with self.subTest(path=path):
+                keys = {
+                    line.split("=", 1)[0]
+                    for line in (self.root / path).read_text().splitlines()
+                    if line and not line.startswith("#")
+                }
+                self.assertEqual(keys, names)
+
+    def test_invalid_or_missing_destinations_fail_before_compose(self):
+        path = self.root / "path.prod"
+        original = path.read_text()
+        for contents in (
+            original.replace("FIREFLY_DROPBOX_BACKUP_PATH=/Apps/firefly", ""),
+            original.replace(
+                "FIREFLY_DROPBOX_BACKUP_PATH=/Apps/firefly",
+                "FIREFLY_DROPBOX_BACKUP_PATH=",
+            ),
+            original + "\nFIREFLY_DROPBOX_BACKUP_PATH=/duplicate\n",
+            original.replace("/Apps/firefly", "/Apps/$OTHER"),
+            original + "\nINVALID=path\n",
+        ):
+            with self.subTest(contents=contents):
+                path.write_text(contents)
+                result = self.run_start("prod")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("ERROR:", result.stderr)
+                self.assertFalse((self.root / "args").exists())
+        path.unlink()
+        result = self.run_start("prod")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Missing destination file", result.stderr)
+        self.assertFalse((self.root / "args").exists())
+
     def test_generated_command_validates_and_writes_schedule(self):
         result = self.run_start("prod")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -280,10 +347,12 @@ else:
                     self.assertIn("ERROR:", result.stderr)
 
     def test_invalid_profile_is_rejected(self):
-        result = self.run_start("remote")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("Usage:", result.stderr)
-        self.assertFalse((self.root / "args").exists())
+        for args in (("remote",), ("default",), ("default", "remote"), ("prod", "local")):
+            with self.subTest(args=args):
+                result = self.run_start(*args)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Usage:", result.stderr)
+                self.assertFalse((self.root / "args").exists())
 
 
 if __name__ == "__main__":

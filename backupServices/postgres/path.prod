@@ -1,5 +1,5 @@
 # PostgreSQL backup destinations for the production environment.
-# Staged values only: existing deployments still use environment settings.
+# Selected by the prod profile or explicitly by the default profile.
 # This file is tracked; do not put credentials here.
 
 # Financial Services
